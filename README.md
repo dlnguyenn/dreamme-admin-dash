@@ -1,145 +1,100 @@
-# DreamMe Admin Dash
+# DreamMe — Internal Dashboard
 
-A private "dashboard of dashboards" for tools that help DreamMe grow.
+A private "dashboard of dashboards" for the DreamMe team. Ports the design
+bundle in `design_handoff_dreamme_dashboard/` to a production Next.js +
+Supabase app, pixel-faithfully.
 
-**First dashboard:** results from the **DreamMe Daily Content Pipeline (3 Personas)**
-N8N workflow — three persona buckets (Andrea / Emma / Olivia) with all generated
-images, plus a searchable "All captions" bucket, plus a **Run Now** button that
-triggers the workflow on demand.
+## Screens
+
+- **Content Pipeline** (live) — three-persona daily output from the
+  *DreamMe Daily Content Pipeline (3 Personas)* n8n workflow, grouped by date,
+  with a detail drawer + caption editor.
+- **Caption Library** (live) — saved captions, searchable and filterable.
+- **Posting Analytics / Comment Monitoring / Hook Analytics / Content Poster**
+  — scaffolded "coming soon" screens with planned-feature bullets.
 
 ## Stack
 
-- **Next.js 15** (App Router) + TypeScript + Tailwind + lucide-react
-- **Supabase** — Postgres + Auth (magic link) + Storage
-- **Vercel** (free hobby) for hosting
-- Zod for payload validation
+- Next.js 15 (App Router) + TypeScript
+- React 19
+- Supabase — Postgres + Storage (anon-key + service-role)
+- Zod for ingest payload validation
+- Fonts: Newsreader + Geist + Geist Mono via `next/font`
 
-## Project layout
+## Data model
+
+Matches the design handoff exactly:
 
 ```
-src/
-  app/
-    layout.tsx, page.tsx                    # app shell + dashboard grid
-    login/                                  # magic-link auth
-    auth/callback/                          # OAuth/OTP code exchange
-    dashboards/daily-content/
-      page.tsx                              # 3 persona columns + Run Now
-      item/[id]/                            # image + caption detail
-      captions/                             # all-captions bucket
-    api/
-      ingest/                               # N8N → dashboard webhook
-      run/                                  # dashboard → N8N trigger
-  components/                               # Sidebar, PersonaColumn, CopyButton, …
-  lib/                                      # supabase clients, queries, env, storage
-supabase/migrations/0001_init.sql           # schema + RLS + persona seed
+deliveries          id · persona · image_url · caption · posted · starred · in_library · created_at
+saved_captions      id · source_delivery_id · persona · caption · posted · starred · created_at
 ```
+
+Storage bucket: `dreamme-admin-internal-images` (public read). Apply
+`supabase/migrations/0001_init.sql` via the Supabase SQL editor or
+`npx supabase db push`.
+
+## Auth
+
+A shared team-password gate (`dreamme`) on the client, sessionStorage-backed —
+matches the design. Swap for Supabase Auth when you're ready; the gate is
+isolated in `src/components/Gate.tsx`.
 
 ## Local setup
 
-1. **Create a Supabase project** (free tier is fine).
-2. Copy the env template and fill it in:
-   ```bash
-   cp .env.local.example .env.local
-   ```
-   You'll need:
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Supabase → Project Settings → API
-   - `SUPABASE_SERVICE_ROLE_KEY` — same page (keep it secret; server-only)
-   - `ALLOWED_EMAILS` — comma-separated allow list for sign-in
-   - `INGEST_TOKEN` — generate a long random string; shared with N8N
-   - `N8N_TRIGGER_WEBHOOK_URL` — production URL of the Webhook trigger node in N8N
-3. **Apply the schema.** Easiest path: open `supabase/migrations/0001_init.sql` in the Supabase SQL editor and run it. Or with the CLI:
-   ```bash
-   npx supabase link --project-ref <your-ref>
-   npx supabase db push
-   ```
-4. Install + run:
-   ```bash
-   npm install
-   npm run dev
-   ```
-   Open http://localhost:3000, sign in with an allow-listed email.
-
-## Deploy to Vercel
-
-1. Push this repo to GitHub.
-2. Import the repo in Vercel.
-3. Set the same env vars in Vercel → Project → Settings → Environment Variables.
-4. After deploy, set `NEXT_PUBLIC_APP_URL` to the Vercel domain and redeploy. Update the Supabase **Auth → URL Configuration → Site URL** to match, and add the Vercel domain to **Redirect URLs**.
-
-## N8N wiring
-
-### 1. Push each run to the dashboard (`/api/ingest`)
-
-Add an **HTTP Request** node at the end of `DreamMe Daily Content Pipeline (3 Personas)`.
-
-- Method: `POST`
-- URL: `https://<your-vercel-domain>/api/ingest`
-- Headers:
-  - `Authorization: Bearer <INGEST_TOKEN>`
-  - `Content-Type: application/json`
-- Body (JSON): one of the two shapes below.
-
-**With base64 images** (simplest; N8N's `Move Binary Data` → "Binary to Base64"):
-
-```json
-{
-  "run_id": "{{$execution.id}}",
-  "triggered_by": "schedule",
-  "caption": "{{$json.caption}}",
-  "items": [
-    { "persona": "andrea", "image_base64": "{{$json.andrea_b64}}", "image_mime": "image/png" },
-    { "persona": "emma",   "image_base64": "{{$json.emma_b64}}",   "image_mime": "image/png" },
-    { "persona": "olivia", "image_base64": "{{$json.olivia_b64}}", "image_mime": "image/png" }
-  ]
-}
+```bash
+cp .env.local.example .env.local   # fill in Supabase URL + keys + INGEST_TOKEN
+npm install
+npm run dev
 ```
 
-**With image URLs** (the server will fetch + re-upload to Storage):
+Visit http://localhost:3000 and enter `dreamme`.
 
-```json
-{
-  "run_id": "{{$execution.id}}",
-  "caption": "{{$json.caption}}",
-  "items": [
-    { "persona": "andrea", "image_url": "{{$json.andrea_url}}" },
-    { "persona": "emma",   "image_url": "{{$json.emma_url}}" },
-    { "persona": "olivia", "image_url": "{{$json.olivia_url}}" }
-  ]
-}
+## n8n ingest
+
+Two options, both documented in the in-app **n8n setup** modal (Content
+Pipeline → top-right):
+
+**Option A — direct to Supabase PostgREST** (recommended; the design's default):
+
+```
+POST  {SUPABASE_URL}/rest/v1/deliveries
+HEADERS: apikey, Authorization: Bearer <ANON>, Content-Type: application/json
+BODY:    { "persona": "andrea|emma|olivia", "image_url": "…", "caption": "…" }
 ```
 
-Valid `persona` values: `andrea`, `emma`, `olivia`.
+**Option B — this app's server endpoint** (handles base64 uploads or refetches
+`image_url` into Supabase Storage):
 
-### 2. Let the dashboard trigger the workflow (`/api/run`)
+```
+POST  /api/ingest/content-pipeline
+HEADERS: X-DreamMe-Secret: <INGEST_TOKEN>
+BODY:
+  { "persona": "andrea", "caption": "…", "image_base64": "…" }
+  — or —
+  { "items": [{"persona":"andrea","image_url":"…","caption":"…"}, …] }
+```
 
-Add a **Webhook** trigger node to the workflow (method POST, "Production URL"),
-and set `N8N_TRIGGER_WEBHOOK_URL` in the dashboard's env to that URL. The **Run
-Now** button POSTs to it.
-
-## Data model quick-reference
-
-- `personas` — Andrea, Emma, Olivia (seeded).
-- `workflow_runs` — one row per N8N execution (ingest) or manual trigger.
-- `captions` — every long-form caption, with `char_count` + optional `tags`. This is what powers the "All captions" bucket.
-- `content_items` — one per persona image per run; references the shared `caption_id` so each caption appears both under its image **and** in the captions bucket without duplication.
-
-Images are stored in a private `persona-images` bucket (`<persona>/<run>-<uuid>.<ext>`) and served as signed URLs.
-
-## Smoke test
+### Smoke test
 
 ```bash
-# With the dev server running and INGEST_TOKEN set:
-curl -X POST http://localhost:3000/api/ingest \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
+curl -X POST http://localhost:3000/api/ingest/content-pipeline \
+  -H "X-DreamMe-Secret: $INGEST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "caption": "test caption",
     "items": [
-      {"persona":"andrea","image_url":"https://placehold.co/900x1200.png"},
-      {"persona":"emma","image_url":"https://placehold.co/900x1200.png"},
-      {"persona":"olivia","image_url":"https://placehold.co/900x1200.png"}
+      {"persona":"andrea","image_url":"https://picsum.photos/400/500","caption":"test andrea"},
+      {"persona":"emma",  "image_url":"https://picsum.photos/400/500","caption":"test emma"},
+      {"persona":"olivia","image_url":"https://picsum.photos/400/500","caption":"test olivia"}
     ]
   }'
 ```
 
-Then visit `/dashboards/daily-content` and `/dashboards/daily-content/captions`.
+A new row should appear in the dashboard within 30 seconds (or hit **Refresh**).
+
+## Deploy
+
+1. Push to GitHub, import in Vercel.
+2. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_TOKEN` in Vercel env.
+3. Apply `supabase/migrations/0001_init.sql` on the Supabase project.

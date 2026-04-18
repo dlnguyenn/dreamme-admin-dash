@@ -1,96 +1,70 @@
--- DreamMe Admin Dashboard — initial schema
--- Run via: `npx supabase db push` (local) or apply in the Supabase SQL editor for prod.
+-- DreamMe Internal Dashboard schema
+-- Two tables: deliveries (one row per persona image+caption from the n8n pipeline)
+-- and saved_captions (the caption library bucket).
 
-create extension if not exists pgcrypto;
+create extension if not exists "pgcrypto";
 
--- ---------------------------------------------------------------------------
--- personas: one row per DreamMe TikTok persona. Seeded below.
--- ---------------------------------------------------------------------------
-create table if not exists public.personas (
-  id           uuid primary key default gen_random_uuid(),
-  slug         text unique not null,
-  display_name text not null,
-  created_at   timestamptz not null default now()
+create table if not exists public.deliveries (
+  id uuid primary key default gen_random_uuid(),
+  persona text not null check (persona in ('andrea','emma','olivia')),
+  image_url text not null,
+  caption text not null,
+  posted boolean not null default false,
+  starred boolean not null default false,
+  in_library boolean not null default false,
+  created_at timestamptz not null default now()
 );
 
-insert into public.personas (slug, display_name) values
-  ('andrea', 'Andrea'),
-  ('emma',   'Emma'),
-  ('olivia', 'Olivia')
-on conflict (slug) do nothing;
+create index if not exists deliveries_created_at_idx on public.deliveries (created_at desc);
+create index if not exists deliveries_persona_idx on public.deliveries (persona);
 
--- ---------------------------------------------------------------------------
--- workflow_runs: one row per N8N execution of the Daily Content Pipeline.
--- ---------------------------------------------------------------------------
-create table if not exists public.workflow_runs (
-  id                uuid primary key default gen_random_uuid(),
-  n8n_execution_id  text unique,
-  triggered_by      text,                       -- 'schedule' | 'manual:<email>' | 'n8n'
-  status            text not null default 'completed',
-  started_at        timestamptz,
-  finished_at       timestamptz not null default now()
+create table if not exists public.saved_captions (
+  id uuid primary key default gen_random_uuid(),
+  source_delivery_id uuid references public.deliveries(id) on delete set null,
+  persona text not null check (persona in ('andrea','emma','olivia')),
+  caption text not null,
+  posted boolean not null default false,
+  starred boolean not null default false,
+  created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------------
--- captions: the long-form TikTok caption. Lives independently so the
--- "All Captions" bucket can list every caption regardless of image state.
--- ---------------------------------------------------------------------------
-create table if not exists public.captions (
-  id             uuid primary key default gen_random_uuid(),
-  text           text not null,
-  char_count     integer generated always as (char_length(text)) stored,
-  source_run_id  uuid references public.workflow_runs(id) on delete set null,
-  tags           text[] not null default '{}',
-  created_at     timestamptz not null default now()
-);
+create index if not exists saved_captions_created_at_idx on public.saved_captions (created_at desc);
+create index if not exists saved_captions_persona_idx on public.saved_captions (persona);
 
-create index if not exists captions_created_at_idx on public.captions (created_at desc);
+-- RLS. The dashboard is gated by a shared team password on the client, but it
+-- still talks to Supabase with the public anon key. So we allow anon to read
+-- and mutate both tables. Lock this down further with real auth if/when you
+-- migrate off the shared-password gate.
+alter table public.deliveries enable row level security;
+alter table public.saved_captions enable row level security;
 
--- ---------------------------------------------------------------------------
--- content_items: one row per persona image per run. References its caption
--- so the image detail page can show the caption underneath.
--- ---------------------------------------------------------------------------
-create table if not exists public.content_items (
-  id            uuid primary key default gen_random_uuid(),
-  run_id        uuid references public.workflow_runs(id) on delete cascade,
-  persona_id    uuid not null references public.personas(id) on delete restrict,
-  image_path    text not null,                  -- Storage key, e.g. andrea/<run_id>.png
-  caption_id    uuid references public.captions(id) on delete set null,
-  created_at    timestamptz not null default now()
-);
+drop policy if exists "deliveries_anon_read" on public.deliveries;
+drop policy if exists "deliveries_anon_write" on public.deliveries;
+drop policy if exists "saved_captions_anon_read" on public.saved_captions;
+drop policy if exists "saved_captions_anon_write" on public.saved_captions;
 
-create index if not exists content_items_persona_created_idx
-  on public.content_items (persona_id, created_at desc);
+create policy "deliveries_anon_read" on public.deliveries
+  for select using (true);
+create policy "deliveries_anon_write" on public.deliveries
+  for all using (true) with check (true);
 
--- ---------------------------------------------------------------------------
--- Row-level security: the app reads/writes via the service-role key
--- server-side, so deny anon/authenticated direct access. The email allowlist
--- is enforced in Next.js middleware + API route handlers.
--- ---------------------------------------------------------------------------
-alter table public.personas       enable row level security;
-alter table public.workflow_runs  enable row level security;
-alter table public.captions       enable row level security;
-alter table public.content_items  enable row level security;
+create policy "saved_captions_anon_read" on public.saved_captions
+  for select using (true);
+create policy "saved_captions_anon_write" on public.saved_captions
+  for all using (true) with check (true);
 
--- Authenticated users can read everything; writes only via service role.
-create policy "authenticated read personas"
-  on public.personas for select to authenticated using (true);
-create policy "authenticated read runs"
-  on public.workflow_runs for select to authenticated using (true);
-create policy "authenticated read captions"
-  on public.captions for select to authenticated using (true);
-create policy "authenticated read content_items"
-  on public.content_items for select to authenticated using (true);
-
--- ---------------------------------------------------------------------------
--- Storage bucket for persona images (private; signed URLs only).
--- Create manually if `storage.buckets` is not writable via migration on your
--- Supabase plan; the `on conflict do nothing` keeps re-runs safe.
--- ---------------------------------------------------------------------------
+-- Storage bucket for the images pushed from n8n. Public-read so the dashboard
+-- can render them directly; uploads are authenticated (service role from n8n,
+-- or the custom /api/ingest/content-pipeline endpoint).
 insert into storage.buckets (id, name, public)
-values ('persona-images', 'persona-images', false)
-on conflict (id) do nothing;
+values ('dreamme-admin-internal-images', 'dreamme-admin-internal-images', true)
+on conflict (id) do update set public = excluded.public;
 
-create policy "authenticated read persona images"
-  on storage.objects for select to authenticated
-  using (bucket_id = 'persona-images');
+drop policy if exists "images_public_read" on storage.objects;
+drop policy if exists "images_anon_write" on storage.objects;
+
+create policy "images_public_read" on storage.objects
+  for select using (bucket_id = 'dreamme-admin-internal-images');
+
+create policy "images_anon_write" on storage.objects
+  for insert with check (bucket_id = 'dreamme-admin-internal-images');
