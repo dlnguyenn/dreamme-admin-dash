@@ -344,23 +344,27 @@ export function ContentPipeline({
               gap: 18,
             }}
           >
-            {items.map((item) => (
-              <ContentCard
-                key={item.id}
-                item={item}
-                persona={PERSONAS[item.personaId]}
-                onClick={() => setSelectedId(item.id)}
-                onToggleStar={(e) => {
-                  e.stopPropagation();
-                  updateItem(item.id, { starred: !item.starred });
-                }}
-              />
-            ))}
+            {items.map((item) => {
+              const persona = PERSONAS[item.personaId];
+              if (!persona) return null;
+              return (
+                <ContentCard
+                  key={item.id}
+                  item={item}
+                  persona={persona}
+                  onClick={() => setSelectedId(item.id)}
+                  onToggleStar={(e) => {
+                    e.stopPropagation();
+                    updateItem(item.id, { starred: !item.starred });
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
       ))}
 
-      {selected && (
+      {selected && PERSONAS[selected.personaId] && (
         <DetailDrawer
           item={selected}
           persona={PERSONAS[selected.personaId]}

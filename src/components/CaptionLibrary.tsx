@@ -240,6 +240,7 @@ export function CaptionLibrary({
       >
         {filtered.map((c) => {
           const persona = PERSONAS[c.personaId];
+          if (!persona) return null;
           const isEditing = editingId === c.id;
           const currentText = isEditing ? draft : c.caption;
           return (
