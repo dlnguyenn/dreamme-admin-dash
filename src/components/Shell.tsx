@@ -24,7 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "captions", label: "Caption Library", icon: "Message", status: "live", desc: "All captions, searchable" },
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth" },
   { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas" },
-  { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "soon", desc: "What's stopping the scroll" },
+  { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
 ];
 
