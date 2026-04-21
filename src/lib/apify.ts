@@ -45,8 +45,9 @@ export async function runTikTokScrape(opts: {
 }
 
 export function extractFirstSlideUrl(p: ApifyTikTokItem): string | null {
-  if (Array.isArray(p.slideshowImageLinks) && p.slideshowImageLinks.length) {
-    return p.slideshowImageLinks[0];
+  const first = p.slideshowImageLinks?.[0];
+  if (first) {
+    return first.downloadLink ?? first.tiktokLink ?? null;
   }
   return p.videoMeta?.originalCoverUrl ?? p.videoMeta?.coverUrl ?? null;
 }

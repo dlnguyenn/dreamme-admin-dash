@@ -26,7 +26,16 @@ export const ApifyTikTokItemSchema = z
     commentCount: z.number().optional(),
     shareCount: z.number().optional(),
     isSlideshow: z.boolean().optional(),
-    slideshowImageLinks: z.array(urlString).optional(),
+    slideshowImageLinks: z
+      .array(
+        z
+          .object({
+            tiktokLink: urlString.optional(),
+            downloadLink: urlString.optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
     authorMeta: AuthorMetaSchema.optional(),
     videoMeta: VideoMetaSchema.optional(),
   })
