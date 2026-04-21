@@ -74,6 +74,8 @@ export async function handleScrape(
   const { items, failed: parseFailed } = parseApifyItems(raw);
   const existing = await deps.repo.fetchExistingMeta();
 
+  logApifyRunSummary({ raw, items, parseFailed, profiles });
+
   let ocred = 0;
   let upserted = 0;
   let skippedNoSlide = 0;
@@ -105,6 +107,38 @@ export async function handleScrape(
     errors: errors.slice(0, 5),
   };
   return NextResponse.json(result);
+}
+
+function logApifyRunSummary(params: {
+  raw: unknown;
+  items: ApifyTikTokItem[];
+  parseFailed: number;
+  profiles: string[];
+}): void {
+  const rawCount = Array.isArray(params.raw) ? params.raw.length : 0;
+  const firstRaw =
+    Array.isArray(params.raw) && params.raw.length > 0
+      ? (params.raw[0] as Record<string, unknown>)
+      : null;
+  const topLevelKeys = firstRaw ? Object.keys(firstRaw).sort() : [];
+  const perAuthor: Record<string, number> = {};
+  for (const it of params.items) {
+    const name = it.authorMeta?.name ?? "(unknown)";
+    perAuthor[name] = (perAuthor[name] ?? 0) + 1;
+  }
+  const slideshowCount = params.items.filter((it) => it.isSlideshow).length;
+  console.log(
+    "[scrape-tiktok]",
+    JSON.stringify({
+      profiles: params.profiles,
+      rawCount,
+      parsedCount: params.items.length,
+      parseFailed: params.parseFailed,
+      slideshowCount,
+      perAuthor,
+      firstItemTopLevelKeys: topLevelKeys,
+    }),
+  );
 }
 
 async function processItem(
