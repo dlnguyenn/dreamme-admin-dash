@@ -5,6 +5,7 @@ import { Gate } from "./Gate";
 import { NAV_ITEMS, Sidebar, type DashId } from "./Shell";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
+import { HookAnalytics } from "./HookAnalytics";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -131,6 +132,8 @@ export function App() {
         refresh={refresh}
       />
     );
+  } else if (current === "hooks") {
+    screen = <HookAnalytics />;
   } else {
     screen = <ComingSoon item={currentItem} />;
   }

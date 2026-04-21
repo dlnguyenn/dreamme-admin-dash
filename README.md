@@ -10,8 +10,11 @@ Supabase app, pixel-faithfully.
   *DreamMe Daily Content Pipeline (3 Personas)* n8n workflow, grouped by date,
   with a detail drawer + caption editor.
 - **Caption Library** (live) — saved captions, searchable and filterable.
-- **Posting Analytics / Comment Monitoring / Hook Analytics / Content Poster**
-  — scaffolded "coming soon" screens with planned-feature bullets.
+- **Hook Analytics** (live) — scrapes the three TikTok accounts via Apify,
+  OCRs the first-slide hook with Claude vision, auto-categorizes, and
+  generates 2 new hooks per persona per day from top performers.
+- **Posting Analytics / Comment Monitoring / Content Poster** — scaffolded
+  "coming soon" screens with planned-feature bullets.
 
 ## Stack
 
@@ -92,9 +95,36 @@ curl -X POST http://localhost:3000/api/ingest/content-pipeline \
 
 A new row should appear in the dashboard within 30 seconds (or hit **Refresh**).
 
+## Hook Analytics
+
+The **Hook Analytics** screen scrapes three fixed TikTok profiles
+(`@andreaglp1`, `@glp1withemma`, `@glpolivia`), OCRs the first-slide text
+overlay, categorizes it, and generates 2 new hooks per persona per day.
+
+**Flow:**
+
+1. `POST /api/scrape/tiktok` — runs the Apify actor, OCRs new first slides
+   via Claude vision, categorizes, upserts into `tiktok_posts`.
+2. `POST /api/generate/hooks` — for each persona, takes their top hooks +
+   top cross-pollinated hooks from other personas and asks Claude to
+   generate `perPersona` new ones. Writes to `generated_hooks`.
+
+Both endpoints accept `X-DreamMe-Secret: <INGEST_TOKEN or CRON_SECRET>`, or
+are callable from the dashboard UI (same-origin is allowed).
+
+**Cron:** `vercel.json` schedules `/api/cron/scrape` at 06:00 UTC and
+`/api/cron/generate` at 07:00 UTC daily. Vercel auto-adds
+`Authorization: Bearer $CRON_SECRET` if `CRON_SECRET` is in the env.
+
+**Apply the migration** (`supabase/migrations/0002_hooks.sql`) to get the
+`tiktok_posts` and `generated_hooks` tables.
+
 ## Deploy
 
 1. Push to GitHub, import in Vercel.
-2. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_TOKEN` in Vercel env.
-3. Apply `supabase/migrations/0001_init.sql` on the Supabase project.
+2. Set these env vars in Vercel:
+   - Core: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+     `NEXT_PUBLIC_SUPABASE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_TOKEN`.
+   - Hook Analytics: `APIFY_KEY`, `ANTHROPIC_API_KEY`, `CRON_SECRET`.
+3. Apply `supabase/migrations/0001_init.sql` and `0002_hooks.sql` on the
+   Supabase project.
