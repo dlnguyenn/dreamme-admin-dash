@@ -21,37 +21,59 @@ interface MessageBlock {
   text?: string;
 }
 
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 529]);
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function callClaude(params: {
   model: string;
   system?: string;
   content: Array<Record<string, unknown>>;
   maxTokens?: number;
+  maxRetries?: number;
 }): Promise<string> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
-  const res = await fetch(API, {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: params.model,
-      max_tokens: params.maxTokens ?? 1024,
-      system: params.system,
-      messages: [{ role: "user", content: params.content }],
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Anthropic error: ${res.status} ${await res.text()}`);
+  const maxRetries = params.maxRetries ?? 4;
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: params.model,
+        max_tokens: params.maxTokens ?? 1024,
+        system: params.system,
+        messages: [{ role: "user", content: params.content }],
+      }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { content?: MessageBlock[] };
+      return (data.content ?? [])
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("\n")
+        .trim();
+    }
+    const bodyText = await res.text();
+    const retryable = RETRYABLE_STATUSES.has(res.status);
+    if (!retryable || attempt >= maxRetries) {
+      throw new Error(`Anthropic error: ${res.status} ${bodyText}`);
+    }
+    const retryAfterHeader = res.headers.get("retry-after");
+    const retryAfterMs = retryAfterHeader
+      ? Math.max(0, Math.min(30_000, Number(retryAfterHeader) * 1000))
+      : 0;
+    const backoff = Math.min(16_000, 500 * Math.pow(2, attempt));
+    const jitter = Math.floor(Math.random() * 250);
+    await sleep(retryAfterMs || backoff + jitter);
+    attempt++;
   }
-  const data = (await res.json()) as { content?: MessageBlock[] };
-  const text = (data.content ?? [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("\n")
-    .trim();
-  return text;
 }
 
 function firstJson(text: string): unknown {
