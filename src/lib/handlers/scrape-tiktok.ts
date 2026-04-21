@@ -68,7 +68,7 @@ export async function handleScrape(
   const body = await readBody(req);
   const personas = body.personas?.length ? body.personas : PERSONA_IDS;
   const profiles = personas.map((p) => PERSONA_TIKTOK_PROFILES[p]);
-  const resultsPerPage = body.resultsPerPage ?? 30;
+  const resultsPerPage = body.resultsPerPage ?? 1000;
 
   const raw = await deps.scraper.run({ profiles, resultsPerPage });
   const { items, failed: parseFailed } = parseApifyItems(raw);
