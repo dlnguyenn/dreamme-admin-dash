@@ -8,6 +8,11 @@ export const PERSONA_TIKTOK_PROFILES: Record<PersonaId, string> = {
   andrea: "andreaglp1",
   emma: "glp1withemma",
   olivia: "glpolivia",
+  mia: "",
+  abby: "",
+  diane: "",
+  sydney: "",
+  maddy: "",
 };
 
 export function apifyConfigured() {
