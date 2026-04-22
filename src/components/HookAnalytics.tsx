@@ -145,9 +145,11 @@ export function HookAnalytics() {
 
   const tabs: Array<{ id: Tab; label: string; personaId: PersonaId | null }> = [
     { id: "all", label: "All", personaId: null },
-    { id: "andrea", label: "Andrea", personaId: "andrea" },
-    { id: "emma", label: "Emma", personaId: "emma" },
-    { id: "olivia", label: "Olivia", personaId: "olivia" },
+    ...PERSONA_IDS.map((pid) => ({
+      id: pid as Tab,
+      label: PERSONAS[pid].name,
+      personaId: pid,
+    })),
   ];
 
   const genForPersona = (pid: PersonaId) =>
