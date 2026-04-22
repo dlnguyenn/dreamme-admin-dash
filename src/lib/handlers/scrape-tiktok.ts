@@ -37,7 +37,8 @@ export interface ScrapeResult {
 function personaFromUsername(username: string | undefined): PersonaId | null {
   const u = (username ?? "").toLowerCase().replace(/^@/, "");
   for (const id of PERSONA_IDS) {
-    if (PERSONA_TIKTOK_PROFILES[id].toLowerCase() === u) return id;
+    const handle = PERSONA_TIKTOK_PROFILES[id];
+    if (handle && handle.toLowerCase() === u) return id;
   }
   return null;
 }
@@ -67,7 +68,7 @@ export async function handleScrape(
 ): Promise<Response> {
   const body = await readBody(req);
   const personas = body.personas?.length ? body.personas : PERSONA_IDS;
-  const profiles = personas.map((p) => PERSONA_TIKTOK_PROFILES[p]);
+  const profiles = personas.map((p) => PERSONA_TIKTOK_PROFILES[p]).filter(Boolean);
   const resultsPerPage = body.resultsPerPage ?? 1000;
 
   const raw = await deps.scraper.run({ profiles, resultsPerPage });
