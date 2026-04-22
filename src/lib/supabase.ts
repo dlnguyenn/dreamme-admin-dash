@@ -1,8 +1,12 @@
 import type {
   Delivery,
   DeliveryRow,
+  FeatureRequest,
+  FeatureRequestRow,
   SavedCaption,
   SavedCaptionRow,
+  SpendLineItem,
+  SpendLineItemRow,
 } from "./types";
 import type { PersonaId } from "./personas";
 
@@ -76,6 +80,34 @@ function mapDelivery(row: DeliveryRow): Delivery {
     starred: !!row.starred,
     inLibrary: !!row.in_library,
     createdAt: row.created_at,
+  };
+}
+
+function mapSpend(row: SpendLineItemRow): SpendLineItem {
+  return {
+    id: row.id,
+    vendor: row.vendor,
+    category: row.category,
+    amountUsd: Number(row.amount_usd) || 0,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    source: row.source,
+    metadata: row.metadata,
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+function mapFeatureRequest(row: FeatureRequestRow): FeatureRequest {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    epic: row.epic,
+    submitterEmail: row.submitter_email,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -153,6 +185,32 @@ export const API = {
 
   async deleteDelivery(id: string) {
     await sbDelete("deliveries", id);
+  },
+
+  async fetchSpendLineItems(): Promise<SpendLineItem[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<SpendLineItemRow>(
+      "spend_line_items",
+      "select=*&order=period_start.desc",
+    );
+    return rows.map(mapSpend);
+  },
+
+  async fetchFeatureRequests(): Promise<FeatureRequest[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<FeatureRequestRow>(
+      "feature_requests",
+      "select=*&order=created_at.desc",
+    );
+    return rows.map(mapFeatureRequest);
   },
 
   async fetchDelivery(id: string): Promise<Delivery | null> {

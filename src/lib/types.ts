@@ -128,3 +128,70 @@ export interface GeneratedHook {
   used: boolean;
   createdAt: string;
 }
+
+export type SpendVendor =
+  | "anthropic"
+  | "google"
+  | "apify"
+  | "vercel"
+  | "supabase"
+  | "business_cc"
+  | "other";
+
+export type SpendCategory = "ai" | "business";
+export type SpendSource = "api" | "manual" | "csv";
+
+export interface SpendLineItemRow {
+  id: string;
+  vendor: SpendVendor;
+  category: SpendCategory;
+  amount_usd: string | number;
+  period_start: string;
+  period_end: string;
+  source: SpendSource;
+  metadata: Record<string, unknown> | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface SpendLineItem {
+  id: string;
+  vendor: SpendVendor;
+  category: SpendCategory;
+  amountUsd: number;
+  periodStart: string;
+  periodEnd: string;
+  source: SpendSource;
+  metadata: Record<string, unknown> | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export type FeatureRequestStatus =
+  | "new"
+  | "planned"
+  | "in_progress"
+  | "shipped"
+  | "declined";
+
+export interface FeatureRequestRow {
+  id: string;
+  title: string;
+  description: string;
+  status: FeatureRequestStatus;
+  epic: string | null;
+  submitter_email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeatureRequest {
+  id: string;
+  title: string;
+  description: string;
+  status: FeatureRequestStatus;
+  epic: string | null;
+  submitterEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
