@@ -122,9 +122,11 @@ export function ContentPipeline({
 
   const tabsDef: Array<{ id: "all" | PersonaId; label: string; personaId: PersonaId | null }> = [
     { id: "all", label: "All", personaId: null },
-    { id: "andrea", label: "Andrea", personaId: "andrea" },
-    { id: "emma", label: "Emma", personaId: "emma" },
-    { id: "olivia", label: "Olivia", personaId: "olivia" },
+    ...PERSONA_IDS.map((pid) => ({
+      id: pid,
+      label: PERSONAS[pid].name,
+      personaId: pid,
+    })),
   ];
 
   return (
