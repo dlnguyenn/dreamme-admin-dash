@@ -5,7 +5,7 @@ import { Icons } from "./Icons";
 import { Button, Chip, PersonaChip, useCopy, useToast } from "./ui";
 import { PageHeader } from "./Shell";
 import { CharCount } from "./CharCount";
-import { PERSONAS, type PersonaId } from "@/lib/personas";
+import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
 import type { DashState, SavedCaption } from "@/lib/types";
@@ -81,21 +81,11 @@ export function CaptionLibrary({
     icon?: React.ReactNode;
   }> = [
     { id: "all", label: "All", count: state.savedCaptions.length },
-    {
-      id: "andrea",
-      label: "Andrea",
-      count: state.savedCaptions.filter((c) => c.personaId === "andrea").length,
-    },
-    {
-      id: "emma",
-      label: "Emma",
-      count: state.savedCaptions.filter((c) => c.personaId === "emma").length,
-    },
-    {
-      id: "olivia",
-      label: "Olivia",
-      count: state.savedCaptions.filter((c) => c.personaId === "olivia").length,
-    },
+    ...PERSONA_IDS.map((pid) => ({
+      id: pid as Filter,
+      label: PERSONAS[pid].name,
+      count: state.savedCaptions.filter((c) => c.personaId === pid).length,
+    })),
     {
       id: "starred",
       label: "Starred",
