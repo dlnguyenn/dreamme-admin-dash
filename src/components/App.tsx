@@ -6,6 +6,8 @@ import { NAV_ITEMS, Sidebar, visibleNavItems, type DashId } from "./Shell";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
+import { SpendDashboard } from "./SpendDashboard";
+import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -163,6 +165,10 @@ export function App() {
     );
   } else if (current === "hooks") {
     screen = <HookAnalytics />;
+  } else if (current === "spend") {
+    screen = <SpendDashboard />;
+  } else if (current === "requests") {
+    screen = <FeatureRequestsDashboard />;
   } else {
     screen = <ComingSoon item={currentItem} />;
   }

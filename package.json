@@ -15,6 +15,7 @@
     "refresh-fixture": "tsx scripts/refresh-fixture.ts",
     "migrate-bucket": "tsx scripts/migrate-bucket.ts",
     "migrate-rows": "tsx scripts/migrate-rows.ts",
+    "db:migrate": "tsx scripts/apply-migrations.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
