@@ -7,6 +7,9 @@ import { PageHeader } from "./Shell";
 import { ContentCard } from "./ContentCard";
 import { DetailDrawer } from "./DetailDrawer";
 import { WebhookModal } from "./WebhookModal";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { ModifyImageModal } from "./ModifyImageModal";
+import { useCopy } from "./ui";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
@@ -28,7 +31,29 @@ export function ContentPipeline({
   const [tab, setTab] = React.useState<"all" | PersonaId>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [webhookOpen, setWebhookOpen] = React.useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
+  const [modifyingId, setModifyingId] = React.useState<string | null>(null);
   const toast = useToast();
+  const { copy } = useCopy();
+
+  const copyItemLink = (id: string) => {
+    const url = `${window.location.origin}/item/${id}`;
+    copy(url);
+    toast("Link copied");
+  };
+
+  const deleteItem = async (id: string) => {
+    const prev = state.items;
+    setState((s) => ({ ...s, items: s.items.filter((x) => x.id !== id) }));
+    if (selectedId === id) setSelectedId(null);
+    try {
+      await API.deleteDelivery(id);
+      toast("Delivery deleted");
+    } catch (e) {
+      setState((s) => ({ ...s, items: prev }));
+      toast(`Delete failed — ${(e as Error).message}`);
+    }
+  };
 
   const selected = state.items.find((x) => x.id === selectedId) ?? null;
 
@@ -357,6 +382,14 @@ export function ContentPipeline({
                     e.stopPropagation();
                     updateItem(item.id, { starred: !item.starred });
                   }}
+                  onCopyLink={(e) => {
+                    e.stopPropagation();
+                    copyItemLink(item.id);
+                  }}
+                  onDelete={(e) => {
+                    e.stopPropagation();
+                    setConfirmDeleteId(item.id);
+                  }}
                 />
               );
             })}
@@ -371,6 +404,9 @@ export function ContentPipeline({
           onClose={() => setSelectedId(null)}
           onUpdate={(patch) => updateItem(selected.id, patch)}
           onSaveToLibrary={() => saveCaptionToLibrary(selected)}
+          onCopyLink={() => copyItemLink(selected.id)}
+          onDelete={() => setConfirmDeleteId(selected.id)}
+          onModifyImage={() => setModifyingId(selected.id)}
           inLibrary={
             selected.inLibrary ||
             state.savedCaptions.some((c) => c.sourceItemId === selected.id)
@@ -378,7 +414,43 @@ export function ContentPipeline({
         />
       )}
 
+      {confirmDeleteId && (
+        <ConfirmDialog
+          title="Delete this delivery?"
+          message="This removes the row from the content pipeline. The image file in storage is not affected."
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => {
+            const id = confirmDeleteId;
+            setConfirmDeleteId(null);
+            deleteItem(id);
+          }}
+        />
+      )}
+
       {webhookOpen && <WebhookModal onClose={() => setWebhookOpen(false)} />}
+
+      {modifyingId && (() => {
+        const target = state.items.find((x) => x.id === modifyingId);
+        if (!target) return null;
+        return (
+          <ModifyImageModal
+            item={target}
+            onClose={() => setModifyingId(null)}
+            onAccepted={(newUrl) => {
+              setState((s) => ({
+                ...s,
+                items: s.items.map((x) =>
+                  x.id === target.id ? { ...x, imageUrl: newUrl } : x,
+                ),
+              }));
+              setModifyingId(null);
+              refresh();
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -17,16 +17,21 @@ export interface NavItem {
   icon: IconName;
   status: "live" | "soon";
   desc: string;
+  adminOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { id: "content", label: "Content Pipeline", icon: "Sparkles", status: "live", desc: "Daily 3-persona output" },
   { id: "captions", label: "Caption Library", icon: "Message", status: "live", desc: "All captions, searchable" },
-  { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth" },
-  { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas" },
+  { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },
+  { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas", adminOnly: true },
   { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
 ];
+
+export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
+  return viewAs === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((n) => !n.adminOnly);
+}
 
 export function Sidebar({
   current,
@@ -34,14 +39,21 @@ export function Sidebar({
   onLogout,
   collapsed,
   setCollapsed,
+  role,
+  viewAs,
+  setViewAs,
 }: {
   current: DashId;
   setCurrent: (id: DashId) => void;
   onLogout: () => void;
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  role: "admin" | "user";
+  viewAs: "admin" | "user";
+  setViewAs: (v: "admin" | "user") => void;
 }) {
   const w = collapsed ? 76 : 260;
+  const items = visibleNavItems(viewAs);
   return (
     <aside
       style={{
@@ -155,7 +167,7 @@ export function Sidebar({
           flex: 1,
         }}
       >
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = current === item.id;
           const IconComp = Icons[item.icon];
           return (
@@ -239,6 +251,58 @@ export function Sidebar({
           borderTop: "1px solid var(--line)",
         }}
       >
+        {role === "admin" && (
+          <div style={{ marginBottom: 10 }}>
+            {!collapsed ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: 4,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                }}
+                title="Switch between admin and regular-user view"
+              >
+                <ViewToggleButton
+                  label="Admin"
+                  active={viewAs === "admin"}
+                  onClick={() => setViewAs("admin")}
+                />
+                <ViewToggleButton
+                  label="User"
+                  active={viewAs === "user"}
+                  onClick={() => setViewAs("user")}
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() =>
+                  setViewAs(viewAs === "admin" ? "user" : "admin")
+                }
+                title={`View: ${viewAs}. Click to toggle.`}
+                style={{
+                  width: "100%",
+                  padding: "9px 0",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                  fontSize: 10,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color:
+                    viewAs === "admin" ? "var(--ink)" : "var(--ink-3)",
+                  cursor: "pointer",
+                }}
+              >
+                {viewAs === "admin" ? "A" : "U"}
+              </button>
+            )}
+          </div>
+        )}
         <button
           onClick={onLogout}
           title={collapsed ? "Sign out" : undefined}
@@ -268,6 +332,40 @@ export function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+function ViewToggleButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: "6px 8px",
+        border: "none",
+        borderRadius: 7,
+        background: active ? "var(--surface)" : "transparent",
+        boxShadow: active ? "var(--shadow-sm)" : "none",
+        color: active ? "var(--ink)" : "var(--ink-3)",
+        fontSize: 11,
+        fontFamily: "var(--font-geist-mono), monospace",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontWeight: active ? 500 : 400,
+        cursor: "pointer",
+        transition: "background 140ms ease, color 140ms ease",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

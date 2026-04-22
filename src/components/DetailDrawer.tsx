@@ -16,6 +16,9 @@ export function DetailDrawer({
   onClose,
   onUpdate,
   onSaveToLibrary,
+  onCopyLink,
+  onDelete,
+  onModifyImage,
   inLibrary,
 }: {
   item: Delivery;
@@ -23,11 +26,15 @@ export function DetailDrawer({
   onClose: () => void;
   onUpdate: (patch: Partial<Delivery>) => void;
   onSaveToLibrary: () => void;
+  onCopyLink: () => void;
+  onDelete: () => void;
+  onModifyImage: () => void;
   inLibrary: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(item.caption);
   const { copied, copy } = useCopy();
+  const { copied: linkCopied, copy: copyLink } = useCopy();
   const toast = useToast();
 
   React.useEffect(() => {
@@ -193,6 +200,31 @@ export function DetailDrawer({
               }}
             >
               Open image
+            </Button>
+            <Button
+              icon={linkCopied ? <Icons.Check /> : <Icons.Link />}
+              onClick={() => {
+                const url = `${window.location.origin}/item/${item.id}`;
+                copyLink(url);
+                onCopyLink();
+              }}
+            >
+              {linkCopied ? "Link copied" : "Copy link"}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<Icons.Sparkles />}
+              onClick={onModifyImage}
+            >
+              Modify image
+            </Button>
+            <Button
+              variant="danger"
+              icon={<Icons.Trash />}
+              onClick={onDelete}
+              style={{ marginLeft: "auto" }}
+            >
+              Delete
             </Button>
           </div>
 

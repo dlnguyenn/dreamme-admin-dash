@@ -13,6 +13,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "refresh-fixture": "tsx scripts/refresh-fixture.ts",
+    "migrate-bucket": "tsx scripts/migrate-bucket.ts",
+    "migrate-rows": "tsx scripts/migrate-rows.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
