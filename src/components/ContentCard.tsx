@@ -12,13 +12,30 @@ export function ContentCard({
   persona,
   onClick,
   onToggleStar,
+  onCopyLink,
+  onDelete,
 }: {
   item: Delivery;
   persona: Persona;
   onClick: () => void;
   onToggleStar: (e: React.MouseEvent) => void;
+  onCopyLink: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
 }) {
   const [hover, setHover] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
   return (
     <div
       onClick={onClick}
@@ -56,35 +73,107 @@ export function ContentCard({
             transform: hover ? "scale(1.03)" : "none",
           }}
         />
-        <button
-          onClick={onToggleStar}
+        <div
           style={{
             position: "absolute",
             top: 10,
             right: 10,
-            width: 32,
-            height: 32,
-            borderRadius: "50%",
-            background:
-              "color-mix(in oklab, var(--surface) 80%, transparent)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-            border:
-              "1px solid color-mix(in oklab, var(--line) 60%, transparent)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: hover || item.starred ? 1 : 0,
-            transition: "opacity 160ms ease",
-            cursor: "pointer",
+            gap: 6,
           }}
         >
-          {item.starred ? (
-            <Icons.StarFilled size={15} stroke="var(--accent)" />
-          ) : (
-            <Icons.Star size={15} stroke="var(--ink-2)" />
-          )}
-        </button>
+          <div ref={menuRef} style={{ position: "relative" }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((v) => !v);
+              }}
+              aria-label="More actions"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background:
+                  "color-mix(in oklab, var(--surface) 80%, transparent)",
+                backdropFilter: "blur(8px)",
+                WebkitBackdropFilter: "blur(8px)",
+                border:
+                  "1px solid color-mix(in oklab, var(--line) 60%, transparent)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: hover || menuOpen ? 1 : 0,
+                transition: "opacity 160ms ease",
+                cursor: "pointer",
+              }}
+            >
+              <Icons.MoreVertical size={15} stroke="var(--ink-2)" />
+            </button>
+            {menuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  top: 38,
+                  right: 0,
+                  minWidth: 168,
+                  background: "var(--surface)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                  boxShadow: "var(--shadow-md)",
+                  padding: 4,
+                  zIndex: 10,
+                  animation: "fadeIn 120ms ease",
+                }}
+              >
+                <MenuItem
+                  icon={<Icons.Link size={14} />}
+                  label="Copy link"
+                  onClick={(e) => {
+                    setMenuOpen(false);
+                    onCopyLink(e);
+                  }}
+                />
+                <MenuItem
+                  icon={<Icons.Trash size={14} />}
+                  label="Delete"
+                  destructive
+                  onClick={(e) => {
+                    setMenuOpen(false);
+                    onDelete(e);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onToggleStar}
+            aria-label={item.starred ? "Unstar" : "Star"}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background:
+                "color-mix(in oklab, var(--surface) 80%, transparent)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              border:
+                "1px solid color-mix(in oklab, var(--line) 60%, transparent)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: hover || item.starred ? 1 : 0,
+              transition: "opacity 160ms ease",
+              cursor: "pointer",
+            }}
+          >
+            {item.starred ? (
+              <Icons.StarFilled size={15} stroke="var(--accent)" />
+            ) : (
+              <Icons.Star size={15} stroke="var(--ink-2)" />
+            )}
+          </button>
+        </div>
         {item.posted && (
           <div
             style={{
@@ -149,5 +238,48 @@ export function ContentCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  destructive,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  destructive?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        padding: "8px 10px",
+        borderRadius: 6,
+        border: "none",
+        background: hover
+          ? destructive
+            ? "color-mix(in oklab, var(--accent) 10%, var(--surface))"
+            : "var(--surface-2)"
+          : "transparent",
+        color: destructive ? "var(--accent)" : "var(--ink)",
+        fontSize: 13,
+        textAlign: "left",
+        cursor: "pointer",
+        transition: "background 120ms ease",
+      }}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

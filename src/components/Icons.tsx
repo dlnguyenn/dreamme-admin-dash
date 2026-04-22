@@ -175,6 +175,24 @@ export const Icons = {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
     </Icon>
   ),
+  MoreVertical: (p: IconProps) => (
+    <Icon {...p}>
+      <circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" />
+    </Icon>
+  ),
+  Link: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72" />
+    </Icon>
+  ),
+  Trash: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" />
+    </Icon>
+  ),
 } satisfies Record<string, React.FC<IconProps>>;
 
 export type IconName = keyof typeof Icons;

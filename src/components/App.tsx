@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Gate } from "./Gate";
-import { NAV_ITEMS, Sidebar, type DashId } from "./Shell";
+import { NAV_ITEMS, Sidebar, visibleNavItems, type DashId } from "./Shell";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
@@ -17,6 +17,8 @@ const TWEAK_DEFAULTS: Tweaks = { theme: "light", gridSize: 4 };
 export function App() {
   const [hydrated, setHydrated] = React.useState(false);
   const [authed, setAuthed] = React.useState(false);
+  const [role, setRole] = React.useState<"admin" | "user">("user");
+  const [viewAs, setViewAs] = React.useState<"admin" | "user">("user");
 
   const [state, setState] = React.useState<DashState>({
     items: [],
@@ -34,6 +36,16 @@ export function App() {
   React.useEffect(() => {
     try {
       if (sessionStorage.getItem("dreamme.auth") === "1") setAuthed(true);
+      const savedRole = sessionStorage.getItem("dreamme.role");
+      if (savedRole === "admin" || savedRole === "user") {
+        setRole(savedRole);
+        const savedView = localStorage.getItem("dreamme.viewAs");
+        if (savedRole === "admin" && (savedView === "admin" || savedView === "user")) {
+          setViewAs(savedView);
+        } else {
+          setViewAs(savedRole);
+        }
+      }
       const savedCur = localStorage.getItem("dreamme.currentDash");
       if (
         savedCur &&
@@ -53,6 +65,16 @@ export function App() {
     if (!hydrated) return;
     localStorage.setItem("dreamme.currentDash", current);
   }, [current, hydrated]);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem("dreamme.viewAs", viewAs);
+  }, [viewAs, hydrated]);
+
+  React.useEffect(() => {
+    const allowed = visibleNavItems(viewAs).map((n) => n.id);
+    if (!allowed.includes(current)) setCurrent(allowed[0]);
+  }, [viewAs, current]);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -97,13 +119,20 @@ export function App() {
   if (!authed) {
     return (
       <ToastProvider>
-        <Gate onEnter={() => setAuthed(true)} />
+        <Gate
+          onEnter={(r) => {
+            setRole(r);
+            setViewAs(r);
+            setAuthed(true);
+          }}
+        />
       </ToastProvider>
     );
   }
 
   const logout = () => {
     sessionStorage.removeItem("dreamme.auth");
+    sessionStorage.removeItem("dreamme.role");
     setAuthed(false);
   };
 
@@ -153,6 +182,9 @@ export function App() {
           onLogout={logout}
           collapsed={sidebarCollapsed}
           setCollapsed={setSidebarCollapsed}
+          role={role}
+          viewAs={viewAs}
+          setViewAs={setViewAs}
         />
         <main
           key={current}

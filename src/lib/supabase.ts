@@ -78,6 +78,7 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
   return {
     id: row.id,
     sourceItemId: row.source_delivery_id,
+    sourceHookId: row.source_hook_id,
     personaId: row.persona,
     caption: row.caption,
     posted: !!row.posted,
@@ -87,7 +88,7 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
 }
 
 export type DeliveryPatch = Partial<
-  Pick<Delivery, "posted" | "starred" | "caption" | "inLibrary">
+  Pick<Delivery, "posted" | "starred" | "caption" | "inLibrary" | "imageUrl">
 >;
 
 export type CaptionPatch = Partial<
@@ -117,6 +118,7 @@ export const API = {
     if (patch.starred !== undefined) dbPatch.starred = patch.starred;
     if (patch.caption !== undefined) dbPatch.caption = patch.caption;
     if (patch.inLibrary !== undefined) dbPatch.in_library = patch.inLibrary;
+    if (patch.imageUrl !== undefined) dbPatch.image_url = patch.imageUrl;
     const row = await sbUpdate<DeliveryRow>("deliveries", id, dbPatch);
     return mapDelivery(row);
   },
@@ -142,5 +144,22 @@ export const API = {
 
   async deleteCaption(id: string) {
     await sbDelete("saved_captions", id);
+  },
+
+  async deleteDelivery(id: string) {
+    await sbDelete("deliveries", id);
+  },
+
+  async fetchDelivery(id: string): Promise<Delivery | null> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<DeliveryRow>(
+      "deliveries",
+      `select=*&id=eq.${encodeURIComponent(id)}&limit=1`,
+    );
+    return rows.length ? mapDelivery(rows[0]) : null;
   },
 };

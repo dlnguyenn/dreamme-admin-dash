@@ -14,6 +14,7 @@ export interface Delivery {
 export interface SavedCaption {
   id: string;
   sourceItemId: string | null;
+  sourceHookId: string | null;
   personaId: PersonaId;
   caption: string;
   posted: boolean;
@@ -40,10 +41,33 @@ export interface DeliveryRow {
 export interface SavedCaptionRow {
   id: string;
   source_delivery_id: string | null;
+  source_hook_id: string | null;
   persona: PersonaId;
   caption: string;
   posted: boolean | null;
   starred: boolean | null;
+  created_at: string;
+}
+
+export interface GeneratedCaption {
+  id: string;
+  hookId: string | null;
+  personaId: PersonaId;
+  caption: string;
+  model: string;
+  notes: string | null;
+  tipPoolAware: boolean;
+  createdAt: string;
+}
+
+export interface GeneratedCaptionRow {
+  id: string;
+  hook_id: string | null;
+  persona: PersonaId;
+  caption: string;
+  model: string;
+  notes: string | null;
+  tip_pool_aware: boolean | null;
   created_at: string;
 }
 

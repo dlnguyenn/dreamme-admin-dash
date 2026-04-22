@@ -4,18 +4,27 @@ import * as React from "react";
 import { Button } from "./ui";
 import { Icons } from "./Icons";
 
-const TEAM_PASSWORD = "dreamme";
+const USER_PASSWORD = "dreamme";
+const ADMIN_PASSWORD = "dreammeAdmin";
 
-export function Gate({ onEnter }: { onEnter: () => void }) {
+export type Role = "user" | "admin";
+
+export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
   const [pw, setPw] = React.useState("");
   const [err, setErr] = React.useState(false);
   const [shake, setShake] = React.useState(false);
 
   const submit = (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault();
-    if (pw.trim().toLowerCase() === TEAM_PASSWORD) {
+    const raw = pw.trim();
+    let role: Role | null = null;
+    if (raw === ADMIN_PASSWORD) role = "admin";
+    else if (raw.toLowerCase() === USER_PASSWORD) role = "user";
+
+    if (role) {
       sessionStorage.setItem("dreamme.auth", "1");
-      onEnter();
+      sessionStorage.setItem("dreamme.role", role);
+      onEnter(role);
     } else {
       setErr(true);
       setShake(true);
@@ -225,19 +234,6 @@ export function Gate({ onEnter }: { onEnter: () => void }) {
           </Button>
         </form>
 
-        <div
-          style={{
-            marginTop: 24,
-            paddingTop: 20,
-            borderTop: "1px solid var(--line)",
-            fontSize: 11,
-            color: "var(--ink-4)",
-            fontFamily: "var(--font-geist-mono), monospace",
-          }}
-        >
-          hint — password is:{" "}
-          <span style={{ color: "var(--ink-3)" }}>dreamme</span>
-        </div>
       </div>
     </div>
   );

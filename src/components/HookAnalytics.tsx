@@ -13,6 +13,7 @@ import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
+import { CaptionFromHookDrawer } from "./CaptionFromHookDrawer";
 
 type Tab = "all" | PersonaId;
 type Sort = "views" | "recent";
@@ -29,6 +30,7 @@ export function HookAnalytics() {
     "all",
   );
   const [running, setRunning] = React.useState<"scrape" | "generate" | null>(null);
+  const [captionHookId, setCaptionHookId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -297,6 +299,7 @@ export function HookAnalytics() {
                         key={h.id}
                         hook={h}
                         onToggleUsed={() => onToggleUsed(h)}
+                        onOpenCaption={() => setCaptionHookId(h.id)}
                       />
                     ))}
                   {genForPersona(pid).length === 0 && (
@@ -428,6 +431,21 @@ export function HookAnalytics() {
           </div>
         )}
       </section>
+
+      {captionHookId && (() => {
+        const target = generated.find((h) => h.id === captionHookId);
+        if (!target) return null;
+        return (
+          <CaptionFromHookDrawer
+            hook={target}
+            onClose={() => setCaptionHookId(null)}
+            onSaved={() => {
+              setCaptionHookId(null);
+              refresh();
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -491,24 +509,43 @@ function EmptyBlock({ children }: { children: React.ReactNode }) {
 function HookCard({
   hook,
   onToggleUsed,
+  onOpenCaption,
 }: {
   hook: GeneratedHook;
   onToggleUsed: () => void;
+  onOpenCaption: () => void;
 }) {
   const { copied, copy } = useCopy();
   const cat = (HOOK_CATEGORY_LABELS as Record<string, string>)[hook.category] ??
     hook.category;
+  const [hover, setHover] = React.useState(false);
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpenCaption}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenCaption();
+        }
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         padding: 14,
         background: "var(--surface)",
-        border: "1px solid var(--line-2)",
+        border: `1px solid ${hover ? "var(--ink-4)" : "var(--line-2)"}`,
         borderRadius: 12,
         display: "flex",
         flexDirection: "column",
         gap: 8,
         opacity: hook.used ? 0.55 : 1,
+        cursor: "pointer",
+        transition: "border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease",
+        boxShadow: hover ? "var(--shadow-sm)" : "none",
+        transform: hover ? "translateY(-1px)" : "none",
       }}
     >
       <div
@@ -546,19 +583,37 @@ function HookCard({
         <Chip tone="neutral" style={{ fontSize: 10 }}>
           {cat}
         </Chip>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6 }} onClick={stop}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Icons.Sparkles />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCaption();
+            }}
+            title="Generate caption from this hook"
+          >
+            Caption
+          </Button>
           <Button
             variant="ghost"
             size="sm"
             icon={copied ? <Icons.Check /> : <Icons.Copy />}
-            onClick={() => copy(hook.hookText)}
+            onClick={(e) => {
+              e.stopPropagation();
+              copy(hook.hookText);
+            }}
           >
             {copied ? "Copied" : "Copy"}
           </Button>
           <Button
             variant={hook.used ? "secondary" : "ghost"}
             size="sm"
-            onClick={onToggleUsed}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleUsed();
+            }}
             title={hook.used ? "Mark unused" : "Mark used"}
           >
             {hook.used ? "Used" : "Mark used"}
