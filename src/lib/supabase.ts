@@ -4,6 +4,11 @@ import type {
   SavedCaption,
   SavedCaptionRow,
 } from "./types";
+import type { PersonaId } from "./personas";
+
+function normalizePersonaId(raw: string): PersonaId {
+  return ((raw || "").trim().toLowerCase()) as PersonaId;
+}
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -64,7 +69,7 @@ async function sbDelete(table: string, id: string) {
 function mapDelivery(row: DeliveryRow): Delivery {
   return {
     id: row.id,
-    personaId: row.persona,
+    personaId: normalizePersonaId(row.persona),
     imageUrl: row.image_url,
     caption: row.caption,
     posted: !!row.posted,
@@ -79,7 +84,7 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
     id: row.id,
     sourceItemId: row.source_delivery_id,
     sourceHookId: row.source_hook_id,
-    personaId: row.persona,
+    personaId: normalizePersonaId(row.persona),
     caption: row.caption,
     posted: !!row.posted,
     starred: !!row.starred,
