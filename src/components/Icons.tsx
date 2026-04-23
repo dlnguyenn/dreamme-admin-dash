@@ -193,6 +193,16 @@ export const Icons = {
       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" />
     </Icon>
   ),
+  Swap: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M7 4l-4 4 4 4M3 8h14M17 20l4-4-4-4M21 16H7" />
+    </Icon>
+  ),
+  Upload: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+    </Icon>
+  ),
 } satisfies Record<string, React.FC<IconProps>>;
 
 export type IconName = keyof typeof Icons;

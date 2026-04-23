@@ -79,8 +79,27 @@ function mapDelivery(row: DeliveryRow): Delivery {
     posted: !!row.posted,
     starred: !!row.starred,
     inLibrary: !!row.in_library,
+    isBefore: !!row.is_before,
     createdAt: row.created_at,
   };
+}
+
+function fileToBase64(file: File): Promise<{ base64: string; mime: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("reader returned non-string"));
+        return;
+      }
+      const comma = result.indexOf(",");
+      const base64 = comma >= 0 ? result.slice(comma + 1) : result;
+      resolve({ base64, mime: file.type || "image/png" });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function mapSpend(row: SpendLineItemRow): SpendLineItem {
@@ -223,6 +242,32 @@ export const API = {
       "select=*&order=created_at.desc",
     );
     return rows.map(mapFeatureRequest);
+  },
+
+  async uploadBeforePhoto({
+    personaId,
+    file,
+  }: {
+    personaId: PersonaId;
+    file: File;
+  }): Promise<Delivery> {
+    const { base64, mime } = await fileToBase64(file);
+    const res = await fetch("/api/deliveries/before", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        persona: personaId,
+        image_base64: base64,
+        image_mime: mime,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; row?: DeliveryRow; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.row) {
+      throw new Error(body?.error || `before upload failed: ${res.status}`);
+    }
+    return mapDelivery(body.row);
   },
 
   async fetchDelivery(id: string): Promise<Delivery | null> {
