@@ -14,6 +14,8 @@ export function ContentCard({
   onToggleStar,
   onCopyLink,
   onDelete,
+  selectionMode = false,
+  selected = false,
 }: {
   item: Delivery;
   persona: Persona;
@@ -21,6 +23,8 @@ export function ContentCard({
   onToggleStar: (e: React.MouseEvent) => void;
   onCopyLink: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
 }) {
   const [hover, setHover] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -47,11 +51,17 @@ export function ContentCard({
         overflow: "hidden",
         cursor: "pointer",
         background: persona.soft,
-        border: "1px solid var(--line)",
+        border: selected
+          ? "2px solid var(--accent)"
+          : "1px solid var(--line)",
         transition:
           "transform 220ms cubic-bezier(.4,0,.2,1), box-shadow 220ms ease",
-        transform: hover ? "translateY(-3px)" : "none",
-        boxShadow: hover ? "var(--shadow-md)" : "var(--shadow-sm)",
+        transform: hover && !selectionMode ? "translateY(-3px)" : "none",
+        boxShadow: selected
+          ? "0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent)"
+          : hover
+            ? "var(--shadow-md)"
+            : "var(--shadow-sm)",
       }}
     >
       <div
@@ -73,12 +83,41 @@ export function ContentCard({
             transform: hover ? "scale(1.03)" : "none",
           }}
         />
+        {selectionMode && (
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: selected
+                ? "var(--accent)"
+                : "color-mix(in oklab, var(--surface) 85%, transparent)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              border: selected
+                ? "2px solid var(--accent)"
+                : "1px solid color-mix(in oklab, var(--line) 70%, transparent)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: selected ? "var(--surface)" : "transparent",
+              transition: "all 120ms ease",
+              pointerEvents: "none",
+              zIndex: 2,
+            }}
+          >
+            {selected && <Icons.Check size={14} />}
+          </div>
+        )}
         <div
           style={{
             position: "absolute",
             top: 10,
             right: 10,
-            display: "flex",
+            display: selectionMode ? "none" : "flex",
             gap: 6,
           }}
         >

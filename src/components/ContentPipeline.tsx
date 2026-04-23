@@ -33,8 +33,25 @@ export function ContentPipeline({
   const [webhookOpen, setWebhookOpen] = React.useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
   const [modifyingId, setModifyingId] = React.useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
   const toast = useToast();
   const { copy } = useCopy();
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const copyItemLink = (id: string) => {
     const url = `${window.location.origin}/item/${id}`;
@@ -52,6 +69,24 @@ export function ContentPipeline({
     } catch (e) {
       setState((s) => ({ ...s, items: prev }));
       toast(`Delete failed — ${(e as Error).message}`);
+    }
+  };
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const prev = state.items;
+    setState((s) => ({
+      ...s,
+      items: s.items.filter((x) => !selectedIds.has(x.id)),
+    }));
+    exitSelectionMode();
+    try {
+      await API.deleteDeliveries(ids);
+      toast(`Deleted ${ids.length} deliver${ids.length === 1 ? "y" : "ies"}`);
+    } catch (e) {
+      setState((s) => ({ ...s, items: prev }));
+      toast(`Bulk delete failed — ${(e as Error).message}`);
     }
   };
 
@@ -147,6 +182,16 @@ export function ContentPipeline({
                 Sync error
               </Chip>
             )}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (selectionMode) exitSelectionMode();
+                else setSelectionMode(true);
+              }}
+              title={selectionMode ? "Exit selection mode" : "Select multiple for deletion"}
+            >
+              {selectionMode ? "Cancel" : "Select"}
+            </Button>
             <Button
               variant="secondary"
               onClick={() => refresh()}
@@ -300,6 +345,56 @@ export function ContentPipeline({
         })}
       </div>
 
+      {selectionMode && (
+        <div
+          style={{
+            position: "sticky",
+            top: 12,
+            zIndex: 5,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 16px",
+            marginBottom: 20,
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: 12,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <div style={{ fontSize: 13, color: "var(--ink)" }}>
+            <strong>{selectedIds.size}</strong>{" "}
+            <span style={{ color: "var(--ink-3)" }}>
+              selected{filtered.length > 0 ? ` of ${filtered.length}` : ""}
+            </span>
+          </div>
+          <div style={{ flex: 1 }} />
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const allFiltered = new Set(filtered.map((x) => x.id));
+              const allSelected =
+                filtered.length > 0 &&
+                filtered.every((x) => selectedIds.has(x.id));
+              setSelectedIds(allSelected ? new Set() : allFiltered);
+            }}
+          >
+            {filtered.length > 0 &&
+            filtered.every((x) => selectedIds.has(x.id))
+              ? "Deselect all"
+              : "Select all"}
+          </Button>
+          <Button
+            variant="primary"
+            icon={<Icons.Trash size={14} />}
+            disabled={selectedIds.size === 0}
+            onClick={() => setConfirmBulkDelete(true)}
+          >
+            Delete {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+          </Button>
+        </div>
+      )}
+
       {Object.keys(grouped).length === 0 && (
         <div
           style={{
@@ -379,7 +474,12 @@ export function ContentPipeline({
                   key={item.id}
                   item={item}
                   persona={persona}
-                  onClick={() => setSelectedId(item.id)}
+                  selectionMode={selectionMode}
+                  selected={selectedIds.has(item.id)}
+                  onClick={() => {
+                    if (selectionMode) toggleSelect(item.id);
+                    else setSelectedId(item.id);
+                  }}
                   onToggleStar={(e) => {
                     e.stopPropagation();
                     updateItem(item.id, { starred: !item.starred });
@@ -427,6 +527,20 @@ export function ContentPipeline({
             const id = confirmDeleteId;
             setConfirmDeleteId(null);
             deleteItem(id);
+          }}
+        />
+      )}
+
+      {confirmBulkDelete && (
+        <ConfirmDialog
+          title={`Delete ${selectedIds.size} deliver${selectedIds.size === 1 ? "y" : "ies"}?`}
+          message="This removes the selected rows from the content pipeline. The image files in storage are not affected."
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={() => {
+            setConfirmBulkDelete(false);
+            bulkDelete();
           }}
         />
       )}
