@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkCronAuth } from "@/lib/auth-ingest";
+import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   anthropicAdminConfigured,
   fetchAnthropicDailyCost,
@@ -13,7 +13,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 export async function GET(req: Request) {
-  if (!checkCronAuth(req)) {
+  if (!checkIngestAuth(req)) {
     return NextResponse.json(
       { ok: false, error: "unauthorized" },
       { status: 401 },
