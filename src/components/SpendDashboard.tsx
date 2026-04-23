@@ -134,17 +134,37 @@ export function SpendDashboard() {
   const runSync = async () => {
     setSyncing(true);
     try {
-      const results = await Promise.allSettled([
-        fetch("/api/cron/spend/anthropic"),
-        fetch("/api/cron/spend/apify"),
-      ]);
-      const oks = results.filter(
-        (r) => r.status === "fulfilled" && r.value.ok,
-      ).length;
-      if (oks === 0) {
-        toast("Sync failed — check vendor keys");
+      const endpoints: Array<{ name: string; url: string }> = [
+        { name: "anthropic", url: "/api/cron/spend/anthropic" },
+        { name: "apify", url: "/api/cron/spend/apify" },
+      ];
+      const results = await Promise.allSettled(
+        endpoints.map(async (e) => {
+          const res = await fetch(e.url);
+          const body = await res.json().catch(() => ({}));
+          return { name: e.name, ok: res.ok && body.ok, error: body.error as string | undefined };
+        }),
+      );
+      const oks: string[] = [];
+      const fails: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.ok) {
+          oks.push(r.value.name);
+        } else {
+          const name = endpoints[i].name;
+          const err =
+            r.status === "fulfilled"
+              ? r.value.error ?? "unknown error"
+              : (r.reason as Error)?.message ?? "network error";
+          fails.push(`${name}: ${err}`);
+        }
+      });
+      if (oks.length === endpoints.length) {
+        toast(`Synced ${oks.length}/${endpoints.length} vendors`);
+      } else if (oks.length === 0) {
+        toast(`Sync failed — ${fails.join(" · ")}`);
       } else {
-        toast(`Synced ${oks}/2 vendors`);
+        toast(`Synced ${oks.length}/${endpoints.length} · ${fails.join(" · ")}`);
       }
       await refresh();
     } catch (e) {
