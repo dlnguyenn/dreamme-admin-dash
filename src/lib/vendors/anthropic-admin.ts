@@ -1,5 +1,5 @@
 const ADMIN_KEY = process.env.ANTHROPIC_ADMIN_KEY ?? "";
-const ADMIN_API = "https://api.anthropic.com/v1/organizations/usage_report/cost";
+const ADMIN_API = "https://api.anthropic.com/v1/organizations/cost_report";
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 529]);
 
 function sleep(ms: number): Promise<void> {
@@ -79,11 +79,13 @@ export async function fetchAnthropicDailyCost(params: {
     for (const bucket of data?.data ?? []) {
       if (!bucket.starting_at) continue;
       const date = bucket.starting_at.slice(0, 10);
-      let usd = 0;
+      let cents = 0;
       for (const r of bucket.results ?? []) {
         const n = typeof r.amount === "string" ? Number(r.amount) : (r.amount ?? 0);
-        if (Number.isFinite(n)) usd += Number(n);
+        if (Number.isFinite(n)) cents += Number(n);
       }
+      // Anthropic returns amount in lowest currency units (cents for USD).
+      const usd = cents / 100;
       out.push({ date, usd: Math.round(usd * 100) / 100 });
     }
 
