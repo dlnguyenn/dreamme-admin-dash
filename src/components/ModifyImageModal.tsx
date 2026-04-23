@@ -262,11 +262,12 @@ export function ModifyImageModal({
         <div
           style={{
             display: "flex",
+            flexDirection: isMobile ? "column" : "row",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: isMobile ? "stretch" : "center",
             marginTop: 16,
-            gap: 8,
-            flexWrap: "wrap",
+            gap: isMobile ? 12 : 8,
+            flexWrap: isMobile ? "nowrap" : "wrap",
           }}
         >
           <div
@@ -274,6 +275,7 @@ export function ModifyImageModal({
               fontSize: 11,
               fontFamily: "var(--font-geist-mono), monospace",
               color: "var(--ink-4)",
+              lineHeight: 1.45,
             }}
           >
             {status === "preview"
@@ -288,8 +290,22 @@ export function ModifyImageModal({
           </div>
 
           {status === "idle" && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="ghost" onClick={onClose}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column-reverse" : "row",
+                gap: 8,
+              }}
+            >
+              <Button
+                variant="ghost"
+                onClick={onClose}
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
+              >
                 Cancel
               </Button>
               <Button
@@ -297,6 +313,11 @@ export function ModifyImageModal({
                 icon={<Icons.Sparkles />}
                 onClick={() => generate(false)}
                 disabled={!prompt.trim()}
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
               >
                 Generate
               </Button>
@@ -305,15 +326,38 @@ export function ModifyImageModal({
 
           {status === "generating" && (
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="ghost" disabled>
+              <Button
+                variant="ghost"
+                disabled
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
+              >
                 Generating…
               </Button>
             </div>
           )}
 
           {(status === "preview" || status === "accepting") && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="ghost" onClick={discard} disabled={busy}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column-reverse" : "row",
+                gap: 8,
+              }}
+            >
+              <Button
+                variant="ghost"
+                onClick={discard}
+                disabled={busy}
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
+              >
                 Discard
               </Button>
               <Button
@@ -326,6 +370,11 @@ export function ModifyImageModal({
                     ? "Redo limit reached for this image — accept or discard"
                     : undefined
                 }
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
               >
                 {isAdmin ? "Redo" : `Redo (${redoLeft} left)`}
               </Button>
@@ -334,6 +383,11 @@ export function ModifyImageModal({
                 icon={<Icons.Check />}
                 onClick={accept}
                 disabled={busy}
+                style={
+                  isMobile
+                    ? { width: "100%", justifyContent: "center" }
+                    : undefined
+                }
               >
                 {status === "accepting" ? "Saving…" : "Accept changes"}
               </Button>
