@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   apifyUsageConfigured,
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const SERVICE_ROLE = (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
 
 export async function GET(req: Request) {
   if (!checkIngestAuth(req)) {

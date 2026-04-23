@@ -1,4 +1,4 @@
-import type { PersonaId } from "@/lib/personas";
+﻿import type { PersonaId } from "@/lib/personas";
 
 export interface HookRow {
   persona: PersonaId;
@@ -33,7 +33,7 @@ export function createPostgrestHookRepository(opts?: {
   existingMetaLimit?: number;
 }): HookRepository {
   const url = opts?.supabaseUrl ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = opts?.serviceRoleKey ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const key = opts?.serviceRoleKey ?? (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
   const limit = opts?.existingMetaLimit ?? 2000;
   if (!url || !key) {
     throw new Error("Supabase not configured for hook repository");

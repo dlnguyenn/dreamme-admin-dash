@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { apifyConfigured, runTikTokScrape } from "@/lib/apify";
 import {
   anthropicConfigured,
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !(process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)) {
     return NextResponse.json(
       { ok: false, error: "Supabase not configured" },
       { status: 500 },
@@ -57,7 +57,7 @@ export async function GET() {
     body: {
       personas: "optional PersonaId[] (default: all three)",
       resultsPerPage: "optional number (default 30)",
-      reocr: "optional boolean — re-OCR even if hook already known",
+      reocr: "optional boolean â€” re-OCR even if hook already known",
     },
   });
 }

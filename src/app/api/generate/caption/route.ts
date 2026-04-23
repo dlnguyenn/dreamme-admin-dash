@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const SERVICE_ROLE = (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
 
 const Body = z.object({
   hookId: z.string().min(1),
@@ -51,9 +51,9 @@ async function fetchRecentTipHeaders(limit = 20): Promise<string[]> {
     const text = r.caption ?? "";
     for (const line of text.split(/\r?\n/)) {
       const trimmed = line.trim();
-      if (trimmed.startsWith("✅")) {
+      if (trimmed.startsWith("âœ…")) {
         const stripped = trimmed
-          .replace(/^✅\s*\d+\.?\s*/, "")
+          .replace(/^âœ…\s*\d+\.?\s*/, "")
           .replace(/[.!?]+$/, "")
           .trim();
         if (stripped) headers.add(stripped);

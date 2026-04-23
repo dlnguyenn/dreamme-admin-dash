@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isModelId } from "@/lib/models";
 import { checkIngestAuth } from "@/lib/auth-ingest";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const SERVICE_ROLE = (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
 
 const Body = z.object({
   hookId: z.string().min(1),
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       },
     );
     if (!markRes.ok) {
-      // Non-fatal — caption is saved. Log and continue.
+      // Non-fatal â€” caption is saved. Log and continue.
       console.warn(
         `generated_hooks mark-used failed: ${markRes.status} ${await markRes.text()}`,
       );
