@@ -187,6 +187,18 @@ export const API = {
     await sbDelete("deliveries", id);
   },
 
+  async deleteDeliveries(ids: string[]) {
+    if (ids.length === 0) return;
+    const list = ids.map((x) => encodeURIComponent(x)).join(",");
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/deliveries?id=in.(${list})`,
+      { method: "DELETE", headers: HEADERS() },
+    );
+    if (!res.ok) {
+      throw new Error(`Supabase deliveries bulk delete failed: ${res.status}`);
+    }
+  },
+
   async fetchSpendLineItems(): Promise<SpendLineItem[]> {
     if (!SUPABASE_URL || !SUPABASE_ANON) {
       throw new Error(
