@@ -252,13 +252,29 @@ export const API = {
     file: File;
   }): Promise<Delivery> {
     const { base64, mime } = await fileToBase64(file);
+    return API.uploadBeforePhotoBase64({
+      personaId,
+      imageBase64: base64,
+      imageMime: mime,
+    });
+  },
+
+  async uploadBeforePhotoBase64({
+    personaId,
+    imageBase64,
+    imageMime,
+  }: {
+    personaId: PersonaId;
+    imageBase64: string;
+    imageMime?: string;
+  }): Promise<Delivery> {
     const res = await fetch("/api/deliveries/before", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         persona: personaId,
-        image_base64: base64,
-        image_mime: mime,
+        image_base64: imageBase64,
+        image_mime: imageMime ?? "image/png",
       }),
     });
     const body = (await res.json().catch(() => null)) as
@@ -268,6 +284,97 @@ export const API = {
       throw new Error(body?.error || `before upload failed: ${res.status}`);
     }
     return mapDelivery(body.row);
+  },
+
+  async listPersonaReferences(
+    personaId: PersonaId,
+  ): Promise<{ path: string; url: string }[]> {
+    const res = await fetch(
+      `/api/personas/references?persona=${encodeURIComponent(personaId)}`,
+      { cache: "no-store" },
+    );
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; items?: { path: string; url: string }[]; error?: string }
+      | null;
+    if (!res.ok || !body?.ok) {
+      throw new Error(body?.error || `reference list failed: ${res.status}`);
+    }
+    return body.items ?? [];
+  },
+
+  async uploadPersonaReference({
+    personaId,
+    file,
+  }: {
+    personaId: PersonaId;
+    file: File;
+  }): Promise<{ path: string; url: string }> {
+    const { base64, mime } = await fileToBase64(file);
+    const res = await fetch("/api/personas/references", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        persona: personaId,
+        image_base64: base64,
+        image_mime: mime,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; path?: string; url?: string; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.path || !body.url) {
+      throw new Error(body?.error || `reference upload failed: ${res.status}`);
+    }
+    return { path: body.path, url: body.url };
+  },
+
+  async deletePersonaReference(path: string): Promise<void> {
+    const res = await fetch("/api/personas/references", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; error?: string }
+      | null;
+    if (!res.ok || !body?.ok) {
+      throw new Error(body?.error || `reference delete failed: ${res.status}`);
+    }
+  },
+
+  async generateBeforePhotos({
+    personaId,
+    referenceImageUrl,
+    count = 2,
+  }: {
+    personaId: PersonaId;
+    referenceImageUrl: string;
+    count?: number;
+  }): Promise<{
+    images: { imageBase64: string; mimeType: string; targetLb: number }[];
+    partialErrors?: string[];
+  }> {
+    const res = await fetch("/api/generate/before-photo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        persona: personaId,
+        referenceImageUrl,
+        count,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          ok: boolean;
+          images?: { imageBase64: string; mimeType: string; targetLb: number }[];
+          partialErrors?: string[];
+          error?: string;
+        }
+      | null;
+    if (!res.ok || !body?.ok || !body.images) {
+      throw new Error(body?.error || `generate failed: ${res.status}`);
+    }
+    return { images: body.images, partialErrors: body.partialErrors };
   },
 
   async fetchDelivery(id: string): Promise<Delivery | null> {
