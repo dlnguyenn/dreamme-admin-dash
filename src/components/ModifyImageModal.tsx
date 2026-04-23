@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { Sheet } from "./Sheet";
+import { useIsMobile } from "@/lib/useIsMobile";
 import type { Delivery } from "@/lib/types";
 
 const MAX_REDOS = 3;
@@ -51,16 +53,7 @@ export function ModifyImageModal({
   );
   const [error, setError] = React.useState<string | null>(null);
   const toast = useToast();
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && status !== "generating" && status !== "accepting") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, status]);
+  const isMobile = useIsMobile();
 
   const generate = async (isRedo: boolean) => {
     if (!prompt.trim()) return;
@@ -145,39 +138,12 @@ export function ModifyImageModal({
     status === "preview" && !busy && (isAdmin || redoLeft > 0);
 
   return (
-    <>
-      <div
-        onClick={busy ? undefined : onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 40%, transparent)",
-          backdropFilter: "blur(2px)",
-          zIndex: 200,
-          animation: "fadeIn 160ms ease",
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 201,
-          width: "94vw",
-          maxWidth: 720,
-          maxHeight: "92vh",
-          overflow: "auto",
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          boxShadow: "var(--shadow-lg)",
-          padding: "24px 24px 20px",
-          animation: "fadeIn 180ms ease",
-        }}
-      >
+    <Sheet
+      open={true}
+      onClose={busy ? () => {} : onClose}
+      desktopMaxWidth={720}
+      ariaLabel="Modify image"
+    >
         <div
           style={{
             display: "flex",
@@ -374,8 +340,7 @@ export function ModifyImageModal({
             </div>
           )}
         </div>
-      </div>
-    </>
+    </Sheet>
   );
 }
 

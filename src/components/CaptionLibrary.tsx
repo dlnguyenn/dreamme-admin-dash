@@ -5,6 +5,7 @@ import { Icons } from "./Icons";
 import { Button, Chip, PersonaChip, useCopy, useToast } from "./ui";
 import { PageHeader } from "./Shell";
 import { CharCount } from "./CharCount";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
@@ -29,6 +30,17 @@ export function CaptionLibrary({
   const [draft, setDraft] = React.useState("");
   const toast = useToast();
   const { copy } = useCopy();
+  const isMobile = useIsMobile();
+  const filterStripRef = React.useRef<HTMLDivElement>(null);
+
+  // Auto-scroll active filter chip into view on mobile when filter changes
+  React.useEffect(() => {
+    if (!isMobile || !filterStripRef.current) return;
+    const active = filterStripRef.current.querySelector<HTMLButtonElement>(
+      "[data-filter-active='true']",
+    );
+    active?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [filter, isMobile]);
 
   const update = async (id: string, patch: Partial<SavedCaption>) => {
     setState((s) => ({
@@ -118,15 +130,17 @@ export function CaptionLibrary({
           display: "flex",
           gap: 12,
           alignItems: "center",
-          marginBottom: 24,
+          marginBottom: isMobile ? 16 : 24,
           flexWrap: "wrap",
+          flexDirection: isMobile ? "column" : "row",
         }}
       >
         <div
           style={{
             position: "relative",
-            flex: "1 1 300px",
-            maxWidth: 420,
+            flex: isMobile ? "1 1 auto" : "1 1 300px",
+            width: isMobile ? "100%" : undefined,
+            maxWidth: isMobile ? "100%" : 420,
           }}
         >
           <div
@@ -155,13 +169,26 @@ export function CaptionLibrary({
             }}
           />
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div
+          ref={filterStripRef}
+          className={isMobile ? "mobile-hscroll" : undefined}
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: isMobile ? "nowrap" : "wrap",
+            overflowX: isMobile ? "auto" : "visible",
+            width: isMobile ? "100%" : undefined,
+            scrollSnapType: isMobile ? "x proximity" : undefined,
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           {filters.map((f) => {
             const active = filter === f.id;
             return (
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
+                data-filter-active={active ? "true" : undefined}
                 style={{
                   padding: "7px 12px",
                   borderRadius: 999,
@@ -174,6 +201,9 @@ export function CaptionLibrary({
                   alignItems: "center",
                   gap: 6,
                   cursor: "pointer",
+                  flexShrink: isMobile ? 0 : undefined,
+                  scrollSnapAlign: isMobile ? "center" : undefined,
+                  whiteSpace: "nowrap",
                 }}
               >
                 {f.icon}
@@ -224,8 +254,10 @@ export function CaptionLibrary({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `repeat(${Math.max(1, gridSize - 1)}, 1fr)`,
-          gap: 16,
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : `repeat(${Math.max(1, gridSize - 1)}, 1fr)`,
+          gap: isMobile ? 12 : 16,
         }}
       >
         {filtered.map((c) => {
@@ -240,7 +272,7 @@ export function CaptionLibrary({
                 background: "var(--surface)",
                 border: "1px solid var(--line)",
                 borderRadius: 16,
-                padding: "18px 20px 16px",
+                padding: isMobile ? "16px 14px 12px" : "18px 20px 16px",
                 display: "flex",
                 flexDirection: "column",
                 transition:
@@ -458,6 +490,7 @@ function IconBtn({
   active?: boolean;
 }) {
   const [hover, setHover] = React.useState(false);
+  const isMobile = useIsMobile();
   return (
     <button
       onClick={onClick}
@@ -465,8 +498,8 @@ function IconBtn({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        width: 30,
-        height: 30,
+        width: isMobile ? 36 : 30,
+        height: isMobile ? 36 : 30,
         borderRadius: 8,
         display: "flex",
         alignItems: "center",

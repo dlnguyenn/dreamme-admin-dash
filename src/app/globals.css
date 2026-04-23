@@ -110,6 +110,39 @@ button {
   font-family: inherit;
   color: inherit;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a,
+[role="button"],
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile-specific: enlarge default tap targets and respect notches. Scoped to
+   the phone breakpoint so desktop density is untouched. */
+@media (max-width: 640px) {
+  :where(button, [role="button"], a.btn) {
+    min-height: 44px;
+  }
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Hide native scrollbar on horizontal tab strips marked with this class. */
+  .mobile-hscroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mobile-hscroll::-webkit-scrollbar {
+    display: none;
+  }
+  /* Prevent iOS text-size adjust on rotation. */
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 }
 
 input,
@@ -161,6 +194,22 @@ select {
   }
   to {
     transform: translateX(0);
+  }
+}
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheetSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
   }
 }
 @keyframes drift {

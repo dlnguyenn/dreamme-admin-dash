@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Gate } from "./Gate";
 import { NAV_ITEMS, Sidebar, visibleNavItems, type DashId } from "./Shell";
+import { MobileTopBar } from "./MobileTopBar";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
@@ -175,36 +177,18 @@ export function App() {
 
   return (
     <ToastProvider>
-      <div
-        style={{
-          display: "flex",
-          minHeight: "100vh",
-          alignItems: "stretch",
-        }}
+      <AppShell
+        current={current}
+        setCurrent={setCurrent}
+        logout={logout}
+        sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
+        role={role}
+        viewAs={viewAs}
+        setViewAs={setViewAs}
       >
-        <Sidebar
-          current={current}
-          setCurrent={setCurrent}
-          onLogout={logout}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          role={role}
-          viewAs={viewAs}
-          setViewAs={setViewAs}
-        />
-        <main
-          key={current}
-          style={{
-            flex: 1,
-            padding: "40px 44px 80px",
-            maxWidth: 1400,
-            width: "100%",
-            animation: "fadeIn 280ms ease",
-          }}
-        >
-          {screen}
-        </main>
-      </div>
+        {screen}
+      </AppShell>
       <TweaksPanel
         tweaks={tweaks}
         setTweaks={setTweaks}
@@ -212,6 +196,87 @@ export function App() {
         onClose={() => setTweaksOpen(false)}
       />
     </ToastProvider>
+  );
+}
+
+function AppShell({
+  current,
+  setCurrent,
+  logout,
+  sidebarCollapsed,
+  setSidebarCollapsed,
+  role,
+  viewAs,
+  setViewAs,
+  children,
+}: {
+  current: DashId;
+  setCurrent: (id: DashId) => void;
+  logout: () => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean) => void;
+  role: "admin" | "user";
+  viewAs: "admin" | "user";
+  setViewAs: (v: "admin" | "user") => void;
+  children: React.ReactNode;
+}) {
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <div style={{ minHeight: "100vh" }}>
+        <MobileTopBar
+          current={current}
+          setCurrent={setCurrent}
+          onLogout={logout}
+          role={role}
+          viewAs={viewAs}
+          setViewAs={setViewAs}
+        />
+        <main
+          key={current}
+          style={{
+            padding: "16px 16px 96px",
+            animation: "fadeIn 280ms ease",
+          }}
+        >
+          {children}
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "stretch",
+      }}
+    >
+      <Sidebar
+        current={current}
+        setCurrent={setCurrent}
+        onLogout={logout}
+        collapsed={sidebarCollapsed}
+        setCollapsed={setSidebarCollapsed}
+        role={role}
+        viewAs={viewAs}
+        setViewAs={setViewAs}
+      />
+      <main
+        key={current}
+        style={{
+          flex: 1,
+          padding: "40px 44px 80px",
+          maxWidth: 1400,
+          width: "100%",
+          animation: "fadeIn 280ms ease",
+        }}
+      >
+        {children}
+      </main>
+    </div>
   );
 }
 

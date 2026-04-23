@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { Sheet } from "./Sheet";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS } from "@/lib/personas";
 import type { Delivery } from "@/lib/types";
 
@@ -55,14 +57,7 @@ export function TransformationExportModal({
   const [busy, setBusy] = React.useState(false);
   const toast = useToast();
   const persona = PERSONAS[afterDelivery.personaId];
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, busy]);
+  const isMobile = useIsMobile();
 
   const selectedBefore = beforePhotos.find((b) => b.id === selectedBeforeId) ?? null;
   const hasBefore = beforePhotos.length > 0;
@@ -88,43 +83,24 @@ export function TransformationExportModal({
   };
 
   return (
-    <>
+    <Sheet
+      open={true}
+      onClose={busy ? () => {} : onClose}
+      desktopMaxWidth={880}
+      padded={false}
+      ariaLabel="Download as transformation"
+    >
       <div
-        onClick={busy ? undefined : onClose}
         style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 40%, transparent)",
-          backdropFilter: "blur(2px)",
-          zIndex: 200,
-          animation: "fadeIn 160ms ease",
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 201,
-          width: "94vw",
-          maxWidth: 880,
-          maxHeight: "90vh",
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          boxShadow: "var(--shadow-lg)",
           display: "flex",
           flexDirection: "column",
+          maxHeight: isMobile ? "92vh" : "90vh",
           overflow: "hidden",
-          animation: "fadeIn 180ms ease",
         }}
       >
         <div
           style={{
-            padding: "20px 24px 14px",
+            padding: isMobile ? "12px 16px 10px" : "20px 24px 14px",
             borderBottom: "1px solid var(--line)",
           }}
         >
@@ -157,7 +133,7 @@ export function TransformationExportModal({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: hasBefore ? "1fr 260px" : "1fr",
+            gridTemplateColumns: isMobile ? "1fr" : hasBefore ? "1fr 260px" : "1fr",
             gap: 0,
             flex: 1,
             minHeight: 0,
@@ -166,9 +142,14 @@ export function TransformationExportModal({
           {/* Left: before photo grid */}
           <div
             style={{
-              padding: "18px 20px",
+              padding: isMobile ? "14px 16px" : "18px 20px",
               overflow: "auto",
-              borderRight: hasBefore ? "1px solid var(--line)" : "none",
+              borderRight: isMobile
+                ? "none"
+                : hasBefore
+                  ? "1px solid var(--line)"
+                  : "none",
+              WebkitOverflowScrolling: "touch",
             }}
           >
             {!hasBefore ? (
@@ -294,11 +275,12 @@ export function TransformationExportModal({
           {hasBefore && (
             <div
               style={{
-                padding: "18px 20px",
+                padding: isMobile ? "14px 16px" : "18px 20px",
                 background: "var(--surface-2)",
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
+                order: isMobile ? -1 : 0,
               }}
             >
               <div
@@ -318,6 +300,7 @@ export function TransformationExportModal({
                   overflow: "hidden",
                   border: "1px solid var(--line)",
                   aspectRatio: "4 / 5",
+                  maxHeight: isMobile ? "34vh" : undefined,
                   background: "var(--surface)",
                 }}
               >
@@ -339,14 +322,20 @@ export function TransformationExportModal({
 
         <div
           style={{
-            padding: "14px 20px",
+            padding: isMobile ? "12px 14px" : "14px 20px",
             borderTop: "1px solid var(--line)",
             display: "flex",
+            flexDirection: isMobile ? "column-reverse" : "row",
             justifyContent: "flex-end",
             gap: 8,
           }}
         >
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            disabled={busy}
+            style={isMobile ? { width: "100%", justifyContent: "center" } : undefined}
+          >
             Close
           </Button>
           {hasBefore && (
@@ -355,12 +344,13 @@ export function TransformationExportModal({
               onClick={handleDownload}
               disabled={busy || !selectedBefore}
               icon={<Icons.Download />}
+              style={isMobile ? { width: "100%", justifyContent: "center" } : undefined}
             >
               {busy ? "Downloading…" : "Download both"}
             </Button>
           )}
         </div>
       </div>
-    </>
+    </Sheet>
   );
 }

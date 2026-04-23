@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { Sheet } from "./Sheet";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { API } from "@/lib/supabase";
 import { PERSONAS, type PersonaId } from "@/lib/personas";
 import type { Delivery } from "@/lib/types";
@@ -67,6 +69,7 @@ export function BeforePhotoGenerator({
   const persona = PERSONAS[personaId];
   const toast = useToast();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   const [isAdmin] = React.useState<boolean>(() => readIsAdmin());
   const [view, setView] = React.useState<View>("pick");
@@ -98,14 +101,6 @@ export function BeforePhotoGenerator({
     !!selectedPath &&
     references.length > 0 &&
     (isAdmin || left > 0);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, busy]);
 
   const loadReferences = React.useCallback(async () => {
     setLoadingRefs(true);
@@ -235,44 +230,25 @@ export function BeforePhotoGenerator({
   };
 
   return (
-    <>
+    <Sheet
+      open={true}
+      onClose={busy ? () => {} : onClose}
+      desktopMaxWidth={880}
+      padded={false}
+      ariaLabel="Generate before photo"
+    >
       <div
-        onClick={busy ? undefined : onClose}
         style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 40%, transparent)",
-          backdropFilter: "blur(2px)",
-          zIndex: 200,
-          animation: "fadeIn 160ms ease",
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 201,
-          width: "94vw",
-          maxWidth: 880,
-          maxHeight: "90vh",
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          boxShadow: "var(--shadow-lg)",
           display: "flex",
           flexDirection: "column",
+          maxHeight: isMobile ? "92vh" : "90vh",
           overflow: "hidden",
-          animation: "fadeIn 180ms ease",
         }}
       >
         {/* Header */}
         <div
           style={{
-            padding: "20px 24px 14px",
+            padding: isMobile ? "12px 16px 12px" : "20px 24px 14px",
             borderBottom: "1px solid var(--line)",
             display: "flex",
             alignItems: "flex-start",
@@ -338,7 +314,14 @@ export function BeforePhotoGenerator({
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: isMobile ? "14px 14px" : "18px 20px",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           {view === "pick" ? (
             <PickView
               persona={persona}
@@ -377,12 +360,13 @@ export function BeforePhotoGenerator({
         {/* Footer */}
         <div
           style={{
-            padding: "14px 20px",
+            padding: isMobile ? "12px 14px" : "14px 20px",
             borderTop: "1px solid var(--line)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             gap: 8,
+            flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
@@ -450,7 +434,7 @@ export function BeforePhotoGenerator({
           </div>
         </div>
       </div>
-    </>
+    </Sheet>
   );
 }
 
@@ -587,7 +571,7 @@ function PickView({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
           gap: 10,
         }}
       >

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button } from "./ui";
 import { Icons } from "./Icons";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 const USER_PASSWORD = "dreamme";
 const ADMIN_PASSWORD = "dreammeAdmin";
@@ -13,6 +14,7 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
   const [pw, setPw] = React.useState("");
   const [err, setErr] = React.useState(false);
   const [shake, setShake] = React.useState(false);
+  const isMobile = useIsMobile();
 
   const submit = (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault();
@@ -87,13 +89,13 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
           position: "relative",
           zIndex: 1,
           width: "100%",
-          maxWidth: 440,
+          maxWidth: isMobile ? 360 : 440,
           background: "color-mix(in oklab, var(--surface) 85%, transparent)",
           backdropFilter: "blur(20px) saturate(1.2)",
           WebkitBackdropFilter: "blur(20px) saturate(1.2)",
           border: "1px solid color-mix(in oklab, var(--line) 60%, transparent)",
           borderRadius: 24,
-          padding: "40px 36px 32px",
+          padding: isMobile ? "28px 22px 24px" : "40px 36px 32px",
           boxShadow: "var(--shadow-lg)",
           animation: shake ? "shake 400ms ease" : "fadeIn 500ms ease",
         }}
@@ -141,7 +143,7 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
         <h1
           className="serif"
           style={{
-            fontSize: 36,
+            fontSize: isMobile ? 28 : 36,
             fontWeight: 400,
             margin: "0 0 8px",
             lineHeight: 1.1,

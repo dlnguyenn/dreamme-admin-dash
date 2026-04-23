@@ -3,11 +3,14 @@
 import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, useCopy } from "./ui";
+import { Sheet } from "./Sheet";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { SUPABASE_URL, SUPABASE_ANON, SUPABASE_BUCKET } from "@/lib/supabase";
 
 export function WebhookModal({ onClose }: { onClose: () => void }) {
   const { copied, copy } = useCopy();
   const [tab, setTab] = React.useState<"http" | "storage" | "curl">("http");
+  const isMobile = useIsMobile();
 
   const httpConfig = `METHOD:   POST
 URL:      ${SUPABASE_URL}/rest/v1/deliveries
@@ -55,39 +58,23 @@ the row server-side.`;
   const content = tab === "http" ? httpConfig : tab === "curl" ? curlTest : imgUploadNote;
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 40%, transparent)",
-          backdropFilter: "blur(4px)",
-          zIndex: 200,
-        }}
-      />
+    <Sheet
+      open={true}
+      onClose={onClose}
+      desktopMaxWidth={720}
+      padded={false}
+      ariaLabel="n8n Supabase setup"
+    >
       <div
         style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 720,
-          maxWidth: "94vw",
-          maxHeight: "88vh",
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: 20,
-          boxShadow: "var(--shadow-lg)",
-          zIndex: 201,
-          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          maxHeight: isMobile ? "92vh" : "88vh",
         }}
       >
         <div
           style={{
-            padding: "22px 26px",
+            padding: isMobile ? "14px 16px" : "22px 26px",
             borderBottom: "1px solid var(--line)",
             display: "flex",
             alignItems: "center",
@@ -108,7 +95,7 @@ the row server-side.`;
             </div>
             <div
               className="serif"
-              style={{ fontSize: 24, fontWeight: 400, marginTop: 4 }}
+              style={{ fontSize: isMobile ? 20 : 24, fontWeight: 400, marginTop: 4 }}
             >
               n8n → Supabase setup
             </div>
@@ -132,11 +119,13 @@ the row server-side.`;
         </div>
 
         <div
+          className={isMobile ? "mobile-hscroll" : undefined}
           style={{
-            padding: "18px 26px 0",
+            padding: isMobile ? "12px 16px 0" : "18px 26px 0",
             borderBottom: "1px solid var(--line)",
             display: "flex",
             gap: 4,
+            overflowX: isMobile ? "auto" : "visible",
           }}
         >
           {[
@@ -157,6 +146,8 @@ the row server-side.`;
                 borderBottom: `2px solid ${tab === t.id ? "var(--ink)" : "transparent"}`,
                 cursor: "pointer",
                 marginBottom: -1,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}
             >
               {t.label}
@@ -164,7 +155,12 @@ the row server-side.`;
           ))}
         </div>
 
-        <div style={{ padding: "20px 26px 24px", overflow: "auto" }}>
+        <div
+          style={{
+            padding: isMobile ? "16px" : "20px 26px 24px",
+            overflow: "auto",
+          }}
+        >
           {tab === "http" && (
             <p style={{ color: "var(--ink-3)", fontSize: 14, lineHeight: 1.6, margin: "0 0 14px" }}>
               Add an{" "}
@@ -252,6 +248,6 @@ the row server-side.`;
           </div>
         </div>
       </div>
-    </>
+    </Sheet>
   );
 }

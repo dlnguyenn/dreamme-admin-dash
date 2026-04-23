@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Icons } from "./Icons";
 import { Button, PersonaChip, ToastProvider, useCopy, useToast } from "./ui";
 import { Gate } from "./Gate";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { API } from "@/lib/supabase";
 import { PERSONAS } from "@/lib/personas";
 import { formatDate, formatTime } from "@/lib/format";
@@ -44,6 +45,7 @@ function ItemBody({ id }: { id: string }) {
   const [error, setError] = React.useState<string | null>(null);
   const { copied, copy } = useCopy();
   const toast = useToast();
+  const isMobile = useIsMobile();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -107,7 +109,7 @@ function ItemBody({ id }: { id: string }) {
       style={{
         maxWidth: 860,
         margin: "0 auto",
-        padding: "40px 28px 80px",
+        padding: isMobile ? "16px 14px 80px" : "40px 28px 80px",
       }}
     >
       <div
