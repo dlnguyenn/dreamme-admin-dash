@@ -14,13 +14,18 @@ const INGEST_SECRET = process.env.INGEST_TOKEN ?? "";
 const ItemSchema = z
   .object({
     persona: z.enum(["andrea", "emma", "olivia", "mia", "abby", "diane", "sydney", "maddy"]),
-    caption: z.string().min(1),
+    caption: z.string().optional(),
     image_url: z.string().url().optional(),
     image_base64: z.string().min(1).optional(),
     image_mime: z.string().optional(),
+    is_before: z.boolean().optional().default(false),
   })
   .refine((v) => !!v.image_url || !!v.image_base64, {
     message: "Provide either image_url or image_base64",
+  })
+  .refine((v) => v.is_before || (v.caption && v.caption.length > 0), {
+    message: "caption is required when is_before is false",
+    path: ["caption"],
   });
 
 const Payload = z.union([
@@ -97,9 +102,12 @@ async function ingestOne(
   raw: z.infer<typeof ItemSchema>,
   sharedCaption?: string,
 ) {
-  const caption = raw.caption ?? sharedCaption ?? "";
-  if (!caption) throw new Error("caption missing");
+  const isBefore = !!raw.is_before;
+  const caption = isBefore ? (raw.caption ?? "") : (raw.caption ?? sharedCaption ?? "");
+  if (!isBefore && !caption) throw new Error("caption missing");
   if (!isPersonaId(raw.persona)) throw new Error("bad persona");
+
+  const pathPrefix = isBefore ? `before/${raw.persona}` : raw.persona;
 
   let imageUrl = raw.image_url ?? "";
 
@@ -108,7 +116,7 @@ async function ingestOne(
     const bytes = Buffer.from(clean, "base64");
     const mime = raw.image_mime ?? "image/png";
     const ext = extOf(mime, undefined);
-    const path = `${raw.persona}/${Date.now()}-${crypto
+    const path = `${pathPrefix}/${Date.now()}-${crypto
       .randomUUID()
       .slice(0, 8)}.${ext}`;
     imageUrl = await uploadBytes(bytes, path, mime);
@@ -120,7 +128,7 @@ async function ingestOne(
     const buf = await resp.arrayBuffer();
     const mime = resp.headers.get("content-type") ?? "image/png";
     const ext = extOf(mime, raw.image_url);
-    const path = `${raw.persona}/${Date.now()}-${crypto
+    const path = `${pathPrefix}/${Date.now()}-${crypto
       .randomUUID()
       .slice(0, 8)}.${ext}`;
     imageUrl = await uploadBytes(buf, path, mime);
@@ -138,6 +146,7 @@ async function ingestOne(
       persona: raw.persona,
       caption,
       image_url: imageUrl,
+      is_before: isBefore,
     }),
   });
   if (!insert.ok) {
@@ -198,10 +207,11 @@ export async function GET() {
     schema: {
       single: {
         persona: "andrea | emma | olivia | mia | abby | diane | sydney | maddy",
-        caption: "string",
+        caption: "string (required unless is_before=true)",
         image_url: "string (optional)",
         image_base64: "string (optional)",
         image_mime: "string (optional, default image/png)",
+        is_before: "boolean (optional, default false) - marks this as a before photo for transformation posts",
       },
       batched: {
         caption: "optional fallback for items without caption",

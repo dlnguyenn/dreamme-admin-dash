@@ -9,11 +9,16 @@ import { DetailDrawer } from "./DetailDrawer";
 import { WebhookModal } from "./WebhookModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ModifyImageModal } from "./ModifyImageModal";
+import { BeforePhotoUploader } from "./BeforePhotoUploader";
+import { TransformationExportModal } from "./TransformationExportModal";
 import { useCopy } from "./ui";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
 import type { DashState, Delivery } from "@/lib/types";
+
+type PipelineMode = "after" | "before";
+const MODE_STORAGE_KEY = "dreamme.contentPipeline.mode";
 
 export function ContentPipeline({
   state,
@@ -29,6 +34,7 @@ export function ContentPipeline({
   syncError: string | null;
 }) {
   const [tab, setTab] = React.useState<"all" | PersonaId>("all");
+  const [mode, setModeRaw] = React.useState<PipelineMode>("after");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [webhookOpen, setWebhookOpen] = React.useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
@@ -36,8 +42,27 @@ export function ContentPipeline({
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
+  const [transformingDelivery, setTransformingDelivery] = React.useState<Delivery | null>(null);
+  const [uploaderOpen, setUploaderOpen] = React.useState(false);
   const toast = useToast();
   const { copy } = useCopy();
+
+  // Restore mode from session storage on mount.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.sessionStorage.getItem(MODE_STORAGE_KEY);
+    if (saved === "before" || saved === "after") setModeRaw(saved);
+  }, []);
+
+  const setMode = React.useCallback((next: PipelineMode) => {
+    setModeRaw(next);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(MODE_STORAGE_KEY, next);
+    }
+    // Leaving selection mode on mode switch avoids confusing cross-mode deletes.
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
 
   const exitSelectionMode = () => {
     setSelectionMode(false);
@@ -105,16 +130,21 @@ export function ContentPipeline({
     }
   };
 
+  const modeItems = React.useMemo(
+    () => state.items.filter((x) => x.isBefore === (mode === "before")),
+    [state.items, mode],
+  );
+
   const filtered = React.useMemo(() => {
     const arr =
-      tab === "all" ? state.items : state.items.filter((x) => x.personaId === tab);
+      tab === "all" ? modeItems : modeItems.filter((x) => x.personaId === tab);
     return arr
       .slice()
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
-  }, [state.items, tab]);
+  }, [modeItems, tab]);
 
   const grouped = React.useMemo(() => {
     const g: Record<string, Delivery[]> = {};
@@ -127,11 +157,21 @@ export function ContentPipeline({
   }, [filtered]);
 
   const counts = React.useMemo(() => {
-    const c: Record<string, number> = { all: state.items.length };
+    const c: Record<string, number> = { all: modeItems.length };
     PERSONA_IDS.forEach((pid) => {
-      c[pid] = state.items.filter((x) => x.personaId === pid).length;
+      c[pid] = modeItems.filter((x) => x.personaId === pid).length;
     });
     return c;
+  }, [modeItems]);
+
+  const modeCounts = React.useMemo(() => {
+    let afterN = 0;
+    let beforeN = 0;
+    for (const x of state.items) {
+      if (x.isBefore) beforeN++;
+      else afterN++;
+    }
+    return { after: afterN, before: beforeN };
   }, [state.items]);
 
   const saveCaptionToLibrary = async (item: Delivery) => {
@@ -199,13 +239,35 @@ export function ContentPipeline({
             >
               Refresh
             </Button>
-            <Button
-              variant="secondary"
-              icon={<Icons.Webhook />}
-              onClick={() => setWebhookOpen(true)}
-            >
-              n8n setup
-            </Button>
+            {mode === "after" ? (
+              <Button
+                variant="secondary"
+                icon={<Icons.Webhook />}
+                onClick={() => setWebhookOpen(true)}
+              >
+                n8n setup
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                icon={<Icons.Upload />}
+                onClick={() => {
+                  if (tab === "all") {
+                    toast("Pick a persona tab first to upload before photos");
+                    return;
+                  }
+                  setUploaderOpen(true);
+                }}
+                disabled={tab === "all"}
+                title={
+                  tab === "all"
+                    ? "Pick a persona tab first"
+                    : `Upload before photos for ${PERSONAS[tab as PersonaId].name}`
+                }
+              >
+                Upload before photos
+              </Button>
+            )}
           </>
         }
       />
@@ -222,23 +284,42 @@ export function ContentPipeline({
           marginBottom: 28,
         }}
       >
-        {[
-          { label: "Total deliveries", value: state.items.length, accent: null },
-          {
-            label: "This week",
-            value: state.items.filter(
-              (x) =>
-                Date.now() - new Date(x.createdAt).getTime() < 7 * 86400000,
-            ).length,
-            accent: null,
-          },
-          { label: "In library", value: state.savedCaptions.length, accent: "var(--accent)" },
-          {
-            label: "Marked posted",
-            value: state.items.filter((x) => x.posted).length,
-            accent: "var(--p-olivia)",
-          },
-        ].map((s, i) => (
+        {(mode === "after"
+          ? [
+              { label: "Total deliveries", value: modeItems.length, accent: null },
+              {
+                label: "This week",
+                value: modeItems.filter(
+                  (x) =>
+                    Date.now() - new Date(x.createdAt).getTime() < 7 * 86400000,
+                ).length,
+                accent: null,
+              },
+              { label: "In library", value: state.savedCaptions.length, accent: "var(--accent)" },
+              {
+                label: "Marked posted",
+                value: modeItems.filter((x) => x.posted).length,
+                accent: "var(--p-olivia)",
+              },
+            ]
+          : [
+              { label: "Before photos", value: modeItems.length, accent: null },
+              {
+                label: "Personas covered",
+                value: new Set(modeItems.map((x) => x.personaId)).size,
+                accent: null,
+              },
+              {
+                label: "Added this week",
+                value: modeItems.filter(
+                  (x) =>
+                    Date.now() - new Date(x.createdAt).getTime() < 7 * 86400000,
+                ).length,
+                accent: null,
+              },
+              { label: "After photos", value: modeCounts.after, accent: "var(--ink-3)" },
+            ]
+        ).map((s, i) => (
           <div key={i} style={{ background: "var(--surface)", padding: "18px 20px" }}>
             <div
               style={{
@@ -265,6 +346,71 @@ export function ContentPipeline({
             </div>
           </div>
         ))}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 28,
+        }}
+      >
+        <div
+          role="tablist"
+          aria-label="Photo type"
+          style={{
+            display: "inline-flex",
+            padding: 4,
+            background: "var(--surface-2)",
+            border: "1px solid var(--line)",
+            borderRadius: 12,
+          }}
+        >
+          {([
+            { id: "after" as const, label: "After photos", count: modeCounts.after },
+            { id: "before" as const, label: "Before library", count: modeCounts.before },
+          ]).map((m) => {
+            const active = mode === m.id;
+            return (
+              <button
+                key={m.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setMode(m.id)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "7px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: active ? "var(--surface)" : "transparent",
+                  boxShadow: active ? "var(--shadow-sm)" : "none",
+                  color: "var(--ink)",
+                  fontSize: 13,
+                  fontWeight: active ? 500 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {m.label}
+                <span
+                  style={{
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    fontSize: 10,
+                    color: "var(--ink-3)",
+                    padding: "1px 6px",
+                    background: active ? "var(--bg-2)" : "transparent",
+                    borderRadius: 4,
+                  }}
+                >
+                  {m.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div
@@ -395,7 +541,7 @@ export function ContentPipeline({
         </div>
       )}
 
-      {Object.keys(grouped).length === 0 && (
+      {Object.keys(grouped).length === 0 && mode === "after" && (
         <div
           style={{
             padding: 60,
@@ -422,6 +568,41 @@ export function ContentPipeline({
           >
             Show n8n config
           </Button>
+        </div>
+      )}
+
+      {Object.keys(grouped).length === 0 && mode === "before" && (
+        <div
+          style={{
+            padding: 60,
+            textAlign: "center",
+            color: "var(--ink-3)",
+            border: "1px dashed var(--line-2)",
+            borderRadius: 16,
+          }}
+        >
+          <div
+            className="serif"
+            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
+          >
+            {tab === "all"
+              ? "No before photos yet."
+              : `No before photos for ${PERSONAS[tab as PersonaId].name} yet.`}
+          </div>
+          <div style={{ fontSize: 13, marginBottom: 16 }}>
+            {tab === "all"
+              ? "Pick a persona tab above, then upload before photos to use in transformation exports."
+              : "Upload before photos here — they'll be available when exporting a transformation from any after photo of this persona."}
+          </div>
+          {tab !== "all" && (
+            <Button
+              variant="primary"
+              icon={<Icons.Upload />}
+              onClick={() => setUploaderOpen(true)}
+            >
+              Upload before photos
+            </Button>
+          )}
         </div>
       )}
 
@@ -492,6 +673,14 @@ export function ContentPipeline({
                     e.stopPropagation();
                     setConfirmDeleteId(item.id);
                   }}
+                  onTransform={
+                    mode === "after" && !item.isBefore
+                      ? (e) => {
+                          e.stopPropagation();
+                          setTransformingDelivery(item);
+                        }
+                      : undefined
+                  }
                 />
               );
             })}
@@ -546,6 +735,31 @@ export function ContentPipeline({
       )}
 
       {webhookOpen && <WebhookModal onClose={() => setWebhookOpen(false)} />}
+
+      {uploaderOpen && tab !== "all" && (
+        <BeforePhotoUploader
+          personaId={tab as PersonaId}
+          onUploaded={(rows) => {
+            setState((s) => ({ ...s, items: [...rows, ...s.items] }));
+          }}
+          onClose={() => setUploaderOpen(false)}
+        />
+      )}
+
+      {transformingDelivery && (
+        <TransformationExportModal
+          afterDelivery={transformingDelivery}
+          beforePhotos={state.items.filter(
+            (x) =>
+              x.isBefore && x.personaId === transformingDelivery.personaId,
+          )}
+          onClose={() => setTransformingDelivery(null)}
+          onJumpToBeforeLibrary={() => {
+            setTab(transformingDelivery.personaId);
+            setMode("before");
+          }}
+        />
+      )}
 
       {modifyingId && (() => {
         const target = state.items.find((x) => x.id === modifyingId);

@@ -14,6 +14,7 @@ export function ContentCard({
   onToggleStar,
   onCopyLink,
   onDelete,
+  onTransform,
   selectionMode = false,
   selected = false,
 }: {
@@ -23,6 +24,7 @@ export function ContentCard({
   onToggleStar: (e: React.MouseEvent) => void;
   onCopyLink: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
+  onTransform?: (e: React.MouseEvent) => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
@@ -212,8 +214,37 @@ export function ContentCard({
               <Icons.Star size={15} stroke="var(--ink-2)" />
             )}
           </button>
+          {onTransform && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTransform(e);
+              }}
+              aria-label="Download as transformation"
+              title="Download as transformation"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background:
+                  "color-mix(in oklab, var(--surface) 80%, transparent)",
+                backdropFilter: "blur(8px)",
+                WebkitBackdropFilter: "blur(8px)",
+                border:
+                  "1px solid color-mix(in oklab, var(--line) 60%, transparent)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: hover ? 1 : 0,
+                transition: "opacity 160ms ease",
+                cursor: "pointer",
+              }}
+            >
+              <Icons.Swap size={15} stroke="var(--ink-2)" />
+            </button>
+          )}
         </div>
-        {item.posted && (
+        {item.posted && !item.isBefore && (
           <div
             style={{
               position: "absolute",
@@ -237,6 +268,29 @@ export function ContentCard({
             }}
           >
             <Icons.Check size={10} /> Posted
+          </div>
+        )}
+        {item.isBefore && (
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              left: 10,
+              padding: "3px 8px",
+              borderRadius: 999,
+              background: "color-mix(in oklab, var(--ink) 70%, transparent)",
+              color: "var(--surface)",
+              fontSize: 10,
+              fontFamily: "var(--font-geist-mono), monospace",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              fontWeight: 500,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            Before
           </div>
         )}
       </div>
@@ -271,9 +325,12 @@ export function ContentCard({
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
             textOverflow: "ellipsis",
+            fontStyle: item.isBefore ? "italic" : "normal",
           }}
         >
-          {item.caption.slice(0, 160)}…
+          {item.isBefore
+            ? "Before photo · transformation asset"
+            : `${item.caption.slice(0, 160)}…`}
         </div>
       </div>
     </div>

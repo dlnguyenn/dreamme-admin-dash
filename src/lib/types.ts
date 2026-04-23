@@ -8,6 +8,7 @@ export interface Delivery {
   posted: boolean;
   starred: boolean;
   inLibrary: boolean;
+  isBefore: boolean;
   createdAt: string;
 }
 
@@ -35,6 +36,7 @@ export interface DeliveryRow {
   posted: boolean | null;
   starred: boolean | null;
   in_library: boolean | null;
+  is_before: boolean | null;
   created_at: string;
 }
 
