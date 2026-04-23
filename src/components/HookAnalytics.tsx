@@ -30,6 +30,7 @@ export function HookAnalytics() {
     "all",
   );
   const [running, setRunning] = React.useState<"scrape" | "generate" | null>(null);
+  const [generatingPersona, setGeneratingPersona] = React.useState<PersonaId | null>(null);
   const [captionHookId, setCaptionHookId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
@@ -68,21 +69,23 @@ export function HookAnalytics() {
     }
   };
 
-  const runGenerate = async () => {
+  const runGeneratePersona = async (pid: PersonaId) => {
+    setGeneratingPersona(pid);
     setRunning("generate");
     try {
       const res = await fetch("/api/generate/hooks", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ perPersona: 2 }),
+        body: JSON.stringify({ perPersona: 2, personas: [pid] }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      toast(`Generated ${json.generated} hooks`);
+      toast(`Generated ${json.generated} hooks for ${PERSONAS[pid].name}`);
       await refresh();
     } catch (e) {
       toast(`Generate failed — ${(e as Error).message}`);
     } finally {
+      setGeneratingPersona(null);
       setRunning(null);
     }
   };
@@ -181,14 +184,6 @@ export function HookAnalytics() {
             >
               {running === "scrape" ? "Scraping…" : "Scrape now"}
             </Button>
-            <Button
-              variant="primary"
-              icon={<Icons.Sparkles />}
-              onClick={runGenerate}
-              disabled={running !== null}
-            >
-              {running === "generate" ? "Generating…" : "Generate hooks"}
-            </Button>
           </>
         }
       />
@@ -259,11 +254,6 @@ export function HookAnalytics() {
         />
         {loading ? (
           <EmptyBlock>Loading…</EmptyBlock>
-        ) : generated.length === 0 ? (
-          <EmptyBlock>
-            No hooks generated yet. Click{" "}
-            <strong>Generate hooks</strong> once you have a few scraped posts.
-          </EmptyBlock>
         ) : (
           <div
             style={{
@@ -292,6 +282,16 @@ export function HookAnalytics() {
                   >
                     {genForPersona(pid).length} hooks
                   </span>
+                  <div style={{ flex: 1 }} />
+                  <Button
+                    variant="secondary"
+                    icon={<Icons.Sparkles size={12} />}
+                    onClick={() => runGeneratePersona(pid)}
+                    disabled={running !== null}
+                    title={`Generate hooks for ${PERSONAS[pid].name}`}
+                  >
+                    {generatingPersona === pid ? "Generating…" : "Generate"}
+                  </Button>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {genForPersona(pid)
