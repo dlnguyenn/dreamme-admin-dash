@@ -4,6 +4,8 @@ import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, PersonaChip, useCopy, useToast } from "./ui";
 import { CharCount } from "./CharCount";
+import { SideDrawer } from "./SideDrawer";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { formatDate, formatTime } from "@/lib/format";
 import type { Delivery } from "@/lib/types";
 import type { Persona } from "@/lib/personas";
@@ -36,19 +38,12 @@ export function DetailDrawer({
   const { copied, copy } = useCopy();
   const { copied: linkCopied, copy: copyLink } = useCopy();
   const toast = useToast();
+  const isMobile = useIsMobile();
 
   React.useEffect(() => {
     setDraft(item.caption);
     setEditing(false);
   }, [item.id, item.caption]);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const chars = draft.length;
   const overLimit = chars > TIKTOK_LIMIT;
@@ -59,43 +54,25 @@ export function DetailDrawer({
   };
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 30%, transparent)",
-          backdropFilter: "blur(2px)",
-          zIndex: 100,
-          animation: "fadeIn 200ms ease",
-        }}
-      />
-      <aside
-        style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 720,
-          maxWidth: "92vw",
-          background: "var(--surface)",
-          boxShadow: "var(--shadow-drawer)",
-          zIndex: 101,
-          display: "flex",
-          flexDirection: "column",
-          animation: "slideIn 280ms cubic-bezier(.4,0,.2,1)",
-        }}
-      >
+    <SideDrawer
+      open={true}
+      onClose={onClose}
+      side="right"
+      desktopWidth={720}
+      ariaLabel="Delivery detail"
+    >
         <div
           style={{
-            padding: "18px 24px",
+            padding: isMobile ? "14px 16px" : "18px 24px",
             borderBottom: "1px solid var(--line)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: 12,
             background: persona.soft,
+            paddingTop: isMobile
+              ? "calc(14px + env(safe-area-inset-top))"
+              : undefined,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -128,13 +105,20 @@ export function DetailDrawer({
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: isMobile ? "16px" : "24px 28px",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <div
             style={{
               borderRadius: 14,
               overflow: "hidden",
               border: "1px solid var(--line)",
-              marginBottom: 24,
+              marginBottom: isMobile ? 16 : 24,
               background: persona.soft,
             }}
           >
@@ -156,7 +140,7 @@ export function DetailDrawer({
               display: "flex",
               gap: 8,
               flexWrap: "wrap",
-              marginBottom: 24,
+              marginBottom: isMobile ? 16 : 24,
             }}
           >
             <Button
@@ -275,12 +259,12 @@ export function DetailDrawer({
             {!editing ? (
               <div
                 style={{
-                  padding: "18px 20px",
+                  padding: isMobile ? "14px 16px" : "18px 20px",
                   fontSize: 14,
                   lineHeight: 1.7,
                   color: "var(--ink-2)",
                   whiteSpace: "pre-wrap",
-                  maxHeight: 320,
+                  maxHeight: isMobile ? "32vh" : 320,
                   overflow: "auto",
                 }}
               >
@@ -293,8 +277,9 @@ export function DetailDrawer({
                 autoFocus
                 style={{
                   width: "100%",
-                  minHeight: 260,
-                  padding: "18px 20px",
+                  minHeight: isMobile ? 180 : 260,
+                  maxHeight: isMobile ? "32vh" : undefined,
+                  padding: isMobile ? "14px 16px" : "18px 20px",
                   fontSize: 14,
                   lineHeight: 1.7,
                   fontFamily: "var(--font-geist), sans-serif",
@@ -375,7 +360,6 @@ export function DetailDrawer({
             </div>
           </div>
         </div>
-      </aside>
-    </>
+    </SideDrawer>
   );
 }

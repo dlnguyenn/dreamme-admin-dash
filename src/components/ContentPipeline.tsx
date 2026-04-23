@@ -13,6 +13,7 @@ import { BeforePhotoUploader } from "./BeforePhotoUploader";
 import { BeforePhotoGenerator } from "./BeforePhotoGenerator";
 import { TransformationExportModal } from "./TransformationExportModal";
 import { useCopy } from "./ui";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
@@ -48,6 +49,25 @@ export function ContentPipeline({
   const [generatorOpen, setGeneratorOpen] = React.useState(false);
   const toast = useToast();
   const { copy } = useCopy();
+  const isMobile = useIsMobile();
+  const personaTabsRef = React.useRef<HTMLDivElement | null>(null);
+
+  // On mobile: scroll the active persona tab into view when it changes so
+  // creators can see which tab they've selected even if it was off-screen.
+  React.useEffect(() => {
+    if (!isMobile) return;
+    const strip = personaTabsRef.current;
+    if (!strip) return;
+    const active = strip.querySelector<HTMLButtonElement>(
+      'button[data-tab-active="true"]',
+    );
+    if (active)
+      active.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+  }, [tab, isMobile]);
 
   // Restore mode from session storage on mount.
   React.useEffect(() => {
@@ -298,13 +318,13 @@ export function ContentPipeline({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
           gap: 1,
           background: "var(--line)",
           border: "1px solid var(--line)",
           borderRadius: 14,
           overflow: "hidden",
-          marginBottom: 28,
+          marginBottom: isMobile ? 20 : 28,
         }}
       >
         {(mode === "after"
@@ -343,10 +363,16 @@ export function ContentPipeline({
               { label: "After photos", value: modeCounts.after, accent: "var(--ink-3)" },
             ]
         ).map((s, i) => (
-          <div key={i} style={{ background: "var(--surface)", padding: "18px 20px" }}>
+          <div
+            key={i}
+            style={{
+              background: "var(--surface)",
+              padding: isMobile ? "12px 14px" : "18px 20px",
+            }}
+          >
             <div
               style={{
-                fontSize: 10,
+                fontSize: isMobile ? 9 : 10,
                 fontFamily: "var(--font-geist-mono), monospace",
                 textTransform: "uppercase",
                 letterSpacing: "0.1em",
@@ -358,7 +384,7 @@ export function ContentPipeline({
             <div
               className="serif"
               style={{
-                fontSize: 32,
+                fontSize: isMobile ? 24 : 32,
                 fontWeight: 400,
                 letterSpacing: "-0.02em",
                 marginTop: 4,
@@ -437,15 +463,20 @@ export function ContentPipeline({
       </div>
 
       <div
+        ref={personaTabsRef}
+        className={isMobile ? "mobile-hscroll" : undefined}
         style={{
           display: "flex",
           gap: 6,
-          marginBottom: 28,
+          marginBottom: isMobile ? 18 : 28,
           padding: 5,
           background: "var(--surface-2)",
           border: "1px solid var(--line)",
           borderRadius: 12,
-          width: "fit-content",
+          width: isMobile ? "100%" : "fit-content",
+          overflowX: isMobile ? "auto" : "visible",
+          scrollSnapType: isMobile ? "x proximity" : undefined,
+          WebkitOverflowScrolling: "touch",
         }}
       >
         {tabsDef.map((t) => {
@@ -454,6 +485,7 @@ export function ContentPipeline({
           return (
             <button
               key={t.id}
+              data-tab-active={active ? "true" : "false"}
               onClick={() => setTab(t.id)}
               style={{
                 display: "inline-flex",
@@ -468,6 +500,8 @@ export function ContentPipeline({
                 fontSize: 13,
                 fontWeight: active ? 500 : 400,
                 cursor: "pointer",
+                flexShrink: 0,
+                scrollSnapAlign: isMobile ? "center" : undefined,
               }}
             >
               {persona ? (
@@ -516,20 +550,39 @@ export function ContentPipeline({
 
       {selectionMode && (
         <div
-          style={{
-            position: "sticky",
-            top: 12,
-            zIndex: 5,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "10px 16px",
-            marginBottom: 20,
-            background: "var(--surface)",
-            border: "1px solid var(--line)",
-            borderRadius: 12,
-            boxShadow: "var(--shadow-md)",
-          }}
+          style={
+            isMobile
+              ? {
+                  position: "fixed",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 40,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 14px",
+                  paddingBottom:
+                    "calc(12px + env(safe-area-inset-bottom))",
+                  background: "var(--surface)",
+                  borderTop: "1px solid var(--line)",
+                  boxShadow: "0 -12px 32px rgba(26,24,22,0.12)",
+                }
+              : {
+                  position: "sticky",
+                  top: 12,
+                  zIndex: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 16px",
+                  marginBottom: 20,
+                  background: "var(--surface)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 12,
+                  boxShadow: "var(--shadow-md)",
+                }
+          }
         >
           <div style={{ fontSize: 13, color: "var(--ink)" }}>
             <strong>{selectedIds.size}</strong>{" "}
@@ -567,7 +620,7 @@ export function ContentPipeline({
       {Object.keys(grouped).length === 0 && mode === "after" && (
         <div
           style={{
-            padding: 60,
+            padding: isMobile ? 32 : 60,
             textAlign: "center",
             color: "var(--ink-3)",
             border: "1px dashed var(--line-2)",
@@ -597,7 +650,7 @@ export function ContentPipeline({
       {Object.keys(grouped).length === 0 && mode === "before" && (
         <div
           style={{
-            padding: 60,
+            padding: isMobile ? 32 : 60,
             textAlign: "center",
             color: "var(--ink-3)",
             border: "1px dashed var(--line-2)",
@@ -682,8 +735,8 @@ export function ContentPipeline({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
-              gap: 18,
+              gridTemplateColumns: `repeat(${isMobile ? 2 : gridSize}, 1fr)`,
+              gap: isMobile ? 10 : 18,
             }}
           >
             {items.map((item) => {

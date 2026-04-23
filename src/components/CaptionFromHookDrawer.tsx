@@ -4,6 +4,8 @@ import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, PersonaChip, useCopy, useToast } from "./ui";
 import { CharCount } from "./CharCount";
+import { SideDrawer } from "./SideDrawer";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS } from "@/lib/personas";
 import { MODELS, MODEL_LABELS, type ModelId } from "@/lib/models";
 import type { GeneratedHook } from "@/lib/types";
@@ -44,6 +46,7 @@ export function CaptionFromHookDrawer({
   const persona = PERSONAS[hook.personaId];
   const toast = useToast();
   const { copied, copy } = useCopy();
+  const isMobile = useIsMobile();
 
   const [isAdmin] = React.useState<boolean>(() => readIsAdmin());
   const [model, setModel] = React.useState<ModelId>(MODELS.SONNET_4_6);
@@ -58,16 +61,6 @@ export function CaptionFromHookDrawer({
     readIsAdmin() ? 0 : readRegensUsed(hook.id),
   );
   const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && status !== "generating" && status !== "saving") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, status]);
 
   const busy = status === "generating" || status === "saving";
   const regenLeft = Math.max(0, MAX_REGENS - regensUsed);
@@ -161,38 +154,20 @@ export function CaptionFromHookDrawer({
   };
 
   return (
-    <>
-      <div
-        onClick={busy ? undefined : onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "color-mix(in oklab, var(--ink) 30%, transparent)",
-          backdropFilter: "blur(2px)",
-          zIndex: 100,
-          animation: "fadeIn 200ms ease",
-        }}
-      />
-      <aside
-        style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 780,
-          maxWidth: "94vw",
-          background: "var(--surface)",
-          boxShadow: "var(--shadow-drawer)",
-          zIndex: 101,
-          display: "flex",
-          flexDirection: "column",
-          animation: "slideIn 280ms cubic-bezier(.4,0,.2,1)",
-        }}
-      >
+    <SideDrawer
+      open={true}
+      onClose={busy ? () => {} : onClose}
+      side="right"
+      desktopWidth={780}
+      ariaLabel="Generate caption from hook"
+    >
         {/* Header */}
         <div
           style={{
-            padding: "18px 24px",
+            padding: isMobile ? "14px 16px" : "18px 24px",
+            paddingTop: isMobile
+              ? "calc(14px + env(safe-area-inset-top))"
+              : undefined,
             borderBottom: "1px solid var(--line)",
             display: "flex",
             alignItems: "center",
@@ -253,7 +228,14 @@ export function CaptionFromHookDrawer({
         </div>
 
         {/* Scrollable body */}
-        <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: isMobile ? "16px" : "20px 24px",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           {/* Settings block */}
           <div
             style={{
@@ -581,7 +563,10 @@ export function CaptionFromHookDrawer({
         {/* Action footer */}
         <div
           style={{
-            padding: "14px 24px",
+            padding: isMobile ? "12px 14px" : "14px 24px",
+            paddingBottom: isMobile
+              ? "calc(12px + env(safe-area-inset-bottom))"
+              : undefined,
             borderTop: "1px solid var(--line)",
             display: "flex",
             justifyContent: "space-between",
@@ -662,8 +647,7 @@ export function CaptionFromHookDrawer({
             </div>
           )}
         </div>
-      </aside>
-    </>
+    </SideDrawer>
   );
 }
 

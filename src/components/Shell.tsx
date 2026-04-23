@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Icons, type IconName } from "./Icons";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 export type DashId =
   | "content"
@@ -386,9 +387,10 @@ export function PageHeader({
   actions?: React.ReactNode;
   tint?: string;
 }) {
+  const isMobile = useIsMobile();
   return (
-    <div style={{ marginBottom: 32, position: "relative" }}>
-      {tint && (
+    <div style={{ marginBottom: isMobile ? 20 : 32, position: "relative" }}>
+      {tint && !isMobile && (
         <div
           style={{
             position: "absolute",
@@ -410,11 +412,11 @@ export function PageHeader({
           display: "flex",
           alignItems: "flex-end",
           justifyContent: "space-between",
-          gap: 24,
+          gap: isMobile ? 12 : 24,
           flexWrap: "wrap",
         }}
       >
-        <div>
+        <div style={{ minWidth: 0, flex: isMobile ? "1 1 100%" : undefined }}>
           {eyebrow && (
             <div
               style={{
@@ -423,7 +425,7 @@ export function PageHeader({
                 textTransform: "uppercase",
                 letterSpacing: "0.14em",
                 color: "var(--ink-3)",
-                marginBottom: 10,
+                marginBottom: isMobile ? 6 : 10,
               }}
             >
               {eyebrow}
@@ -432,16 +434,16 @@ export function PageHeader({
           <h1
             className="serif"
             style={{
-              fontSize: 44,
+              fontSize: isMobile ? 26 : 44,
               fontWeight: 400,
               margin: 0,
-              lineHeight: 1,
+              lineHeight: 1.05,
               letterSpacing: "-0.025em",
             }}
           >
             {title}
           </h1>
-          {subtitle && (
+          {subtitle && !isMobile && (
             <p
               style={{
                 color: "var(--ink-3)",
@@ -456,7 +458,15 @@ export function PageHeader({
           )}
         </div>
         {actions && (
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: isMobile ? 8 : 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+              width: isMobile ? "100%" : undefined,
+            }}
+          >
             {actions}
           </div>
         )}

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Icons } from "./Icons";
 import { PersonaChip } from "./ui";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { formatTime } from "@/lib/format";
 import type { Delivery } from "@/lib/types";
 import type { Persona } from "@/lib/personas";
@@ -31,6 +32,13 @@ export function ContentCard({
   const [hover, setHover] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  // On touch devices, hover never fires — reveal the action buttons
+  // unconditionally so creators can reach them without a fake-hover tap.
+  const showActions = hover || menuOpen || isMobile;
+  // Touch targets bump up a notch on mobile (32 → 36) without blowing out
+  // the card layout.
+  const btnSize = isMobile ? 36 : 32;
 
   React.useEffect(() => {
     if (!menuOpen) return;
@@ -91,8 +99,8 @@ export function ContentCard({
               position: "absolute",
               top: 10,
               right: 10,
-              width: 28,
-              height: 28,
+              width: isMobile ? 32 : 28,
+              height: isMobile ? 32 : 28,
               borderRadius: "50%",
               background: selected
                 ? "var(--accent)"
@@ -131,8 +139,8 @@ export function ContentCard({
               }}
               aria-label="More actions"
               style={{
-                width: 32,
-                height: 32,
+                width: btnSize,
+                height: btnSize,
                 borderRadius: "50%",
                 background:
                   "color-mix(in oklab, var(--surface) 80%, transparent)",
@@ -143,7 +151,7 @@ export function ContentCard({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                opacity: hover || menuOpen ? 1 : 0,
+                opacity: showActions ? 1 : 0,
                 transition: "opacity 160ms ease",
                 cursor: "pointer",
               }}
@@ -191,8 +199,8 @@ export function ContentCard({
             onClick={onToggleStar}
             aria-label={item.starred ? "Unstar" : "Star"}
             style={{
-              width: 32,
-              height: 32,
+              width: btnSize,
+              height: btnSize,
               borderRadius: "50%",
               background:
                 "color-mix(in oklab, var(--surface) 80%, transparent)",
@@ -203,7 +211,7 @@ export function ContentCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              opacity: hover || item.starred ? 1 : 0,
+              opacity: showActions || item.starred ? 1 : 0,
               transition: "opacity 160ms ease",
               cursor: "pointer",
             }}
@@ -223,8 +231,8 @@ export function ContentCard({
               aria-label="Download as transformation"
               title="Download as transformation"
               style={{
-                width: 32,
-                height: 32,
+                width: btnSize,
+                height: btnSize,
                 borderRadius: "50%",
                 background:
                   "color-mix(in oklab, var(--surface) 80%, transparent)",
@@ -235,7 +243,7 @@ export function ContentCard({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                opacity: hover ? 1 : 0,
+                opacity: showActions ? 1 : 0,
                 transition: "opacity 160ms ease",
                 cursor: "pointer",
               }}
