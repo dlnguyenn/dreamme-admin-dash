@@ -10,6 +10,7 @@ import { WebhookModal } from "./WebhookModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ModifyImageModal } from "./ModifyImageModal";
 import { BeforePhotoUploader } from "./BeforePhotoUploader";
+import { BeforePhotoGenerator } from "./BeforePhotoGenerator";
 import { TransformationExportModal } from "./TransformationExportModal";
 import { useCopy } from "./ui";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
@@ -44,6 +45,7 @@ export function ContentPipeline({
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
   const [transformingDelivery, setTransformingDelivery] = React.useState<Delivery | null>(null);
   const [uploaderOpen, setUploaderOpen] = React.useState(false);
+  const [generatorOpen, setGeneratorOpen] = React.useState(false);
   const toast = useToast();
   const { copy } = useCopy();
 
@@ -248,25 +250,46 @@ export function ContentPipeline({
                 n8n setup
               </Button>
             ) : (
-              <Button
-                variant="primary"
-                icon={<Icons.Upload />}
-                onClick={() => {
-                  if (tab === "all") {
-                    toast("Pick a persona tab first to upload before photos");
-                    return;
+              <>
+                <Button
+                  variant="secondary"
+                  icon={<Icons.Sparkles />}
+                  onClick={() => {
+                    if (tab === "all") {
+                      toast("Pick a persona tab first to generate a before photo");
+                      return;
+                    }
+                    setGeneratorOpen(true);
+                  }}
+                  disabled={tab === "all"}
+                  title={
+                    tab === "all"
+                      ? "Pick a persona tab first"
+                      : `Generate a before photo for ${PERSONAS[tab as PersonaId].name}`
                   }
-                  setUploaderOpen(true);
-                }}
-                disabled={tab === "all"}
-                title={
-                  tab === "all"
-                    ? "Pick a persona tab first"
-                    : `Upload before photos for ${PERSONAS[tab as PersonaId].name}`
-                }
-              >
-                Upload before photos
-              </Button>
+                >
+                  Generate before photo
+                </Button>
+                <Button
+                  variant="primary"
+                  icon={<Icons.Upload />}
+                  onClick={() => {
+                    if (tab === "all") {
+                      toast("Pick a persona tab first to upload before photos");
+                      return;
+                    }
+                    setUploaderOpen(true);
+                  }}
+                  disabled={tab === "all"}
+                  title={
+                    tab === "all"
+                      ? "Pick a persona tab first"
+                      : `Upload before photos for ${PERSONAS[tab as PersonaId].name}`
+                  }
+                >
+                  Upload before photos
+                </Button>
+              </>
             )}
           </>
         }
@@ -595,13 +618,29 @@ export function ContentPipeline({
               : "Upload before photos here — they'll be available when exporting a transformation from any after photo of this persona."}
           </div>
           {tab !== "all" && (
-            <Button
-              variant="primary"
-              icon={<Icons.Upload />}
-              onClick={() => setUploaderOpen(true)}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
             >
-              Upload before photos
-            </Button>
+              <Button
+                variant="secondary"
+                icon={<Icons.Sparkles />}
+                onClick={() => setGeneratorOpen(true)}
+              >
+                Generate with Gemini
+              </Button>
+              <Button
+                variant="primary"
+                icon={<Icons.Upload />}
+                onClick={() => setUploaderOpen(true)}
+              >
+                Upload before photos
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -743,6 +782,16 @@ export function ContentPipeline({
             setState((s) => ({ ...s, items: [...rows, ...s.items] }));
           }}
           onClose={() => setUploaderOpen(false)}
+        />
+      )}
+
+      {generatorOpen && tab !== "all" && (
+        <BeforePhotoGenerator
+          personaId={tab as PersonaId}
+          onSaved={(row) => {
+            setState((s) => ({ ...s, items: [row, ...s.items] }));
+          }}
+          onClose={() => setGeneratorOpen(false)}
         />
       )}
 
