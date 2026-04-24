@@ -197,7 +197,6 @@ function ReferenceCard({
   const author = reference.authorUsername
     ? `@${reference.authorUsername}`
     : "TikTok creator";
-  const captionExcerpt = reference.caption.slice(0, 220);
 
   return (
     <div
@@ -278,7 +277,7 @@ function ReferenceCard({
           {reference.slides.length === 1 ? "" : "s"}
         </div>
 
-        {captionExcerpt && (
+        {reference.caption && (
           <div
             style={{
               fontSize: 12.5,
@@ -286,12 +285,14 @@ function ReferenceCard({
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
-              maxHeight: 140,
-              overflow: "hidden",
+              flex: "1 1 auto",
+              minHeight: 0,
+              maxHeight: 220,
+              overflowY: "auto",
+              paddingRight: 4,
             }}
           >
-            {captionExcerpt}
-            {reference.caption.length > captionExcerpt.length ? "…" : ""}
+            {reference.caption}
           </div>
         )}
 
