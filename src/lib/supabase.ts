@@ -9,6 +9,7 @@ import type {
   SpendLineItemRow,
 } from "./types";
 import type { PersonaId } from "./personas";
+import type { BeforeScenario } from "./prompts/beforePhoto";
 
 function normalizePersonaId(raw: string): PersonaId {
   return ((raw || "").trim().toLowerCase()) as PersonaId;
@@ -351,7 +352,12 @@ export const API = {
     referenceImageUrl: string;
     count?: number;
   }): Promise<{
-    images: { imageBase64: string; mimeType: string; targetLb: number }[];
+    images: {
+      imageBase64: string;
+      mimeType: string;
+      targetLb: number;
+      scenario: BeforeScenario;
+    }[];
     partialErrors?: string[];
   }> {
     const res = await fetch("/api/generate/before-photo", {
@@ -366,7 +372,12 @@ export const API = {
     const body = (await res.json().catch(() => null)) as
       | {
           ok: boolean;
-          images?: { imageBase64: string; mimeType: string; targetLb: number }[];
+          images?: {
+            imageBase64: string;
+            mimeType: string;
+            targetLb: number;
+            scenario: BeforeScenario;
+          }[];
           partialErrors?: string[];
           error?: string;
         }

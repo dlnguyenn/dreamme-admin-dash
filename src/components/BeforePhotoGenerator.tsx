@@ -7,6 +7,10 @@ import { Sheet } from "./Sheet";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { API } from "@/lib/supabase";
 import { PERSONAS, type PersonaId } from "@/lib/personas";
+import {
+  SCENARIO_LABELS,
+  type BeforeScenario,
+} from "@/lib/prompts/beforePhoto";
 import type { Delivery } from "@/lib/types";
 
 const MAX_GEN = 3;
@@ -55,6 +59,7 @@ interface ResultImage {
   imageBase64: string;
   mimeType: string;
   targetLb: number;
+  scenario: BeforeScenario;
 }
 
 export function BeforePhotoGenerator({
@@ -813,19 +818,45 @@ function ResultsView({
                   position: "absolute",
                   top: 8,
                   left: 8,
-                  padding: "2px 8px",
-                  borderRadius: 999,
-                  background:
-                    "color-mix(in oklab, var(--ink) 70%, transparent)",
-                  color: "var(--surface)",
-                  fontSize: 10,
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  alignItems: "flex-start",
                 }}
               >
-                ~{r.targetLb} lb
+                <div
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background:
+                      "color-mix(in oklab, var(--ink) 70%, transparent)",
+                    color: "var(--surface)",
+                    fontSize: 10,
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    fontWeight: 500,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  ~{r.targetLb} lb
+                </div>
+                <div
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background:
+                      "color-mix(in oklab, var(--ink) 70%, transparent)",
+                    color: "var(--surface)",
+                    fontSize: 10,
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    fontWeight: 500,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                  title={`Scenario: ${SCENARIO_LABELS[r.scenario]}`}
+                >
+                  {SCENARIO_LABELS[r.scenario]}
+                </div>
               </div>
               {saved && (
                 <div
