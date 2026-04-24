@@ -12,6 +12,8 @@ export interface Delivery {
   createdAt: string;
 }
 
+export type CaptionPlatform = "tiktok" | "instagram";
+
 export interface SavedCaption {
   id: string;
   sourceItemId: string | null;
@@ -20,6 +22,7 @@ export interface SavedCaption {
   caption: string;
   posted: boolean;
   starred: boolean;
+  platform: CaptionPlatform;
   createdAt: string;
 }
 
@@ -48,6 +51,7 @@ export interface SavedCaptionRow {
   caption: string;
   posted: boolean | null;
   starred: boolean | null;
+  platform: CaptionPlatform | null;
   created_at: string;
 }
 

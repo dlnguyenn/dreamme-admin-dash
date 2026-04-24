@@ -9,9 +9,11 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { formatRelative } from "@/lib/format";
 import { API } from "@/lib/supabase";
-import type { DashState, SavedCaption } from "@/lib/types";
+import type { CaptionPlatform, DashState, SavedCaption } from "@/lib/types";
+import { InstagramCaptionDialog } from "./InstagramCaptionDialog";
 
 type Filter = "all" | PersonaId | "starred" | "posted";
+type PlatformFilter = "all" | CaptionPlatform;
 
 export function CaptionLibrary({
   state,
@@ -26,8 +28,15 @@ export function CaptionLibrary({
 }) {
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
+  const [platformFilter, setPlatformFilter] =
+    React.useState<PlatformFilter>("all");
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState("");
+  const [igSource, setIgSource] = React.useState<{
+    caption: SavedCaption;
+    hookText: string;
+  } | null>(null);
+  const [resolvingHook, setResolvingHook] = React.useState<string | null>(null);
   const toast = useToast();
   const { copy } = useCopy();
   const isMobile = useIsMobile();
@@ -75,6 +84,8 @@ export function CaptionLibrary({
     return state.savedCaptions
       .filter((c) => {
         if (q && !c.caption.toLowerCase().includes(q)) return false;
+        if (platformFilter !== "all" && c.platform !== platformFilter)
+          return false;
         if (filter === "all") return true;
         if (filter === "starred") return c.starred;
         if (filter === "posted") return c.posted;
@@ -84,7 +95,25 @@ export function CaptionLibrary({
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
-  }, [state.savedCaptions, query, filter]);
+  }, [state.savedCaptions, query, filter, platformFilter]);
+
+  const openInstagramFor = async (c: SavedCaption) => {
+    // Resolve hook text when available; otherwise fall back to the
+    // caption's own text as the seed.
+    if (c.sourceHookId) {
+      setResolvingHook(c.id);
+      try {
+        const text = await API.fetchHookText(c.sourceHookId);
+        setIgSource({ caption: c, hookText: text ?? c.caption });
+      } catch {
+        setIgSource({ caption: c, hookText: c.caption });
+      } finally {
+        setResolvingHook(null);
+      }
+    } else {
+      setIgSource({ caption: c, hookText: c.caption });
+    }
+  };
 
   const filters: Array<{
     id: Filter;
@@ -191,6 +220,62 @@ export function CaptionLibrary({
               outline: "none",
             }}
           />
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            padding: 3,
+            background: "var(--surface-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 9,
+            gap: 2,
+            flexShrink: 0,
+          }}
+        >
+          {(
+            [
+              { id: "all", label: "All" },
+              { id: "tiktok", label: "TikTok" },
+              { id: "instagram", label: "Instagram" },
+            ] as Array<{ id: PlatformFilter; label: string }>
+          ).map(({ id, label }) => {
+            const active = platformFilter === id;
+            const count =
+              id === "all"
+                ? state.savedCaptions.length
+                : state.savedCaptions.filter((c) => c.platform === id).length;
+            return (
+              <button
+                key={id}
+                onClick={() => setPlatformFilter(id)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: active ? "var(--surface)" : "transparent",
+                  fontWeight: active ? 500 : 400,
+                  fontSize: 12,
+                  color: active ? "var(--ink)" : "var(--ink-3)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  boxShadow: active ? "var(--shadow-sm)" : "none",
+                }}
+              >
+                {label}
+                <span
+                  style={{
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    fontSize: 10,
+                    opacity: 0.7,
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div
           ref={filterStripRef}
@@ -325,7 +410,14 @@ export function CaptionLibrary({
                   gap: 8,
                 }}
               >
-                <PersonaChip persona={persona} size="sm" />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <PersonaChip persona={persona} size="sm" />
+                  {c.platform === "instagram" && (
+                    <Chip tone="neutral" style={{ fontSize: 10 }}>
+                      IG
+                    </Chip>
+                  )}
+                </div>
                 <div
                   style={{
                     display: "flex",
@@ -435,6 +527,32 @@ export function CaptionLibrary({
                       // or in the detail view.
                       <>
                         <button
+                          onClick={() => openInstagramFor(c)}
+                          disabled={resolvingHook === c.id}
+                          title={
+                            c.platform === "instagram"
+                              ? "Regenerate Instagram caption from same hook"
+                              : "Generate Instagram caption"
+                          }
+                          style={{
+                            height: 36,
+                            minHeight: 36,
+                            width: 36,
+                            borderRadius: 10,
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--line-2)",
+                            color: "var(--ink-2)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor:
+                              resolvingHook === c.id ? "progress" : "pointer",
+                            opacity: resolvingHook === c.id ? 0.55 : 1,
+                          }}
+                        >
+                          <Icons.Sparkles size={14} />
+                        </button>
+                        <button
                           onClick={() => {
                             setEditingId(c.id);
                             setDraft(c.caption);
@@ -483,6 +601,17 @@ export function CaptionLibrary({
                       </>
                     ) : (
                       <>
+                        <IconBtn
+                          title={
+                            c.platform === "instagram"
+                              ? "Regenerate Instagram caption from same hook"
+                              : "Generate Instagram caption"
+                          }
+                          onClick={() => openInstagramFor(c)}
+                          loading={resolvingHook === c.id}
+                        >
+                          <Icons.Sparkles size={14} />
+                        </IconBtn>
                         <IconBtn
                           title="Copy"
                           onClick={() => {
@@ -556,6 +685,22 @@ export function CaptionLibrary({
           );
         })}
       </div>
+
+      {igSource && (
+        <InstagramCaptionDialog
+          open={true}
+          onClose={() => setIgSource(null)}
+          personaId={igSource.caption.personaId}
+          seedHookText={igSource.hookText}
+          sourceHookId={igSource.caption.sourceHookId ?? null}
+          sourceDeliveryId={igSource.caption.sourceItemId ?? null}
+          seedPreview={igSource.caption.caption}
+          onSaved={() => {
+            setIgSource(null);
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -565,11 +710,13 @@ function IconBtn({
   onClick,
   title,
   active,
+  loading,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
   active?: boolean;
+  loading?: boolean;
 }) {
   const [hover, setHover] = React.useState(false);
   const isMobile = useIsMobile();
@@ -577,6 +724,7 @@ function IconBtn({
     <button
       onClick={onClick}
       title={title}
+      disabled={loading}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -599,6 +747,8 @@ function IconBtn({
         color: active
           ? "color-mix(in oklab, var(--p-olivia) 60%, var(--ink))"
           : "var(--ink-2)",
+        opacity: loading ? 0.55 : 1,
+        cursor: loading ? "progress" : "pointer",
       }}
     >
       {children}

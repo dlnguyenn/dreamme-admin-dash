@@ -1,4 +1,12 @@
 import type { ModelId } from "./models";
+import type { PersonaId } from "./personas";
+import {
+  INSTAGRAM_CHAR_CEILING,
+  INSTAGRAM_CHAR_TARGET,
+  buildInstagramCaptionPrompt,
+  buildInstagramCompressPrompt,
+  stripTrailingHashtags,
+} from "./prompts/instagramCaption";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const API = "https://api.anthropic.com/v1/messages";
@@ -171,5 +179,71 @@ ${oversizedCaption}`;
   });
 
   const caption = stripFences(raw);
+  return { caption, charCount: caption.length };
+}
+
+// ---------------------------------------------------------------------------
+// Instagram caption generation
+// ---------------------------------------------------------------------------
+
+function buildInstagramSystem(): SystemBlock[] {
+  const text = `You are writing an Instagram caption for DreamMe, a GLP-1 community app.
+
+Instagram captions are sibling to TikTok captions — same seed hook, but a distinct voice. IG readers are scrolling a more intimate feed. Lean into short paragraphs, honest first-person beats, and breathing room. Avoid TikTok listicle formatting entirely.
+
+OUTPUT FORMAT:
+- Return ONLY the caption text — no preamble, no commentary, no markdown fences, no surrounding quotes.
+- Never include hashtags. The creator adds their own.
+- Target ${INSTAGRAM_CHAR_TARGET} characters. HARD CEILING: ${INSTAGRAM_CHAR_CEILING} characters — never exceed this under any circumstances.`;
+  return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+}
+
+export interface GenerateInstagramCaptionParams {
+  hookText: string;
+  personaId: PersonaId;
+  model: ModelId;
+  notes?: string;
+}
+
+export async function generateInstagramCaption(
+  params: GenerateInstagramCaptionParams,
+): Promise<GenerateCaptionResult> {
+  const { hookText, personaId, model, notes } = params;
+  const system = buildInstagramSystem();
+  const userText = buildInstagramCaptionPrompt(hookText, personaId, notes);
+
+  const raw = await callClaudeText({
+    model,
+    system,
+    userText,
+    // IG cap is 2000 chars; 1500 output tokens is plenty of headroom.
+    maxTokens: 1500,
+  });
+
+  const caption = stripTrailingHashtags(stripFences(raw));
+  return { caption, charCount: caption.length };
+}
+
+export interface CompressInstagramCaptionParams {
+  oversizedCaption: string;
+  personaId: PersonaId;
+  model: ModelId;
+}
+
+export async function compressInstagramCaption(
+  params: CompressInstagramCaptionParams,
+): Promise<GenerateCaptionResult> {
+  const { oversizedCaption, personaId, model } = params;
+  const system = buildInstagramSystem();
+  const userText = buildInstagramCompressPrompt(oversizedCaption, personaId);
+
+  const raw = await callClaudeText({
+    model,
+    system,
+    userText,
+    maxTokens: 1500,
+  });
+
+  const caption = stripTrailingHashtags(stripFences(raw));
   return { caption, charCount: caption.length };
 }
