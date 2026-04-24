@@ -103,6 +103,112 @@ function fileToBase64(file: File): Promise<{ base64: string; mime: string }> {
   });
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("reader returned non-string"));
+        return;
+      }
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function loadImageBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      // Fall through to <img> fallback below.
+    }
+  }
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`image decode failed: ${String(e)}`));
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Downscale an image File to a reasonable max dimension and re-encode as JPEG.
+ * Keeps the upload payload well under Vercel's 4.5 MB serverless function limit
+ * (phone photos are typically 3-8 MB — after this step they land around
+ * 300-600 KB). Preserves orientation via imageOrientation: "from-image".
+ *
+ * Skips the canvas round-trip for small files (<= 500 KB) that are already
+ * JPEG/WebP — those can ship as-is without re-encoding.
+ */
+async function downscaleImageToBase64(
+  file: File,
+  opts: { maxDimension?: number; quality?: number } = {},
+): Promise<{ base64: string; mime: string }> {
+  const maxDim = opts.maxDimension ?? 1536;
+  const quality = opts.quality ?? 0.9;
+
+  const alreadySmall =
+    file.size <= 500_000 &&
+    (file.type === "image/jpeg" || file.type === "image/webp");
+  if (alreadySmall) {
+    return fileToBase64(file);
+  }
+
+  if (typeof document === "undefined") {
+    // Not in a browser (shouldn't happen for these call sites, but be safe).
+    return fileToBase64(file);
+  }
+
+  let bitmap: ImageBitmap | HTMLImageElement;
+  try {
+    bitmap = await loadImageBitmap(file);
+  } catch {
+    // Decoder failed — fall back to raw base64 and let server/infra reject
+    // if it's oversized. Better than blocking the upload entirely.
+    return fileToBase64(file);
+  }
+
+  const srcW =
+    bitmap instanceof HTMLImageElement ? bitmap.naturalWidth : bitmap.width;
+  const srcH =
+    bitmap instanceof HTMLImageElement ? bitmap.naturalHeight : bitmap.height;
+  if (!srcW || !srcH) {
+    return fileToBase64(file);
+  }
+
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+  const dstW = Math.round(srcW * scale);
+  const dstH = Math.round(srcH * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = dstW;
+  canvas.height = dstH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return fileToBase64(file);
+  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, dstW, dstH);
+  if ("close" in bitmap && typeof bitmap.close === "function") bitmap.close();
+
+  const blob: Blob | null = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality),
+  );
+  if (!blob) return fileToBase64(file);
+
+  const base64 = await blobToBase64(blob);
+  return { base64, mime: "image/jpeg" };
+}
+
 function mapSpend(row: SpendLineItemRow): SpendLineItem {
   return {
     id: row.id,
@@ -252,7 +358,9 @@ export const API = {
     personaId: PersonaId;
     file: File;
   }): Promise<Delivery> {
-    const { base64, mime } = await fileToBase64(file);
+    // Downscale before base64-encoding so we don't blow past Vercel's 4.5MB
+    // serverless function body limit for phone photos.
+    const { base64, mime } = await downscaleImageToBase64(file);
     return API.uploadBeforePhotoBase64({
       personaId,
       imageBase64: base64,
@@ -310,7 +418,10 @@ export const API = {
     personaId: PersonaId;
     file: File;
   }): Promise<{ path: string; url: string }> {
-    const { base64, mime } = await fileToBase64(file);
+    // Downscale before base64-encoding so the JSON payload fits inside
+    // Vercel's 4.5MB serverless function body limit (phone photos are often
+    // 3-8MB raw, which balloons to 4-11MB when base64-wrapped).
+    const { base64, mime } = await downscaleImageToBase64(file);
     const res = await fetch("/api/personas/references", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -324,6 +435,11 @@ export const API = {
       | { ok: boolean; path?: string; url?: string; error?: string }
       | null;
     if (!res.ok || !body?.ok || !body.path || !body.url) {
+      if (res.status === 413) {
+        throw new Error(
+          "Image is too large even after downscaling. Try a smaller photo.",
+        );
+      }
       throw new Error(body?.error || `reference upload failed: ${res.status}`);
     }
     return { path: body.path, url: body.url };
