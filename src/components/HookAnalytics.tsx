@@ -14,17 +14,23 @@ import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
 import { CaptionFromHookDrawer } from "./CaptionFromHookDrawer";
+import { PersonaRail } from "./PersonaRail";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 type Tab = "all" | PersonaId;
 type Sort = "views" | "recent";
 
 export function HookAnalytics() {
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [posts, setPosts] = React.useState<TikTokPost[]>([]);
   const [generated, setGenerated] = React.useState<GeneratedHook[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState<Tab>("all");
+  // Mobile-only: split the screen into two sub-segments so stats + generated
+  // hooks + top posts don't all compete for <400px of height.
+  const [sub, setSub] = React.useState<"generated" | "top">("generated");
   const [sort, setSort] = React.useState<Sort>("views");
   const [categoryFilter, setCategoryFilter] = React.useState<HookCategory | "all">(
     "all",
@@ -158,6 +164,21 @@ export function HookAnalytics() {
   const genForPersona = (pid: PersonaId) =>
     generated.filter((g) => g.personaId === pid);
 
+  // Persona counts used by the mobile PersonaRail — same shape PersonaRail
+  // expects in ContentPipeline (counts.all + per-persona).
+  const mobilePersonaCounts = React.useMemo(() => {
+    const c: Partial<Record<"all" | PersonaId, number>> = {
+      all: sub === "generated" ? generated.length : posts.length,
+    };
+    PERSONA_IDS.forEach((pid) => {
+      c[pid] =
+        sub === "generated"
+          ? generated.filter((g) => g.personaId === pid).length
+          : posts.filter((p) => p.personaId === pid).length;
+    });
+    return c;
+  }, [sub, generated, posts]);
+
   return (
     <div>
       <PageHeader
@@ -188,24 +209,13 @@ export function HookAnalytics() {
         }
       />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 1,
-          background: "var(--line)",
-          border: "1px solid var(--line)",
-          borderRadius: 14,
-          overflow: "hidden",
-          marginBottom: 28,
-        }}
-      >
-        {[
-          { label: "Posts analyzed", value: stats.posts.toLocaleString(), accent: null },
+      {(() => {
+        const kpis = [
+          { label: "Posts analyzed", value: stats.posts.toLocaleString(), accent: null as string | null },
           {
             label: "Avg views / post",
             value: stats.avgViews.toLocaleString(),
-            accent: null,
+            accent: null as string | null,
           },
           {
             label: "Top category",
@@ -217,43 +227,254 @@ export function HookAnalytics() {
             value: stats.thisWeek.toLocaleString(),
             accent: "var(--p-olivia)",
           },
-        ].map((s, i) => (
-          <div key={i} style={{ background: "var(--surface)", padding: "18px 20px" }}>
+        ];
+        if (isMobile) {
+          // Horizontal-scroll KPI strip: 2 wide cards visible, rest peek off
+          // the right edge. Cleaner than a squashed 4-up grid.
+          return (
             <div
+              className="mobile-hscroll"
               style={{
-                fontSize: 10,
-                fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--ink-4)",
+                margin: "0 -16px 16px",
+                padding: "4px 16px 10px",
+                display: "flex",
+                gap: 10,
+                overflowX: "auto",
+                scrollSnapType: "x proximity",
+                WebkitOverflowScrolling: "touch",
               }}
             >
-              {s.label}
+              {kpis.map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: 150,
+                    padding: "14px 16px",
+                    background: "var(--surface)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 14,
+                    scrollSnapAlign: "start",
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 9,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.1em",
+                      color: "var(--ink-4)",
+                    }}
+                  >
+                    {s.label}
+                  </div>
+                  <div
+                    className="serif"
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 500,
+                      letterSpacing: "-0.02em",
+                      marginTop: 4,
+                      color: s.accent || "var(--ink)",
+                    }}
+                  >
+                    {s.value}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div
-              className="serif"
-              style={{
-                fontSize: 28,
-                fontWeight: 400,
-                letterSpacing: "-0.02em",
-                marginTop: 4,
-                color: s.accent || "var(--ink)",
-              }}
-            >
-              {s.value}
-            </div>
+          );
+        }
+        return (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 1,
+              background: "var(--line)",
+              border: "1px solid var(--line)",
+              borderRadius: 14,
+              overflow: "hidden",
+              marginBottom: 28,
+            }}
+          >
+            {kpis.map((s, i) => (
+              <div
+                key={i}
+                style={{ background: "var(--surface)", padding: "18px 20px" }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    color: "var(--ink-4)",
+                  }}
+                >
+                  {s.label}
+                </div>
+                <div
+                  className="serif"
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 400,
+                    letterSpacing: "-0.02em",
+                    marginTop: 4,
+                    color: s.accent || "var(--ink)",
+                  }}
+                >
+                  {s.value}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
+
+      {isMobile && (
+        <>
+          {/* Segmented sub-nav: Generated vs Top posts. Split the two mental
+              models so stats + persona rail + list don't stack endlessly. */}
+          <div
+            role="tablist"
+            aria-label="Section"
+            style={{
+              display: "flex",
+              padding: 4,
+              background: "var(--surface-2)",
+              border: "1px solid var(--line)",
+              borderRadius: 10,
+              marginBottom: 14,
+            }}
+          >
+            {(
+              [
+                { id: "generated" as const, label: "Generated", count: generated.length },
+                { id: "top" as const, label: "Top posts", count: posts.length },
+              ]
+            ).map((s) => {
+              const active = sub === s.id;
+              return (
+                <button
+                  key={s.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSub(s.id)}
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    border: "none",
+                    borderRadius: 7,
+                    background: active ? "var(--surface)" : "transparent",
+                    boxShadow: active ? "var(--shadow-sm)" : "none",
+                    color: active ? "var(--ink)" : "var(--ink-3)",
+                    fontSize: 13,
+                    fontWeight: active ? 600 : 500,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    cursor: "pointer",
+                  }}
+                >
+                  {s.label}
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: "var(--ink-4)",
+                      padding: "1px 6px",
+                      background: active ? "var(--bg-2)" : "transparent",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {s.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Persona rail (avatar-first). Edge-to-edge — negative margin
+              counters the main 16px gutter. */}
+          <div style={{ margin: "0 -16px 18px" }}>
+            <PersonaRail
+              current={tab}
+              onChange={(next) => setTab(next as Tab)}
+              counts={mobilePersonaCounts}
+              includeAll
+            />
+          </div>
+        </>
+      )}
 
       {/* Today's generated hooks */}
+      {(!isMobile || sub === "generated") && (
       <section style={{ marginBottom: 40 }}>
-        <SectionHeader
-          title="Today's generated hooks"
-          hint={`${generated.length} total · 2 per persona per day`}
-        />
+        {!isMobile && (
+          <SectionHeader
+            title="Today's generated hooks"
+            hint={`${generated.length} total · 2 per persona per day`}
+          />
+        )}
         {loading ? (
           <EmptyBlock>Loading…</EmptyBlock>
+        ) : isMobile ? (
+          // Mobile: one persona at a time (driven by the PersonaRail selection).
+          // "all" shows everyone stacked. Each hook card is full-width.
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {(tab === "all" ? PERSONA_IDS : [tab as PersonaId]).map((pid) => {
+              const pHooks = genForPersona(pid);
+              if (tab !== "all" && pHooks.length === 0) return (
+                <EmptyBlock key={pid}>
+                  No hooks yet for {PERSONAS[pid].name}.
+                </EmptyBlock>
+              );
+              if (pHooks.length === 0) return null;
+              return (
+                <div key={pid}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div
+                      className="serif"
+                      style={{ fontSize: 18, fontStyle: "italic" }}
+                    >
+                      {PERSONAS[pid].name}&apos;s hooks
+                    </div>
+                    <div style={{ flex: 1 }} />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Icons.Sparkles size={12} />}
+                      onClick={() => runGeneratePersona(pid)}
+                      disabled={running !== null}
+                    >
+                      {generatingPersona === pid ? "…" : "Generate"}
+                    </Button>
+                  </div>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                  >
+                    {pHooks.slice(0, 6).map((h) => (
+                      <HookCard
+                        key={h.id}
+                        hook={h}
+                        onToggleUsed={() => onToggleUsed(h)}
+                        onOpenCaption={() => setCaptionHookId(h.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div
             style={{
@@ -324,13 +545,18 @@ export function HookAnalytics() {
           </div>
         )}
       </section>
+      )}
 
       {/* Top performing hooks */}
+      {(!isMobile || sub === "top") && (
       <section>
-        <SectionHeader
-          title="Top performing hooks"
-          hint={`${filteredPosts.length} of ${posts.length} posts`}
-        />
+        {!isMobile && (
+          <SectionHeader
+            title="Top performing hooks"
+            hint={`${filteredPosts.length} of ${posts.length} posts`}
+          />
+        )}
+        {!isMobile && (
         <div
           style={{
             display: "flex",
@@ -412,12 +638,75 @@ export function HookAnalytics() {
             <option value="recent">Sort: Most recent</option>
           </select>
         </div>
+        )}
+
+        {/* Mobile-only compact sort/category row (selects only, no pill
+            strip — persona rail above already handles persona filtering). */}
+        {isMobile && (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 14,
+              flexWrap: "wrap",
+            }}
+          >
+            <select
+              value={categoryFilter}
+              onChange={(e) =>
+                setCategoryFilter(e.target.value as HookCategory | "all")
+              }
+              style={{
+                flex: 1,
+                minWidth: 140,
+                padding: "9px 12px",
+                fontSize: 13,
+                background: "var(--surface)",
+                border: "1px solid var(--line-2)",
+                borderRadius: 10,
+                color: "var(--ink)",
+              }}
+            >
+              <option value="all">All categories</option>
+              {HOOK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {HOOK_CATEGORY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as Sort)}
+              style={{
+                padding: "9px 12px",
+                fontSize: 13,
+                background: "var(--surface)",
+                border: "1px solid var(--line-2)",
+                borderRadius: 10,
+                color: "var(--ink)",
+              }}
+            >
+              <option value="views">Views</option>
+              <option value="recent">Recent</option>
+            </select>
+          </div>
+        )}
 
         {filteredPosts.length === 0 ? (
           <EmptyBlock>
             No posts with hooks yet. Run <strong>Scrape now</strong> to pull them
             from Apify.
           </EmptyBlock>
+        ) : isMobile ? (
+          // Mobile: stacked full-width rows, thumb + hook + meta. Grid
+          // columns on <390px are unusable.
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: 10 }}
+          >
+            {filteredPosts.slice(0, 50).map((p) => (
+              <MobilePostRow key={p.id} post={p} />
+            ))}
+          </div>
         ) : (
           <div
             style={{
@@ -433,6 +722,7 @@ export function HookAnalytics() {
           </div>
         )}
       </section>
+      )}
 
       {captionHookId && (() => {
         const target = generated.find((h) => h.id === captionHookId);
@@ -745,4 +1035,124 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
       </div>
     </a>
   );
+}
+
+/** Mobile-only list row for top-performing posts. Full-width, stacked —
+ *  no 6-column grid competing for <400px of horizontal space. */
+function MobilePostRow({ post }: { post: TikTokPost }) {
+  const persona = PERSONAS[post.personaId];
+  const cat =
+    (HOOK_CATEGORY_LABELS as Record<string, string>)[post.category] ??
+    post.category;
+  return (
+    <a
+      href={post.postUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "flex",
+        gap: 12,
+        padding: 12,
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
+        borderRadius: 14,
+        textDecoration: "none",
+        color: "var(--ink)",
+      }}
+    >
+      {post.firstSlideUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={post.firstSlideUrl}
+          alt=""
+          style={{
+            width: 64,
+            height: 80,
+            flexShrink: 0,
+            objectFit: "cover",
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+            background: persona.soft,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 64,
+            height: 80,
+            flexShrink: 0,
+            borderRadius: 8,
+            background: persona.soft,
+            border: "1px solid var(--line)",
+          }}
+        />
+      )}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <div
+          className="serif"
+          style={{
+            fontSize: 14,
+            fontWeight: 400,
+            lineHeight: 1.35,
+            marginBottom: 6,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: "vertical",
+          }}
+        >
+          {post.firstSlideText || (
+            <span style={{ color: "var(--ink-4)" }}>(no hook)</span>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            className="mono"
+            style={{
+              fontSize: 9,
+              padding: "2px 6px",
+              borderRadius: 4,
+              background: "var(--bg-2)",
+              color: "var(--ink-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {cat}
+          </span>
+          <span
+            className="mono"
+            style={{ fontSize: 10, color: "var(--ink-4)" }}
+          >
+            {persona.name} · {formatRelative(post.postedAt ?? post.createdAt)}
+          </span>
+          <div style={{ flex: 1 }} />
+          <span
+            className="serif"
+            style={{
+              fontSize: 15,
+              fontWeight: 500,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {formatViewCount(post.viewCount)}
+          </span>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function formatViewCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+  return n.toLocaleString();
 }

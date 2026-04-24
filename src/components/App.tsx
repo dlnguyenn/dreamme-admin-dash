@@ -3,7 +3,13 @@
 import * as React from "react";
 import { Gate } from "./Gate";
 import { NAV_ITEMS, Sidebar, visibleNavItems, type DashId } from "./Shell";
-import { MobileTopBar } from "./MobileTopBar";
+import {
+  MobileTabBar,
+  MobileScreenTitle,
+  MoreSheet,
+  tabForDash,
+  type MobileTab,
+} from "./MobileTabBar";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
@@ -19,6 +25,7 @@ import type { DashState } from "@/lib/types";
 const TWEAK_DEFAULTS: Tweaks = { theme: "light", gridSize: 4 };
 
 export function App() {
+  const isMobile = useIsMobile();
   const [hydrated, setHydrated] = React.useState(false);
   const [authed, setAuthed] = React.useState(false);
   const [role, setRole] = React.useState<"admin" | "user">("user");
@@ -35,6 +42,12 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [tweaks, setTweaks] = React.useState<Tweaks>(TWEAK_DEFAULTS);
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
+  // Mobile-only: Pipeline vs Before are separate tabs in the bottom bar, but
+  // share the ContentPipeline screen under the hood. The parent owns the
+  // mode so the tab bar selection and the screen stay in sync.
+  const [mobilePipelineMode, setMobilePipelineMode] = React.useState<
+    "after" | "before"
+  >("after");
 
   // Hydrate from storage after mount to avoid SSR/CSR mismatch
   React.useEffect(() => {
@@ -154,6 +167,10 @@ export function App() {
         gridSize={tweaks.gridSize}
         refresh={refresh}
         syncError={syncError}
+        // Only parent-drive the mode on mobile — desktop keeps its existing
+        // segmented-control behavior inside ContentPipeline itself.
+        modeOverride={isMobile ? mobilePipelineMode : undefined}
+        onModeOverrideChange={isMobile ? setMobilePipelineMode : undefined}
       />
     );
   } else if (current === "captions") {
@@ -186,6 +203,8 @@ export function App() {
         role={role}
         viewAs={viewAs}
         setViewAs={setViewAs}
+        mobilePipelineMode={mobilePipelineMode}
+        setMobilePipelineMode={setMobilePipelineMode}
       >
         {screen}
       </AppShell>
@@ -208,6 +227,8 @@ function AppShell({
   role,
   viewAs,
   setViewAs,
+  mobilePipelineMode,
+  setMobilePipelineMode,
   children,
 }: {
   current: DashId;
@@ -218,30 +239,73 @@ function AppShell({
   role: "admin" | "user";
   viewAs: "admin" | "user";
   setViewAs: (v: "admin" | "user") => void;
+  mobilePipelineMode: "after" | "before";
+  setMobilePipelineMode: (v: "after" | "before") => void;
   children: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
+  const [moreOpen, setMoreOpen] = React.useState(false);
 
   if (isMobile) {
+    const tab: MobileTab = tabForDash(current, mobilePipelineMode);
+    // Screen title shown in the 54px top bar. Before is its own tab so we
+    // label the screen accordingly; otherwise fall back to the nav item's
+    // label (with a friendly name for Content Pipeline).
+    const navLabel = NAV_ITEMS.find((n) => n.id === current)?.label ?? "";
+    const title =
+      current === "content"
+        ? mobilePipelineMode === "before"
+          ? "Before library"
+          : "Pipeline"
+        : navLabel;
+
+    const handleTabChange = (next: MobileTab) => {
+      if (next === "pipeline") {
+        setCurrent("content");
+        setMobilePipelineMode("after");
+      } else if (next === "before") {
+        setCurrent("content");
+        setMobilePipelineMode("before");
+      } else if (next === "captions") {
+        setCurrent("captions");
+      } else if (next === "hooks") {
+        setCurrent("hooks");
+      }
+    };
+
     return (
       <div style={{ minHeight: "100vh" }}>
-        <MobileTopBar
-          current={current}
-          setCurrent={setCurrent}
-          onLogout={logout}
-          role={role}
-          viewAs={viewAs}
-          setViewAs={setViewAs}
-        />
+        <MobileScreenTitle title={title} />
         <main
-          key={current}
+          key={`${current}-${mobilePipelineMode}`}
           style={{
-            padding: "16px 16px 96px",
+            // Bottom padding clears the 52px tab bar + home indicator safe
+            // area so content never hides behind the fixed nav. Horizontal
+            // padding matches the previous mobile shell so existing screens
+            // that assume a padded main don't need to change; screens that
+            // want full-bleed rails / hero images use negative margins.
+            padding:
+              "12px 16px calc(72px + env(safe-area-inset-bottom))",
             animation: "fadeIn 280ms ease",
           }}
         >
           {children}
         </main>
+        <MobileTabBar
+          tab={tab}
+          onTabChange={handleTabChange}
+          onOpenMore={() => setMoreOpen(true)}
+        />
+        <MoreSheet
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          current={current}
+          onNavigate={(id) => setCurrent(id)}
+          role={role}
+          viewAs={viewAs}
+          setViewAs={setViewAs}
+          onLogout={logout}
+        />
       </div>
     );
   }

@@ -130,6 +130,26 @@ select {
   body {
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+    /* Prevent page scroll from rubber-banding through to the bottom sheet
+       / modal content underneath when one is open. */
+    overscroll-behavior-y: contain;
+  }
+  /* iOS auto-zooms when focusing an input whose effective font-size is <16px.
+     Force form controls to 16px on phones so the viewport doesn't reflow on
+     tap. Uses !important because most inputs in the codebase set fontSize
+     inline; without it, iOS still zooms. Desktop keeps its denser inputs. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  /* Long-pressing buttons on iOS pops up the text-selection bubble, which is
+     noisy for UI controls. Disable selection on buttons only. */
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* Hide native scrollbar on horizontal tab strips marked with this class. */
   .mobile-hscroll {

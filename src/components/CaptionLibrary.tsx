@@ -114,26 +114,49 @@ export function CaptionLibrary({
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Library"
-        title={
-          <>
-            <span style={{ fontStyle: "italic" }}>Caption</span> library
-          </>
-        }
-        subtitle="Every caption you've saved from the content pipeline, searchable and editable. Star the keepers; mark what's been posted so you don't double-use."
-        tint="color-mix(in oklab, var(--p-emma) 40%, transparent)"
-      />
+      {!isMobile && (
+        <PageHeader
+          eyebrow="Library"
+          title={
+            <>
+              <span style={{ fontStyle: "italic" }}>Caption</span> library
+            </>
+          }
+          subtitle="Every caption you've saved from the content pipeline, searchable and editable. Star the keepers; mark what's been posted so you don't double-use."
+          tint="color-mix(in oklab, var(--p-emma) 40%, transparent)"
+        />
+      )}
 
       <div
-        style={{
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          marginBottom: isMobile ? 16 : 24,
-          flexWrap: "wrap",
-          flexDirection: isMobile ? "column" : "row",
-        }}
+        style={
+          isMobile
+            ? {
+                // Sticky search + filter so creators never lose their filter
+                // as they scroll a long caption list. Extend to the screen
+                // edges with a negative margin that counters main's 16px
+                // gutter, then pad internally to match.
+                position: "sticky",
+                top: "calc(54px + env(safe-area-inset-top))",
+                zIndex: 5,
+                margin: "-12px -16px 14px",
+                padding: "12px 16px 10px",
+                background:
+                  "color-mix(in oklab, var(--surface) 96%, transparent)",
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
+                borderBottom: "1px solid var(--line)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }
+            : {
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                marginBottom: 24,
+                flexWrap: "wrap",
+              }
+        }
       >
         <div
           style={{
@@ -403,49 +426,108 @@ export function CaptionLibrary({
                     {formatRelative(c.createdAt)}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: 4 }}>
+                <div style={{ display: "flex", gap: isMobile ? 8 : 4 }}>
                   {!isEditing ? (
-                    <>
-                      <IconBtn
-                        title="Copy"
-                        onClick={() => {
-                          copy(c.caption);
-                          toast("Copied to clipboard");
-                        }}
-                      >
-                        <Icons.Copy size={14} />
-                      </IconBtn>
-                      <IconBtn
-                        title="Edit"
-                        onClick={() => {
-                          setEditingId(c.id);
-                          setDraft(c.caption);
-                        }}
-                      >
-                        <Icons.Edit size={14} />
-                      </IconBtn>
-                      <IconBtn
-                        title={c.posted ? "Unmark posted" : "Mark as posted"}
-                        active={c.posted}
-                        onClick={() => {
-                          update(c.id, { posted: !c.posted });
-                          toast(c.posted ? "Unmarked" : "Marked as posted");
-                        }}
-                      >
-                        <Icons.Check size={14} />
-                      </IconBtn>
-                      <IconBtn
-                        title="Remove from library"
-                        onClick={() => {
-                          if (confirm("Remove from library?")) {
-                            remove(c.id);
-                            toast("Removed");
+                    isMobile ? (
+                      // Mobile: promote Copy to a primary ink-filled pill —
+                      // it's the single most frequent verb on this screen.
+                      // Edit stays secondary; posted/remove live on long-press
+                      // or in the detail view.
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingId(c.id);
+                            setDraft(c.caption);
+                          }}
+                          style={{
+                            height: 36,
+                            minHeight: 36,
+                            padding: "0 14px",
+                            borderRadius: 10,
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--line-2)",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: "var(--ink-2)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Icons.Edit size={13} /> Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            copy(c.caption);
+                            toast("Caption copied");
+                          }}
+                          style={{
+                            height: 36,
+                            minHeight: 36,
+                            padding: "0 16px",
+                            borderRadius: 10,
+                            background: "var(--ink)",
+                            border: "none",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--surface)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Icons.Copy size={13} /> Copy
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <IconBtn
+                          title="Copy"
+                          onClick={() => {
+                            copy(c.caption);
+                            toast("Copied to clipboard");
+                          }}
+                        >
+                          <Icons.Copy size={14} />
+                        </IconBtn>
+                        <IconBtn
+                          title="Edit"
+                          onClick={() => {
+                            setEditingId(c.id);
+                            setDraft(c.caption);
+                          }}
+                        >
+                          <Icons.Edit size={14} />
+                        </IconBtn>
+                        <IconBtn
+                          title={
+                            c.posted ? "Unmark posted" : "Mark as posted"
                           }
-                        }}
-                      >
-                        <Icons.Close size={14} />
-                      </IconBtn>
-                    </>
+                          active={c.posted}
+                          onClick={() => {
+                            update(c.id, { posted: !c.posted });
+                            toast(
+                              c.posted ? "Unmarked" : "Marked as posted",
+                            );
+                          }}
+                        >
+                          <Icons.Check size={14} />
+                        </IconBtn>
+                        <IconBtn
+                          title="Remove from library"
+                          onClick={() => {
+                            if (confirm("Remove from library?")) {
+                              remove(c.id);
+                              toast("Removed");
+                            }
+                          }}
+                        >
+                          <Icons.Close size={14} />
+                        </IconBtn>
+                      </>
+                    )
                   ) : (
                     <>
                       <Button

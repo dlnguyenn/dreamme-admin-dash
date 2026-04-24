@@ -235,13 +235,18 @@ export function BeforePhotoGenerator({
       onClose={busy ? () => {} : onClose}
       desktopMaxWidth={880}
       padded={false}
+      fullscreenOnMobile
       ariaLabel="Generate before photo"
     >
       <div
         style={{
           display: "flex",
           flexDirection: "column",
-          maxHeight: isMobile ? "92vh" : "90vh",
+          // On mobile the Sheet is now fullscreen (inset: 0), so this inner
+          // column takes the whole viewport minus the safe-area padding
+          // Sheet already applied. Desktop keeps the 90vh card layout.
+          height: isMobile ? "100%" : undefined,
+          maxHeight: isMobile ? undefined : "90vh",
           overflow: "hidden",
         }}
       >
@@ -256,6 +261,31 @@ export function BeforePhotoGenerator({
             gap: 16,
           }}
         >
+          {isMobile && (
+            <button
+              onClick={busy ? undefined : onClose}
+              aria-label="Close"
+              style={{
+                width: 36,
+                height: 36,
+                minHeight: 36,
+                borderRadius: 10,
+                background: "transparent",
+                border: "1px solid transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: busy ? "default" : "pointer",
+                flexShrink: 0,
+                marginTop: -4,
+                marginLeft: -8,
+                color: "var(--ink-2)",
+                opacity: busy ? 0.4 : 1,
+              }}
+            >
+              <Icons.Close size={20} />
+            </button>
+          )}
           <div>
             <div
               className="serif"
@@ -360,34 +390,56 @@ export function BeforePhotoGenerator({
         {/* Footer */}
         <div
           style={{
-            padding: isMobile ? "12px 14px" : "14px 20px",
+            padding: isMobile
+              ? "10px 14px calc(12px + env(safe-area-inset-bottom))"
+              : "14px 20px",
             borderTop: "1px solid var(--line)",
             display: "flex",
+            flexDirection: isMobile ? "column" : "row",
             justifyContent: "space-between",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: isMobile ? "wrap" : "nowrap",
+            alignItems: isMobile ? "stretch" : "center",
+            gap: isMobile ? 8 : 8,
+            background: isMobile ? "var(--surface)" : undefined,
           }}
         >
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-            {generating && "Generating two variations — this usually takes 10-30 seconds…"}
-            {!generating && view === "results" && results.length > 0 && (
-              <span>
-                {savedIds.size} of {results.length} kept
-              </span>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          {(generating ||
+            (view === "results" && results.length > 0)) && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--ink-3)",
+                textAlign: isMobile ? "center" : "left",
+              }}
+            >
+              {generating &&
+                "Generating two variations — this usually takes 10-30 seconds…"}
+              {!generating && view === "results" && results.length > 0 && (
+                <span>
+                  {savedIds.size} of {results.length} kept
+                </span>
+              )}
+            </div>
+          )}
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              width: isMobile ? "100%" : undefined,
+            }}
+          >
             {view === "pick" ? (
               <>
-                <Button variant="ghost" onClick={onClose} disabled={busy}>
-                  Close
-                </Button>
+                {!isMobile && (
+                  <Button variant="ghost" onClick={onClose} disabled={busy}>
+                    Close
+                  </Button>
+                )}
                 <Button
                   variant="primary"
                   icon={<Icons.Sparkles />}
                   onClick={runGenerate}
                   disabled={!canGenerate}
+                  style={isMobile ? { width: "100%" } : undefined}
                   title={
                     !selectedPath
                       ? "Pick a reference photo first"
@@ -409,14 +461,16 @@ export function BeforePhotoGenerator({
                   variant="ghost"
                   onClick={handleDiscardAll}
                   disabled={busy}
+                  style={isMobile ? { width: "100%" } : undefined}
                 >
-                  Discard & pick again
+                  {isMobile ? "Pick again" : "Discard & pick again"}
                 </Button>
                 <Button
                   variant="primary"
                   icon={<Icons.Sparkles />}
                   onClick={runGenerate}
                   disabled={!canGenerate || generating}
+                  style={isMobile ? { width: "100%" } : undefined}
                   title={
                     !isAdmin && left <= 0
                       ? "Daily generation limit reached"

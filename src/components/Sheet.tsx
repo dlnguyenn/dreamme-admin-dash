@@ -27,6 +27,7 @@ export function Sheet({
   onClose,
   desktopMaxWidth = 480,
   padded = true,
+  fullscreenOnMobile = false,
   ariaLabel,
   children,
 }: {
@@ -34,6 +35,14 @@ export function Sheet({
   onClose: () => void;
   desktopMaxWidth?: number;
   padded?: boolean;
+  /**
+   * When true, the mobile presentation is a full-screen slide-up panel
+   * (no rounded top corners, no drag handle, `inset: 0`). Use for flows
+   * that need the full viewport — e.g. the 2-step Before Photo generator
+   * where the step content plus a sticky CTA bar don't fit in 92vh once
+   * the iOS keyboard or a tall reference grid is present.
+   */
+  fullscreenOnMobile?: boolean;
   ariaLabel?: string;
   children: React.ReactNode;
 }) {
@@ -83,25 +92,38 @@ export function Sheet({
     animation: "fadeIn 180ms ease",
   };
 
-  const mobilePanel: React.CSSProperties = {
-    position: "fixed",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 201,
-    maxHeight: "92vh",
-    overflow: "auto",
-    background: "var(--surface)",
-    borderTop: "1px solid var(--line)",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    boxShadow: "var(--shadow-lg)",
-    padding: padded ? "14px 16px 20px" : 0,
-    paddingBottom: padded
-      ? "calc(20px + env(safe-area-inset-bottom))"
-      : "env(safe-area-inset-bottom)",
-    animation: "sheetSlideUp 240ms cubic-bezier(.4,0,.2,1)",
-  };
+  const mobilePanel: React.CSSProperties = fullscreenOnMobile
+    ? {
+        position: "fixed",
+        inset: 0,
+        zIndex: 201,
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--surface)",
+        padding: 0,
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingTop: "env(safe-area-inset-top)",
+        animation: "sheetSlideUp 280ms cubic-bezier(.4,0,.2,1)",
+      }
+    : {
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 201,
+        maxHeight: "92vh",
+        overflow: "auto",
+        background: "var(--surface)",
+        borderTop: "1px solid var(--line)",
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        boxShadow: "var(--shadow-lg)",
+        padding: padded ? "14px 16px 20px" : 0,
+        paddingBottom: padded
+          ? "calc(20px + env(safe-area-inset-bottom))"
+          : "env(safe-area-inset-bottom)",
+        animation: "sheetSlideUp 240ms cubic-bezier(.4,0,.2,1)",
+      };
 
   return (
     <>
@@ -112,7 +134,7 @@ export function Sheet({
         aria-label={ariaLabel}
         style={isMobile ? mobilePanel : desktopPanel}
       >
-        {isMobile && padded && <DragHandle />}
+        {isMobile && padded && !fullscreenOnMobile && <DragHandle />}
         {children}
       </div>
     </>
