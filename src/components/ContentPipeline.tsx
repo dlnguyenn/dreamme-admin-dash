@@ -12,6 +12,7 @@ import { ModifyImageModal } from "./ModifyImageModal";
 import { BeforePhotoUploader } from "./BeforePhotoUploader";
 import { BeforePhotoGenerator } from "./BeforePhotoGenerator";
 import { TransformationExportModal } from "./TransformationExportModal";
+import { PersonaRail } from "./PersonaRail";
 import { useCopy } from "./ui";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
@@ -28,15 +29,27 @@ export function ContentPipeline({
   gridSize,
   refresh,
   syncError,
+  modeOverride,
+  onModeOverrideChange,
 }: {
   state: DashState;
   setState: React.Dispatch<React.SetStateAction<DashState>>;
   gridSize: number;
   refresh: () => void;
   syncError: string | null;
+  /**
+   * When set, forces the pipeline mode ("after"/"before") from the parent.
+   * Used by the mobile bottom tab bar, where "Before" is its own tab.
+   * When provided, onModeOverrideChange fires when the user toggles the
+   * internal mode strip so the parent can re-route (e.g., switch the tab
+   * bar selection back to Pipeline).
+   */
+  modeOverride?: PipelineMode;
+  onModeOverrideChange?: (next: PipelineMode) => void;
 }) {
   const [tab, setTab] = React.useState<"all" | PersonaId>("all");
-  const [mode, setModeRaw] = React.useState<PipelineMode>("after");
+  const [modeInternal, setModeRaw] = React.useState<PipelineMode>("after");
+  const mode = modeOverride ?? modeInternal;
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [webhookOpen, setWebhookOpen] = React.useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
@@ -72,19 +85,24 @@ export function ContentPipeline({
   // Restore mode from session storage on mount.
   React.useEffect(() => {
     if (typeof window === "undefined") return;
+    if (modeOverride !== undefined) return; // parent controls mode
     const saved = window.sessionStorage.getItem(MODE_STORAGE_KEY);
     if (saved === "before" || saved === "after") setModeRaw(saved);
-  }, []);
+  }, [modeOverride]);
 
-  const setMode = React.useCallback((next: PipelineMode) => {
-    setModeRaw(next);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(MODE_STORAGE_KEY, next);
-    }
-    // Leaving selection mode on mode switch avoids confusing cross-mode deletes.
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-  }, []);
+  const setMode = React.useCallback(
+    (next: PipelineMode) => {
+      setModeRaw(next);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(MODE_STORAGE_KEY, next);
+      }
+      // Leaving selection mode on mode switch avoids confusing cross-mode deletes.
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      onModeOverrideChange?.(next);
+    },
+    [onModeOverrideChange],
+  );
 
   const exitSelectionMode = () => {
     setSelectionMode(false);
@@ -397,6 +415,7 @@ export function ContentPipeline({
         ))}
       </div>
 
+      {!isMobile && (
       <div
         style={{
           display: "flex",
@@ -461,21 +480,32 @@ export function ContentPipeline({
           })}
         </div>
       </div>
+      )}
 
+      {isMobile ? (
+        // Mobile: avatar-first persona rail (matches mockup). Pulled out of
+        // the main padded content so the rail edge-to-edges to the screen.
+        <div style={{ margin: "0 -16px 16px" }}>
+          <PersonaRail
+            current={tab}
+            onChange={setTab}
+            counts={counts as Partial<Record<"all" | PersonaId, number>>}
+            includeAll
+          />
+        </div>
+      ) : (
       <div
         ref={personaTabsRef}
-        className={isMobile ? "mobile-hscroll" : undefined}
         style={{
           display: "flex",
           gap: 6,
-          marginBottom: isMobile ? 18 : 28,
+          marginBottom: 28,
           padding: 5,
           background: "var(--surface-2)",
           border: "1px solid var(--line)",
           borderRadius: 12,
-          width: isMobile ? "100%" : "fit-content",
-          overflowX: isMobile ? "auto" : "visible",
-          scrollSnapType: isMobile ? "x proximity" : undefined,
+          width: "fit-content",
+          overflowX: "visible",
           WebkitOverflowScrolling: "touch",
         }}
       >
@@ -547,6 +577,7 @@ export function ContentPipeline({
           );
         })}
       </div>
+      )}
 
       {selectionMode && (
         <div
