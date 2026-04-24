@@ -211,6 +211,10 @@ export function BeforePhotoGenerator({
         personaId,
         imageBase64: result.imageBase64,
         imageMime: result.mimeType,
+        // Persist the scenario label so the library card reads
+        // "Before photo · Bedroom mirror" instead of the generic
+        // "transformation asset" fallback used for legacy uploads.
+        caption: SCENARIO_LABELS[result.scenario],
       });
       setSavedIds((prev) => new Set(prev).add(result.id));
       onSaved(row);

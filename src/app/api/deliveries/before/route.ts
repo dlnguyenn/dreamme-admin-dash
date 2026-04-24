@@ -27,6 +27,10 @@ const Body = z.object({
   ]),
   image_base64: z.string().min(1),
   image_mime: z.string().optional(),
+  // Optional short label shown under the card in the library, e.g.
+  // "Bedroom mirror" when a generated photo is kept. Stored in the
+  // existing `caption` column (empty for legacy manual uploads).
+  caption: z.string().max(120).optional(),
 });
 
 function extOf(mime: string | undefined): string {
@@ -99,7 +103,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { persona, image_base64, image_mime } = parsed.data;
+  const { persona, image_base64, image_mime, caption } = parsed.data;
   if (!isPersonaId(persona)) {
     return NextResponse.json(
       { ok: false, error: "bad persona" },
@@ -126,7 +130,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         persona,
-        caption: "",
+        caption: caption ?? "",
         image_url: imageUrl,
         is_before: true,
       }),
