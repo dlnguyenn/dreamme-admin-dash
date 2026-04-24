@@ -248,14 +248,14 @@ function AppShell({
 
   if (isMobile) {
     const tab: MobileTab = tabForDash(current, mobilePipelineMode);
-    // Screen title shown in the 54px top bar. Before is its own tab so we
-    // label the screen accordingly; otherwise fall back to the nav item's
-    // label (with a friendly name for Content Pipeline).
+    // Screen title shown in the 54px top bar. Transformation is its own tab
+    // so we label the screen accordingly; otherwise fall back to the nav
+    // item's label (with a friendly name for Content Pipeline).
     const navLabel = NAV_ITEMS.find((n) => n.id === current)?.label ?? "";
     const title =
       current === "content"
         ? mobilePipelineMode === "before"
-          ? "Before library"
+          ? "Transformation"
           : "Pipeline"
         : navLabel;
 
