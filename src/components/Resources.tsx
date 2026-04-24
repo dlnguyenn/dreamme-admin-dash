@@ -89,8 +89,8 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
     <>
       <PageHeader
         eyebrow="Creator toolkit"
-        title={<em>Resources</em>}
-        subtitle="Reference images, templates, and external links — curated to help creators ship faster."
+        title={<em>Tips &amp; Resources</em>}
+        subtitle="Reference images, templates, external links, and how-to captions — curated to help creators ship faster."
         tint="color-mix(in oklab, var(--p-olivia) 45%, transparent)"
         actions={
           isAdmin ? (
