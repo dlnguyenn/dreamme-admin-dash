@@ -3,6 +3,9 @@ import type {
   DeliveryRow,
   FeatureRequest,
   FeatureRequestRow,
+  Resource,
+  ResourceKind,
+  ResourceRow,
   SavedCaption,
   SavedCaptionRow,
   SpendLineItem,
@@ -248,6 +251,22 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
     starred: !!row.starred,
     platform: row.platform === "instagram" ? "instagram" : "tiktok",
     createdAt: row.created_at,
+  };
+}
+
+function mapResource(row: ResourceRow): Resource {
+  const kind: ResourceKind = row.kind === "link" ? "link" : "image";
+  return {
+    id: row.id,
+    kind,
+    title: row.title,
+    description: row.description ?? "",
+    imageUrl: row.image_url,
+    linkUrl: row.link_url,
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -600,6 +619,122 @@ export const API = {
       `select=hook_text&id=eq.${encodeURIComponent(hookId)}&limit=1`,
     );
     return rows.length ? rows[0].hook_text : null;
+  },
+
+  async fetchResources(): Promise<Resource[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<ResourceRow>(
+      "resources",
+      "select=*&order=sort_order.desc,created_at.desc",
+    );
+    return rows.map(mapResource);
+  },
+
+  async createResourceLink({
+    title,
+    description,
+    linkUrl,
+    tags,
+  }: {
+    title: string;
+    description?: string;
+    linkUrl: string;
+    tags?: string[];
+  }): Promise<Resource> {
+    const res = await fetch("/api/resources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "link" as ResourceKind,
+        title,
+        description: description ?? null,
+        linkUrl,
+        tags: tags ?? [],
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; resource?: ResourceRow; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.resource) {
+      throw new Error(body?.error || `resource create failed: ${res.status}`);
+    }
+    return mapResource(body.resource);
+  },
+
+  async createResourceImage({
+    title,
+    description,
+    file,
+    tags,
+  }: {
+    title: string;
+    description?: string;
+    file: File;
+    tags?: string[];
+  }): Promise<Resource> {
+    const { base64, mime } = await downscaleImageToBase64(file);
+    const res = await fetch("/api/resources/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description: description ?? null,
+        image_base64: base64,
+        image_mime: mime,
+        tags: tags ?? [],
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; resource?: ResourceRow; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.resource) {
+      if (res.status === 413) {
+        throw new Error(
+          "Image is too large even after downscaling. Try a smaller photo.",
+        );
+      }
+      throw new Error(body?.error || `resource upload failed: ${res.status}`);
+    }
+    return mapResource(body.resource);
+  },
+
+  async updateResource(
+    id: string,
+    patch: {
+      title?: string;
+      description?: string | null;
+      tags?: string[];
+      linkUrl?: string;
+    },
+  ): Promise<Resource> {
+    const res = await fetch(`/api/resources/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; resource?: ResourceRow; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.resource) {
+      throw new Error(body?.error || `resource update failed: ${res.status}`);
+    }
+    return mapResource(body.resource);
+  },
+
+  async deleteResource(id: string): Promise<void> {
+    const res = await fetch(`/api/resources/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; error?: string }
+      | null;
+    if (!res.ok || !body?.ok) {
+      throw new Error(body?.error || `resource delete failed: ${res.status}`);
+    }
   },
 
   async fetchDelivery(id: string): Promise<Delivery | null> {

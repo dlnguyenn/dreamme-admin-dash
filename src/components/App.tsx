@@ -16,6 +16,7 @@ import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
 import { SpendDashboard } from "./SpendDashboard";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
+import { Resources } from "./Resources";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -188,6 +189,8 @@ export function App() {
     screen = <SpendDashboard />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
+  } else if (current === "resources") {
+    screen = <Resources isAdmin={role === "admin"} />;
   } else {
     screen = <ComingSoon item={currentItem} />;
   }

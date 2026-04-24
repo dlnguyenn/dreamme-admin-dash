@@ -173,6 +173,34 @@ export interface SpendLineItem {
   createdAt: string;
 }
 
+export type ResourceKind = "image" | "link";
+
+export interface ResourceRow {
+  id: string;
+  kind: ResourceKind;
+  title: string;
+  description: string | null;
+  image_url: string | null;
+  link_url: string | null;
+  tags: string[] | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Resource {
+  id: string;
+  kind: ResourceKind;
+  title: string;
+  description: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  tags: string[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type FeatureRequestStatus =
   | "new"
   | "planned"
