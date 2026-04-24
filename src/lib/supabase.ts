@@ -372,10 +372,16 @@ export const API = {
     personaId,
     imageBase64,
     imageMime,
+    caption,
   }: {
     personaId: PersonaId;
     imageBase64: string;
     imageMime?: string;
+    /**
+     * Optional short label shown under the delivery card (e.g. scenario
+     * name like "Bedroom mirror"). Stored in the `caption` column.
+     */
+    caption?: string;
   }): Promise<Delivery> {
     const res = await fetch("/api/deliveries/before", {
       method: "POST",
@@ -384,6 +390,7 @@ export const API = {
         persona: personaId,
         image_base64: imageBase64,
         image_mime: imageMime ?? "image/png",
+        caption,
       }),
     });
     const body = (await res.json().catch(() => null)) as

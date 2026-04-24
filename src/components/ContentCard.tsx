@@ -337,7 +337,7 @@ export function ContentCard({
           }}
         >
           {item.isBefore
-            ? "Before photo · transformation asset"
+            ? `Before photo · ${item.caption?.trim() || "transformation asset"}`
             : `${item.caption.slice(0, 160)}…`}
         </div>
       </div>
