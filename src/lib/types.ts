@@ -175,6 +175,40 @@ export interface SpendLineItem {
 
 export type ResourceKind = "image" | "link";
 
+export interface ReferenceSlide {
+  imageUrl: string;
+  note: string;
+}
+
+export interface ReferenceSlideRow {
+  image_url: string;
+  note: string;
+}
+
+export interface ResourceReferenceRow {
+  id: string;
+  tiktok_url: string;
+  title: string | null;
+  caption: string | null;
+  author_username: string | null;
+  slides: ReferenceSlideRow[] | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResourceReference {
+  id: string;
+  tiktokUrl: string;
+  title: string;
+  caption: string;
+  authorUsername: string;
+  slides: ReferenceSlide[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ResourceRow {
   id: string;
   kind: ResourceKind;
