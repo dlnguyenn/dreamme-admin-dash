@@ -9,11 +9,12 @@ import { visibleNavItems, type DashId, type NavItem } from "./Shell";
  * iOS-style bottom tab bar. Replaces the hamburger drawer on mobile.
  *
  * Five tabs always visible:
- *   Pipeline · Captions · Hooks · Before · More
+ *   Pipeline · Captions · Hooks · Transformation · More
  *
- * "Before" is a pseudo-tab that routes to Content Pipeline in `before` mode
- * — convenient because creators jump between the before library and before
- * photo generator constantly.
+ * "Transformation" is a pseudo-tab that routes to Content Pipeline in
+ * `before` mode (internally still the "before" data channel — that's the DB
+ * shape; only the label is user-facing "Transformation"). Creators jump
+ * between the library and the generator constantly, so it earns its slot.
  *
  * "More" opens a bottom sheet containing the remaining destinations
  * (Spend / Feature Requests / etc for admins) plus the admin view-as toggle
@@ -33,7 +34,7 @@ const PRIMARY_TABS: Array<{
   { id: "pipeline", label: "Pipeline", icon: "Grid" },
   { id: "captions", label: "Captions", icon: "Message" },
   { id: "hooks", label: "Hooks", icon: "Chart" },
-  { id: "before", label: "Before", icon: "Sparkles" },
+  { id: "before", label: "Transformation", icon: "Sparkles" },
   { id: "more", label: "More", icon: "MoreVertical" },
 ];
 
