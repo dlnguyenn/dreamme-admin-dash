@@ -38,9 +38,18 @@ export async function editImage(params: {
   mimeType: string;
   prompt: string;
   maxRetries?: number;
+  /**
+   * Per-attempt timeout in ms. Prevents a single stalled Gemini call from
+   * blocking the whole serverless function past Vercel's 60s cap. Defaults
+   * to 45s — lots of headroom for normal image-edit latency (15-25s) while
+   * still killing pathological hangs. Callers on tight deadlines (e.g.,
+   * two parallel calls within a 60s budget) should pass a smaller value.
+   */
+  timeoutMs?: number;
 }): Promise<{ imageBase64: string; mimeType: string }> {
   if (!GOOGLE_API_KEY) throw new Error("GOOGLE_API_KEY not set");
   const maxRetries = params.maxRetries ?? 3;
+  const timeoutMs = params.timeoutMs ?? 45_000;
   const body = {
     contents: [
       {
@@ -62,14 +71,37 @@ export async function editImage(params: {
 
   let attempt = 0;
   while (true) {
-    const res = await fetch(ENDPOINT(MODEL), {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": GOOGLE_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(ENDPOINT(MODEL), {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": GOOGLE_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const aborted =
+        (err as Error)?.name === "AbortError" ||
+        /abort/i.test((err as Error)?.message ?? "");
+      if (aborted && attempt < maxRetries) {
+        // Treat a timeout like a retryable network blip.
+        const backoff = Math.min(16_000, 500 * Math.pow(2, attempt));
+        const jitter = Math.floor(Math.random() * 250);
+        await sleep(backoff + jitter);
+        attempt++;
+        continue;
+      }
+      throw aborted
+        ? new Error(`Gemini timed out after ${timeoutMs}ms`)
+        : (err as Error);
+    }
+    clearTimeout(timer);
 
     if (res.ok) {
       const data = (await res.json()) as GeminiResponse;

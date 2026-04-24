@@ -99,12 +99,20 @@ export async function POST(req: Request) {
         ? Array.from(pickTwoScenarios())
         : pickNScenarios(count);
 
+    // Budget math: Vercel Hobby caps this function at 60s (see maxDuration
+    // above). Two image edits run in parallel; each gets a tight per-attempt
+    // timeout and a single retry so a single stalled Gemini request can't
+    // hang the whole batch. Worst case per image: 22s + ~500ms backoff +
+    // 22s = ~44.5s. Two in parallel = same. Plus reference-fetch (~1-2s) +
+    // response serialization, we finish with headroom.
     const calls = scenarios.map((scenario) => {
       const lb = randomTargetLb();
       return editImage({
         imageBytes,
         mimeType: mime,
         prompt: buildBeforePhotoPrompt(scenario, lb),
+        timeoutMs: 22_000,
+        maxRetries: 1,
       }).then((r) => ({ ...r, targetLb: lb, scenario }));
     });
 
