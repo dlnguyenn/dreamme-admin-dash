@@ -5,9 +5,13 @@ import { PageHeader } from "./Shell";
 import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { ResourceAddModal } from "./ResourceAddModal";
+import { References } from "./References";
 import { API } from "@/lib/supabase";
 import { formatRelative } from "@/lib/format";
 import type { Resource } from "@/lib/types";
+
+type SubtabId = "library" | "references";
+const SUBTAB_KEY = "dreamme.resourcesSubtab";
 
 export function Resources({ isAdmin }: { isAdmin: boolean }) {
   const toast = useToast();
@@ -18,6 +22,20 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Resource | null>(null);
+  const [subtab, setSubtab] = React.useState<SubtabId>("library");
+
+  // Restore persisted subtab on mount.
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SUBTAB_KEY);
+      if (saved === "library" || saved === "references") setSubtab(saved);
+    } catch {}
+  }, []);
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(SUBTAB_KEY, subtab);
+    } catch {}
+  }, [subtab]);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -89,11 +107,11 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
     <>
       <PageHeader
         eyebrow="Creator toolkit"
-        title={<em>Tips &amp; Resources</em>}
-        subtitle="Reference images, templates, external links, and how-to captions — curated to help creators ship faster."
+        title={<em>Resources</em>}
+        subtitle="Reference images, templates, and external links — curated to help creators ship faster."
         tint="color-mix(in oklab, var(--p-olivia) 45%, transparent)"
         actions={
-          isAdmin ? (
+          isAdmin && subtab === "library" ? (
             <Button
               variant="primary"
               icon={<Icons.Plus />}
@@ -105,6 +123,12 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
         }
       />
 
+      <SubtabNav active={subtab} onChange={setSubtab} />
+
+      {subtab === "references" && <References isAdmin={isAdmin} />}
+
+      {subtab === "library" && (
+        <>
       {error && (
         <div
           style={{
@@ -273,7 +297,59 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
           onSaved={onSaved}
         />
       )}
+        </>
+      )}
     </>
+  );
+}
+
+function SubtabNav({
+  active,
+  onChange,
+}: {
+  active: SubtabId;
+  onChange: (id: SubtabId) => void;
+}) {
+  const options: Array<{ id: SubtabId; label: string }> = [
+    { id: "library", label: "Library" },
+    { id: "references", label: "References" },
+  ];
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        gap: 4,
+        padding: 4,
+        marginBottom: 20,
+        border: "1px solid var(--line)",
+        borderRadius: 12,
+        background: "var(--surface)",
+      }}
+    >
+      {options.map((opt) => {
+        const isActive = active === opt.id;
+        return (
+          <button
+            key={opt.id}
+            onClick={() => onChange(opt.id)}
+            style={{
+              padding: "7px 14px",
+              fontSize: 12.5,
+              fontFamily: "inherit",
+              fontWeight: 500,
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              background: isActive ? "var(--ink)" : "transparent",
+              color: isActive ? "var(--surface)" : "var(--ink-2)",
+              transition: "background 140ms ease, color 140ms ease",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

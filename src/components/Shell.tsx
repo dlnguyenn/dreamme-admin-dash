@@ -30,7 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },
   { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas", adminOnly: true },
   { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
-  { id: "resources", label: "Tips & Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
+  { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
   { id: "spend", label: "Spend", icon: "Chart", status: "live", desc: "AI + business expenses", adminOnly: true },
   { id: "requests", label: "Feature Requests", icon: "Bookmark", status: "live", desc: "User-submitted product asks", adminOnly: true },

@@ -3,8 +3,12 @@ import type {
   DeliveryRow,
   FeatureRequest,
   FeatureRequestRow,
+  ReferenceSlide,
+  ReferenceSlideRow,
   Resource,
   ResourceKind,
+  ResourceReference,
+  ResourceReferenceRow,
   ResourceRow,
   SavedCaption,
   SavedCaptionRow,
@@ -251,6 +255,28 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
     starred: !!row.starred,
     platform: row.platform === "instagram" ? "instagram" : "tiktok",
     createdAt: row.created_at,
+  };
+}
+
+function mapReferenceSlide(row: ReferenceSlideRow): ReferenceSlide {
+  return {
+    imageUrl: row.image_url,
+    note: row.note ?? "",
+  };
+}
+
+function mapReference(row: ResourceReferenceRow): ResourceReference {
+  const slides = Array.isArray(row.slides) ? row.slides : [];
+  return {
+    id: row.id,
+    tiktokUrl: row.tiktok_url,
+    title: row.title ?? "",
+    caption: row.caption ?? "",
+    authorUsername: row.author_username ?? "",
+    slides: slides.map(mapReferenceSlide),
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -734,6 +760,92 @@ export const API = {
       | null;
     if (!res.ok || !body?.ok) {
       throw new Error(body?.error || `resource delete failed: ${res.status}`);
+    }
+  },
+
+  async fetchReferences(): Promise<ResourceReference[]> {
+    const res = await fetch("/api/resources/references", {
+      method: "GET",
+      cache: "no-store",
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; references?: ResourceReferenceRow[]; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !Array.isArray(body.references)) {
+      throw new Error(body?.error || `references read failed: ${res.status}`);
+    }
+    return body.references.map(mapReference);
+  },
+
+  async createReference({
+    tiktokUrl,
+  }: {
+    tiktokUrl: string;
+  }): Promise<ResourceReference> {
+    const res = await fetch("/api/resources/references", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tiktokUrl }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          ok: boolean;
+          reference?: ResourceReferenceRow;
+          error?: string;
+        }
+      | null;
+    if (!res.ok || !body?.ok || !body.reference) {
+      throw new Error(body?.error || `reference create failed: ${res.status}`);
+    }
+    return mapReference(body.reference);
+  },
+
+  async updateReference(
+    id: string,
+    patch: {
+      title?: string;
+      slides?: ReferenceSlide[];
+    },
+  ): Promise<ResourceReference> {
+    const payload: { title?: string; slides?: ReferenceSlideRow[] } = {};
+    if (patch.title !== undefined) payload.title = patch.title;
+    if (patch.slides !== undefined) {
+      payload.slides = patch.slides.map((s) => ({
+        image_url: s.imageUrl,
+        note: s.note,
+      }));
+    }
+    const res = await fetch(
+      `/api/resources/references/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    const body = (await res.json().catch(() => null)) as
+      | {
+          ok: boolean;
+          reference?: ResourceReferenceRow;
+          error?: string;
+        }
+      | null;
+    if (!res.ok || !body?.ok || !body.reference) {
+      throw new Error(body?.error || `reference update failed: ${res.status}`);
+    }
+    return mapReference(body.reference);
+  },
+
+  async deleteReference(id: string): Promise<void> {
+    const res = await fetch(
+      `/api/resources/references/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; error?: string }
+      | null;
+    if (!res.ok || !body?.ok) {
+      throw new Error(body?.error || `reference delete failed: ${res.status}`);
     }
   },
 
