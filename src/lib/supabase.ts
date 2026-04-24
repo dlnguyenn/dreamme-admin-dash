@@ -246,6 +246,7 @@ function mapCaption(row: SavedCaptionRow): SavedCaption {
     caption: row.caption,
     posted: !!row.posted,
     starred: !!row.starred,
+    platform: row.platform === "instagram" ? "instagram" : "tiktok",
     createdAt: row.created_at,
   };
 }
@@ -502,6 +503,96 @@ export const API = {
       throw new Error(body?.error || `generate failed: ${res.status}`);
     }
     return { images: body.images, partialErrors: body.partialErrors };
+  },
+
+  async generateInstagramCaption({
+    personaId,
+    hookText,
+    model,
+    notes,
+  }: {
+    personaId: PersonaId;
+    hookText: string;
+    model: string;
+    notes?: string;
+  }): Promise<{ caption: string; charCount: number; compressAttempts: number }> {
+    const res = await fetch("/api/generate/caption/instagram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personaId, hookText, model, notes }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          ok: boolean;
+          caption?: string;
+          charCount?: number;
+          compressAttempts?: number;
+          error?: string;
+        }
+      | null;
+    if (!res.ok || !body?.ok || typeof body.caption !== "string") {
+      throw new Error(body?.error || `IG caption generate failed: ${res.status}`);
+    }
+    return {
+      caption: body.caption,
+      charCount: body.charCount ?? body.caption.length,
+      compressAttempts: body.compressAttempts ?? 0,
+    };
+  },
+
+  /**
+   * Save a generated caption to the library. Supports both TikTok (hook
+   * required, default) and Instagram (either hook or delivery source).
+   */
+  async saveGeneratedCaption({
+    personaId,
+    caption,
+    model,
+    platform = "tiktok",
+    hookId,
+    deliveryId,
+    notes,
+    tipPoolAware = false,
+  }: {
+    personaId: PersonaId;
+    caption: string;
+    model: string;
+    platform?: "tiktok" | "instagram";
+    hookId?: string | null;
+    deliveryId?: string | null;
+    notes?: string;
+    tipPoolAware?: boolean;
+  }): Promise<SavedCaption> {
+    const res = await fetch("/api/generate/caption/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        personaId,
+        caption,
+        model,
+        platform,
+        hookId: hookId ?? null,
+        deliveryId: deliveryId ?? null,
+        notes,
+        tipPoolAware,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | { ok: boolean; savedCaption?: SavedCaptionRow; error?: string }
+      | null;
+    if (!res.ok || !body?.ok || !body.savedCaption) {
+      throw new Error(body?.error || `caption save failed: ${res.status}`);
+    }
+    return mapCaption(body.savedCaption);
+  },
+
+  async fetchHookText(hookId: string): Promise<string | null> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) return null;
+    const rows = await sbSelect<{ hook_text: string }>(
+      "generated_hooks",
+      `select=hook_text&id=eq.${encodeURIComponent(hookId)}&limit=1`,
+    );
+    return rows.length ? rows[0].hook_text : null;
   },
 
   async fetchDelivery(id: string): Promise<Delivery | null> {

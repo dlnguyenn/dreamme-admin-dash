@@ -16,6 +16,7 @@ export function ContentCard({
   onCopyLink,
   onDelete,
   onTransform,
+  onGenerateInstagram,
   selectionMode = false,
   selected = false,
 }: {
@@ -26,6 +27,7 @@ export function ContentCard({
   onCopyLink: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
   onTransform?: (e: React.MouseEvent) => void;
+  onGenerateInstagram?: (e: React.MouseEvent) => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
@@ -183,6 +185,16 @@ export function ContentCard({
                     onCopyLink(e);
                   }}
                 />
+                {onGenerateInstagram && !item.isBefore && (
+                  <MenuItem
+                    icon={<Icons.Sparkles size={14} />}
+                    label="Generate IG caption"
+                    onClick={(e) => {
+                      setMenuOpen(false);
+                      onGenerateInstagram(e);
+                    }}
+                  />
+                )}
                 <MenuItem
                   icon={<Icons.Trash size={14} />}
                   label="Delete"

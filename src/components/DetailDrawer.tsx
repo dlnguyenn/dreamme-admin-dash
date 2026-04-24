@@ -21,6 +21,7 @@ export function DetailDrawer({
   onCopyLink,
   onDelete,
   onModifyImage,
+  onGenerateInstagram,
   inLibrary,
 }: {
   item: Delivery;
@@ -31,6 +32,7 @@ export function DetailDrawer({
   onCopyLink: () => void;
   onDelete: () => void;
   onModifyImage: () => void;
+  onGenerateInstagram?: () => void;
   inLibrary: boolean;
 }) {
   const isMobile = useIsMobile();
@@ -45,6 +47,7 @@ export function DetailDrawer({
         onCopyLink={onCopyLink}
         onDelete={onDelete}
         onModifyImage={onModifyImage}
+        onGenerateInstagram={onGenerateInstagram}
         inLibrary={inLibrary}
       />
     );
@@ -59,6 +62,7 @@ export function DetailDrawer({
       onCopyLink={onCopyLink}
       onDelete={onDelete}
       onModifyImage={onModifyImage}
+      onGenerateInstagram={onGenerateInstagram}
       inLibrary={inLibrary}
     />
   );
@@ -77,6 +81,7 @@ function MobileDetail({
   onCopyLink,
   onDelete,
   onModifyImage,
+  onGenerateInstagram,
   inLibrary,
 }: {
   item: Delivery;
@@ -87,6 +92,7 @@ function MobileDetail({
   onCopyLink: () => void;
   onDelete: () => void;
   onModifyImage: () => void;
+  onGenerateInstagram?: () => void;
   inLibrary: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -480,6 +486,14 @@ function MobileDetail({
             setMoreOpen(false);
             onDelete();
           }}
+          onGenerateInstagram={
+            onGenerateInstagram && !item.isBefore
+              ? () => {
+                  setMoreOpen(false);
+                  onGenerateInstagram();
+                }
+              : undefined
+          }
         />
       )}
     </SideDrawer>
@@ -493,6 +507,7 @@ function MoreActionsPopover({
   onOpenImage,
   onCopyLink,
   onDelete,
+  onGenerateInstagram,
 }: {
   onClose: () => void;
   onEdit: () => void;
@@ -500,6 +515,7 @@ function MoreActionsPopover({
   onOpenImage: () => void;
   onCopyLink: () => void;
   onDelete: () => void;
+  onGenerateInstagram?: () => void;
 }) {
   // Anchored below the top-right More button. Tap outside (scrim) to close.
   return (
@@ -532,6 +548,13 @@ function MoreActionsPopover({
         }}
       >
         <MoreItem icon={<Icons.Edit size={16} />} label="Edit caption" onClick={onEdit} />
+        {onGenerateInstagram && (
+          <MoreItem
+            icon={<Icons.Sparkles size={16} />}
+            label="Generate IG caption"
+            onClick={onGenerateInstagram}
+          />
+        )}
         <MoreItem
           icon={<Icons.Sparkles size={16} />}
           label="Modify image"
@@ -607,6 +630,7 @@ function DesktopDetail({
   onCopyLink,
   onDelete,
   onModifyImage,
+  onGenerateInstagram,
   inLibrary,
 }: {
   item: Delivery;
@@ -617,6 +641,7 @@ function DesktopDetail({
   onCopyLink: () => void;
   onDelete: () => void;
   onModifyImage: () => void;
+  onGenerateInstagram?: () => void;
   inLibrary: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -918,6 +943,15 @@ function DesktopDetail({
               )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
+              {onGenerateInstagram && !item.isBefore && (
+                <Button
+                  size="sm"
+                  icon={<Icons.Sparkles />}
+                  onClick={onGenerateInstagram}
+                >
+                  IG caption
+                </Button>
+              )}
               <Button
                 size="sm"
                 icon={copied ? <Icons.Check /> : <Icons.Copy />}

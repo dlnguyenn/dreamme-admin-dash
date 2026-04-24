@@ -12,6 +12,7 @@ import { ModifyImageModal } from "./ModifyImageModal";
 import { BeforePhotoUploader } from "./BeforePhotoUploader";
 import { BeforePhotoGenerator } from "./BeforePhotoGenerator";
 import { TransformationExportModal } from "./TransformationExportModal";
+import { InstagramCaptionDialog } from "./InstagramCaptionDialog";
 import { PersonaRail } from "./PersonaRail";
 import { useCopy } from "./ui";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -58,6 +59,7 @@ export function ContentPipeline({
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
   const [transformingDelivery, setTransformingDelivery] = React.useState<Delivery | null>(null);
+  const [igDelivery, setIgDelivery] = React.useState<Delivery | null>(null);
   const [uploaderOpen, setUploaderOpen] = React.useState(false);
   const [generatorOpen, setGeneratorOpen] = React.useState(false);
   const toast = useToast();
@@ -804,6 +806,14 @@ export function ContentPipeline({
                         }
                       : undefined
                   }
+                  onGenerateInstagram={
+                    !item.isBefore
+                      ? (e) => {
+                          e.stopPropagation();
+                          setIgDelivery(item);
+                        }
+                      : undefined
+                  }
                 />
               );
             })}
@@ -821,6 +831,7 @@ export function ContentPipeline({
           onCopyLink={() => copyItemLink(selected.id)}
           onDelete={() => setConfirmDeleteId(selected.id)}
           onModifyImage={() => setModifyingId(selected.id)}
+          onGenerateInstagram={() => setIgDelivery(selected)}
           inLibrary={
             selected.inLibrary ||
             state.savedCaptions.some((c) => c.sourceItemId === selected.id)
@@ -876,6 +887,22 @@ export function ContentPipeline({
             setState((s) => ({ ...s, items: [row, ...s.items] }));
           }}
           onClose={() => setGeneratorOpen(false)}
+        />
+      )}
+
+      {igDelivery && (
+        <InstagramCaptionDialog
+          open={true}
+          onClose={() => setIgDelivery(null)}
+          personaId={igDelivery.personaId}
+          seedHookText={igDelivery.caption}
+          sourceHookId={null}
+          sourceDeliveryId={igDelivery.id}
+          seedPreview={igDelivery.caption}
+          onSaved={() => {
+            setIgDelivery(null);
+            refresh();
+          }}
         />
       )}
 

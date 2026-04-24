@@ -11,12 +11,17 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_ROLE = (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
 
 const Body = z.object({
-  hookId: z.string().min(1),
+  // hookId is optional so IG captions generated from a Delivery's text
+  // (no hook linkage) can still be saved. When null we skip the
+  // generated_hooks "used" flip.
+  hookId: z.string().min(1).nullable().optional(),
+  deliveryId: z.string().min(1).nullable().optional(),
   personaId: z.enum(PERSONA_IDS as [string, ...string[]]),
   caption: z.string().min(1).max(5000),
   model: z.string().refine(isModelId, { message: "invalid model" }),
   notes: z.string().max(2000).optional(),
   tipPoolAware: z.boolean(),
+  platform: z.enum(["tiktok", "instagram"]).optional(),
 });
 
 function sbHeaders() {
@@ -49,14 +54,16 @@ export async function POST(req: Request) {
   }
 
   try {
+    const platform = parsed.platform ?? "tiktok";
     const savedRes = await fetch(`${SUPABASE_URL}/rest/v1/saved_captions`, {
       method: "POST",
       headers: { ...sbHeaders(), Prefer: "return=representation" },
       body: JSON.stringify({
-        source_delivery_id: null,
-        source_hook_id: parsed.hookId,
+        source_delivery_id: parsed.deliveryId ?? null,
+        source_hook_id: parsed.hookId ?? null,
         persona: parsed.personaId,
         caption: parsed.caption,
+        platform,
       }),
     });
     if (!savedRes.ok) {
@@ -71,7 +78,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers: { ...sbHeaders(), Prefer: "return=representation" },
       body: JSON.stringify({
-        hook_id: parsed.hookId,
+        hook_id: parsed.hookId ?? null,
         persona: parsed.personaId,
         caption: parsed.caption,
         model: parsed.model,
@@ -87,19 +94,21 @@ export async function POST(req: Request) {
     const genArr = await genRes.json();
     const generatedCaption = Array.isArray(genArr) ? genArr[0] : genArr;
 
-    const markRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/generated_hooks?id=eq.${encodeURIComponent(parsed.hookId)}`,
-      {
-        method: "PATCH",
-        headers: sbHeaders(),
-        body: JSON.stringify({ used: true }),
-      },
-    );
-    if (!markRes.ok) {
-      // Non-fatal â€” caption is saved. Log and continue.
-      console.warn(
-        `generated_hooks mark-used failed: ${markRes.status} ${await markRes.text()}`,
+    if (parsed.hookId) {
+      const markRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/generated_hooks?id=eq.${encodeURIComponent(parsed.hookId)}`,
+        {
+          method: "PATCH",
+          headers: sbHeaders(),
+          body: JSON.stringify({ used: true }),
+        },
       );
+      if (!markRes.ok) {
+        // Non-fatal — caption is saved. Log and continue.
+        console.warn(
+          `generated_hooks mark-used failed: ${markRes.status} ${await markRes.text()}`,
+        );
+      }
     }
 
     return NextResponse.json({

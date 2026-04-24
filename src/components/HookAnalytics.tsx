@@ -14,6 +14,7 @@ import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
 import { CaptionFromHookDrawer } from "./CaptionFromHookDrawer";
+import { InstagramCaptionDialog } from "./InstagramCaptionDialog";
 import { PersonaRail } from "./PersonaRail";
 import { useIsMobile } from "@/lib/useIsMobile";
 
@@ -38,6 +39,7 @@ export function HookAnalytics() {
   const [running, setRunning] = React.useState<"scrape" | "generate" | null>(null);
   const [generatingPersona, setGeneratingPersona] = React.useState<PersonaId | null>(null);
   const [captionHookId, setCaptionHookId] = React.useState<string | null>(null);
+  const [igHookId, setIgHookId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -468,6 +470,7 @@ export function HookAnalytics() {
                         hook={h}
                         onToggleUsed={() => onToggleUsed(h)}
                         onOpenCaption={() => setCaptionHookId(h.id)}
+                        onOpenInstagram={() => setIgHookId(h.id)}
                       />
                     ))}
                   </div>
@@ -523,6 +526,7 @@ export function HookAnalytics() {
                         hook={h}
                         onToggleUsed={() => onToggleUsed(h)}
                         onOpenCaption={() => setCaptionHookId(h.id)}
+                        onOpenInstagram={() => setIgHookId(h.id)}
                       />
                     ))}
                   {genForPersona(pid).length === 0 && (
@@ -738,6 +742,25 @@ export function HookAnalytics() {
           />
         );
       })()}
+
+      {igHookId && (() => {
+        const target = generated.find((h) => h.id === igHookId);
+        if (!target) return null;
+        return (
+          <InstagramCaptionDialog
+            open={true}
+            onClose={() => setIgHookId(null)}
+            personaId={target.personaId}
+            seedHookText={target.hookText}
+            sourceHookId={target.id}
+            seedPreview={target.hookText}
+            onSaved={() => {
+              setIgHookId(null);
+              refresh();
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -802,10 +825,12 @@ function HookCard({
   hook,
   onToggleUsed,
   onOpenCaption,
+  onOpenInstagram,
 }: {
   hook: GeneratedHook;
   onToggleUsed: () => void;
   onOpenCaption: () => void;
+  onOpenInstagram: () => void;
 }) {
   const { copied, copy } = useCopy();
   const cat = (HOOK_CATEGORY_LABELS as Record<string, string>)[hook.category] ??
@@ -884,9 +909,21 @@ function HookCard({
               e.stopPropagation();
               onOpenCaption();
             }}
-            title="Generate caption from this hook"
+            title="Generate TikTok caption from this hook"
           >
-            Caption
+            TikTok
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Icons.Sparkles />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenInstagram();
+            }}
+            title="Generate Instagram caption from this hook"
+          >
+            Instagram
           </Button>
           <Button
             variant="ghost"
