@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { editImage, geminiConfigured } from "@/lib/gemini";
+import {
+  buildBeforePhotoPrompt,
+  pickNScenarios,
+  pickTwoScenarios,
+  SCENARIO_LABELS,
+  type BeforeScenario,
+} from "@/lib/prompts/beforePhoto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,19 +29,6 @@ const Body = z.object({
   referenceImageUrl: z.string().url(),
   count: z.number().int().min(1).max(4).optional(),
 });
-
-function buildPrompt(targetLb: number): string {
-  return [
-    `Recreate the person in the reference photo as they would look at approximately ${targetLb}lbs`,
-    `— noticeably overweight, softer jawline, fuller cheeks, double chin, rounded body shape, visibly heavier torso and arms.`,
-    `Preserve their exact face, eye color, and hair color.`,
-    `Candid phone-camera aesthetic, the kind of unflattering "before" photo someone posts on Reddit/TikTok/Facebook transformation communities.`,
-    `Setting: home interior, bathroom mirror selfie, or casual indoor snapshot.`,
-    `Modest everyday clothing — t-shirt, hoodie, sweats, or baggy top.`,
-    `Neutral fluorescent indoor lighting. No filters, no beauty retouching, no professional lighting.`,
-    `Raw, authentic, imperfect, slightly grainy.`,
-  ].join(" ");
-}
 
 function randomTargetLb(): number {
   // Integer in [180, 210] inclusive.
@@ -97,13 +91,21 @@ export async function POST(req: Request) {
     const mime = normalizeMime(refRes.headers.get("content-type"));
     const imageBytes = Buffer.from(await refRes.arrayBuffer());
 
-    const calls = Array.from({ length: count }, () => {
+    // Pick scenarios up front. The default path (count === 2) guarantees
+    // two distinct scenarios so creators see variety side-by-side; for any
+    // other count we allow repeats (rare: admin-only test cases).
+    const scenarios: BeforeScenario[] =
+      count === 2
+        ? Array.from(pickTwoScenarios())
+        : pickNScenarios(count);
+
+    const calls = scenarios.map((scenario) => {
       const lb = randomTargetLb();
       return editImage({
         imageBytes,
         mimeType: mime,
-        prompt: buildPrompt(lb),
-      }).then((r) => ({ ...r, targetLb: lb }));
+        prompt: buildBeforePhotoPrompt(scenario, lb),
+      }).then((r) => ({ ...r, targetLb: lb, scenario }));
     });
 
     // Use allSettled so one failure doesn't kill the whole batch.
@@ -112,11 +114,16 @@ export async function POST(req: Request) {
       imageBase64: string;
       mimeType: string;
       targetLb: number;
+      scenario: BeforeScenario;
     }[] = [];
     const errors: string[] = [];
-    for (const r of settled) {
+    for (let i = 0; i < settled.length; i++) {
+      const r = settled[i];
       if (r.status === "fulfilled") images.push(r.value);
-      else errors.push((r.reason as Error).message);
+      else {
+        const label = SCENARIO_LABELS[scenarios[i]];
+        errors.push(`${label}: ${(r.reason as Error).message}`);
+      }
     }
 
     if (images.length === 0) {
