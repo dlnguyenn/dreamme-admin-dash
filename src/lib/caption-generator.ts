@@ -7,6 +7,12 @@ import {
   buildInstagramCompressPrompt,
   stripTrailingHashtags,
 } from "./prompts/instagramCaption";
+import {
+  BEFORE_TRANSFORMATION_CHAR_CEILING,
+  BEFORE_TRANSFORMATION_CHAR_TARGET,
+  buildBeforeTransformationPrompt,
+  type BeforeTransformationOverrides,
+} from "./prompts/beforeTransformationCaption";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const API = "https://api.anthropic.com/v1/messages";
@@ -247,3 +253,51 @@ export async function compressInstagramCaption(
   const caption = stripTrailingHashtags(stripFences(raw));
   return { caption, charCount: caption.length };
 }
+
+// ---------------------------------------------------------------------------
+// Before-transformation caption generation
+//
+// Anchored to Emma's reflective "looking back now" caption template.
+// The prompt module owns structure; per-persona voice/style comes from
+// PERSONA_PROFILES. Output is plain Instagram-style caption text.
+// ---------------------------------------------------------------------------
+
+function buildBeforeTransformationSystem(): SystemBlock[] {
+  const text = `You are writing a reflective Instagram caption for a "before transformation" post on DreamMe, a GL🫛-1 community app. The caption is written looking back on the full journey — the photo is from before, but the voice has perspective.
+
+OUTPUT FORMAT:
+- Return ONLY the caption text — no preamble, no commentary, no markdown fences, no surrounding quotes.
+- Never include hashtags. The creator adds their own.
+- Never mention DreamMe.
+- Target ${BEFORE_TRANSFORMATION_CHAR_TARGET} characters. HARD CEILING: ${BEFORE_TRANSFORMATION_CHAR_CEILING} characters.`;
+  return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+}
+
+export interface GenerateBeforeTransformationCaptionParams {
+  personaId: PersonaId;
+  model: ModelId;
+  overrides?: BeforeTransformationOverrides;
+}
+
+export async function generateBeforeTransformationCaption(
+  params: GenerateBeforeTransformationCaptionParams,
+): Promise<GenerateCaptionResult> {
+  const { personaId, model, overrides } = params;
+  const system = buildBeforeTransformationSystem();
+  const userText = buildBeforeTransformationPrompt(personaId, overrides);
+
+  const raw = await callClaudeText({
+    model,
+    system,
+    userText,
+    maxTokens: 1200,
+  });
+
+  const caption = stripTrailingHashtags(stripFences(raw));
+  return { caption, charCount: caption.length };
+}
+
+export {
+  BEFORE_TRANSFORMATION_CHAR_CEILING,
+  BEFORE_TRANSFORMATION_CHAR_TARGET,
+};

@@ -592,6 +592,74 @@ export const API = {
     };
   },
 
+  async generateBeforeTransformationCaption({
+    personaId,
+    model,
+    startWeightLbs,
+    goalWeightLbs,
+    notes,
+  }: {
+    personaId: PersonaId;
+    model: string;
+    startWeightLbs?: number;
+    goalWeightLbs?: number;
+    notes?: string;
+  }): Promise<{
+    caption: string;
+    charCount: number;
+    persona: {
+      id: PersonaId;
+      name: string;
+      age: number;
+      archetype: string;
+      startWeightLbs: number;
+      goalWeightLbs: number;
+    };
+  }> {
+    const res = await fetch("/api/generate/caption/before-transformation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        personaId,
+        model,
+        startWeightLbs,
+        goalWeightLbs,
+        notes,
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as
+      | {
+          ok: boolean;
+          caption?: string;
+          charCount?: number;
+          persona?: {
+            id: PersonaId;
+            name: string;
+            age: number;
+            archetype: string;
+            startWeightLbs: number;
+            goalWeightLbs: number;
+          };
+          error?: string;
+        }
+      | null;
+    if (
+      !res.ok ||
+      !body?.ok ||
+      typeof body.caption !== "string" ||
+      !body.persona
+    ) {
+      throw new Error(
+        body?.error || `before-transformation caption failed: ${res.status}`,
+      );
+    }
+    return {
+      caption: body.caption,
+      charCount: body.charCount ?? body.caption.length,
+      persona: body.persona,
+    };
+  },
+
   /**
    * Save a generated caption to the library. Supports both TikTok (hook
    * required, default) and Instagram (either hook or delivery source).
