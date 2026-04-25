@@ -13,6 +13,7 @@ import { BeforePhotoUploader } from "./BeforePhotoUploader";
 import { BeforePhotoGenerator } from "./BeforePhotoGenerator";
 import { TransformationExportModal } from "./TransformationExportModal";
 import { InstagramCaptionDialog } from "./InstagramCaptionDialog";
+import { BeforeCaptionDialog } from "./BeforeCaptionDialog";
 import { PersonaRail } from "./PersonaRail";
 import { useCopy } from "./ui";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -60,6 +61,8 @@ export function ContentPipeline({
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
   const [transformingDelivery, setTransformingDelivery] = React.useState<Delivery | null>(null);
   const [igDelivery, setIgDelivery] = React.useState<Delivery | null>(null);
+  const [beforeCaptionDelivery, setBeforeCaptionDelivery] =
+    React.useState<Delivery | null>(null);
   const [uploaderOpen, setUploaderOpen] = React.useState(false);
   const [generatorOpen, setGeneratorOpen] = React.useState(false);
   const toast = useToast();
@@ -832,6 +835,11 @@ export function ContentPipeline({
           onDelete={() => setConfirmDeleteId(selected.id)}
           onModifyImage={() => setModifyingId(selected.id)}
           onGenerateInstagram={() => setIgDelivery(selected)}
+          onGenerateBeforeCaption={
+            selected.isBefore
+              ? () => setBeforeCaptionDelivery(selected)
+              : undefined
+          }
           inLibrary={
             selected.inLibrary ||
             state.savedCaptions.some((c) => c.sourceItemId === selected.id)
@@ -901,6 +909,19 @@ export function ContentPipeline({
           seedPreview={igDelivery.caption}
           onSaved={() => {
             setIgDelivery(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {beforeCaptionDelivery && (
+        <BeforeCaptionDialog
+          open={true}
+          onClose={() => setBeforeCaptionDelivery(null)}
+          personaId={beforeCaptionDelivery.personaId}
+          sourceDeliveryId={beforeCaptionDelivery.id}
+          onSaved={() => {
+            setBeforeCaptionDelivery(null);
             refresh();
           }}
         />

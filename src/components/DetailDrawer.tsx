@@ -22,6 +22,7 @@ export function DetailDrawer({
   onDelete,
   onModifyImage,
   onGenerateInstagram,
+  onGenerateBeforeCaption,
   inLibrary,
 }: {
   item: Delivery;
@@ -33,6 +34,7 @@ export function DetailDrawer({
   onDelete: () => void;
   onModifyImage: () => void;
   onGenerateInstagram?: () => void;
+  onGenerateBeforeCaption?: () => void;
   inLibrary: boolean;
 }) {
   const isMobile = useIsMobile();
@@ -48,6 +50,7 @@ export function DetailDrawer({
         onDelete={onDelete}
         onModifyImage={onModifyImage}
         onGenerateInstagram={onGenerateInstagram}
+        onGenerateBeforeCaption={onGenerateBeforeCaption}
         inLibrary={inLibrary}
       />
     );
@@ -63,6 +66,7 @@ export function DetailDrawer({
       onDelete={onDelete}
       onModifyImage={onModifyImage}
       onGenerateInstagram={onGenerateInstagram}
+      onGenerateBeforeCaption={onGenerateBeforeCaption}
       inLibrary={inLibrary}
     />
   );
@@ -82,6 +86,7 @@ function MobileDetail({
   onDelete,
   onModifyImage,
   onGenerateInstagram,
+  onGenerateBeforeCaption,
   inLibrary,
 }: {
   item: Delivery;
@@ -93,6 +98,7 @@ function MobileDetail({
   onDelete: () => void;
   onModifyImage: () => void;
   onGenerateInstagram?: () => void;
+  onGenerateBeforeCaption?: () => void;
   inLibrary: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -494,6 +500,14 @@ function MobileDetail({
                 }
               : undefined
           }
+          onGenerateBeforeCaption={
+            onGenerateBeforeCaption && item.isBefore
+              ? () => {
+                  setMoreOpen(false);
+                  onGenerateBeforeCaption();
+                }
+              : undefined
+          }
         />
       )}
     </SideDrawer>
@@ -508,6 +522,7 @@ function MoreActionsPopover({
   onCopyLink,
   onDelete,
   onGenerateInstagram,
+  onGenerateBeforeCaption,
 }: {
   onClose: () => void;
   onEdit: () => void;
@@ -516,6 +531,7 @@ function MoreActionsPopover({
   onCopyLink: () => void;
   onDelete: () => void;
   onGenerateInstagram?: () => void;
+  onGenerateBeforeCaption?: () => void;
 }) {
   // Anchored below the top-right More button. Tap outside (scrim) to close.
   return (
@@ -553,6 +569,13 @@ function MoreActionsPopover({
             icon={<Icons.Sparkles size={16} />}
             label="Generate IG caption"
             onClick={onGenerateInstagram}
+          />
+        )}
+        {onGenerateBeforeCaption && (
+          <MoreItem
+            icon={<Icons.Sparkles size={16} />}
+            label="Generate caption"
+            onClick={onGenerateBeforeCaption}
           />
         )}
         <MoreItem
@@ -631,6 +654,7 @@ function DesktopDetail({
   onDelete,
   onModifyImage,
   onGenerateInstagram,
+  onGenerateBeforeCaption,
   inLibrary,
 }: {
   item: Delivery;
@@ -642,6 +666,7 @@ function DesktopDetail({
   onDelete: () => void;
   onModifyImage: () => void;
   onGenerateInstagram?: () => void;
+  onGenerateBeforeCaption?: () => void;
   inLibrary: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -950,6 +975,16 @@ function DesktopDetail({
                   onClick={onGenerateInstagram}
                 >
                   IG caption
+                </Button>
+              )}
+              {onGenerateBeforeCaption && item.isBefore && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon={<Icons.Sparkles />}
+                  onClick={onGenerateBeforeCaption}
+                >
+                  Generate caption
                 </Button>
               )}
               <Button
