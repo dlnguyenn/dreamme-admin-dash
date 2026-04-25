@@ -5,6 +5,7 @@ import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { API } from "@/lib/supabase";
 import { formatRelative } from "@/lib/format";
+import { useIsMobile } from "@/lib/useIsMobile";
 import type { ResourceReference, ReferenceSlide } from "@/lib/types";
 
 export function References({ isAdmin }: { isAdmin: boolean }) {
@@ -198,16 +199,18 @@ function ReferenceCard({
     ? `@${reference.authorUsername}`
     : "TikTok creator";
 
+  const isMobile = useIsMobile();
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(220px, 260px) 1fr",
-        gap: 18,
+        gridTemplateColumns: isMobile ? "1fr" : "minmax(220px, 260px) 1fr",
+        gap: isMobile ? 14 : 18,
         border: "1px solid var(--line)",
         borderRadius: 14,
         background: "var(--surface)",
-        padding: 16,
+        padding: isMobile ? 14 : 16,
         boxShadow: "var(--shadow-sm)",
       }}
     >
@@ -357,6 +360,7 @@ function ReferenceCard({
           overflowY: "hidden",
           scrollSnapType: "x mandatory",
           paddingBottom: 6,
+          WebkitOverflowScrolling: "touch",
         }}
       >
         <div
@@ -393,6 +397,7 @@ function SlideTile({
   onSaveNote: (index: number, note: string) => Promise<void>;
 }) {
   const [draft, setDraft] = React.useState(slide.note);
+  const isMobile = useIsMobile();
 
   React.useEffect(() => {
     setDraft(slide.note);
@@ -408,7 +413,7 @@ function SlideTile({
     <div
       style={{
         flex: "0 0 auto",
-        width: 200,
+        width: isMobile ? 170 : 200,
         scrollSnapAlign: "start",
         display: "flex",
         flexDirection: "column",
@@ -541,6 +546,7 @@ function AddReferenceModal({
   const [url, setUrl] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const submit = async () => {
     const trimmed = url.trim();
@@ -578,13 +584,13 @@ function AddReferenceModal({
           background: "var(--surface)",
           borderRadius: 16,
           border: "1px solid var(--line)",
-          padding: 24,
+          padding: isMobile ? 18 : 24,
           width: "100%",
           maxWidth: 520,
           boxShadow: "var(--shadow-lg)",
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: isMobile ? 12 : 14,
         }}
       >
         <div
