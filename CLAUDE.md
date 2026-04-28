@@ -77,12 +77,18 @@ Three caption flavors, each with its own char ceilings:
 | Before-transformation | 600    | 1200         | `prompts/beforeTransformationCaption.ts`   |
 
 Conventions:
-- Replace `GLP-1` with `GL🫛-1` (pea emoji) to evade algorithmic
-  suppression on TikTok/IG.
+- TikTok and Instagram captions can use `GLP-1` or `GLP1` plainly — no
+  emoji substitution required. The `GL🫛-1` pea-emoji swap is only
+  enforced for before-transformation captions
+  (`prompts/beforeTransformationCaption.ts`).
 - Never the syringe emoji — write `shot` instead.
 - Captions never include hashtags (the creator adds their own). Strip
   trailing hashtags via `stripTrailingHashtags`.
 - Prompt-cache the system block (`cache_control: { type: "ephemeral" }`).
+- TikTok tip headers use keycap number emojis (1️⃣–🔟) — one per tip,
+  in order. Sub-points use ONE of 👉 / 💡 / 🔑 picked at random per
+  caption in `caption-generator.ts` and applied uniformly to all
+  sub-points; never mix bullets within a single caption.
 
 ## Repositories & schemas
 

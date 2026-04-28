@@ -11,21 +11,23 @@ Every caption follows this exact skeleton:
 ```
 [hook in lowercase]
 
-✅ 1. [Bold declarative statement.]
+1️⃣ [Bold declarative statement.]
 [One-line emotional bridge — why this matters or why people get it wrong.]
-👉 [Sub-point 1: The problem or misconception]
-👉 [Sub-point 2: The reality or reframe]
-👉 [Sub-point 3: The action or permission statement]
+{bullet} [Sub-point 1: The problem or misconception]
+{bullet} [Sub-point 2: The reality or reframe]
+{bullet} [Sub-point 3: The action or permission statement]
 
-[Repeat for 7-10 tips]
+[Repeat for 7-10 tips, advancing the keycap: 2️⃣, 3️⃣, …, 🔟]
 
 save this for later. [engagement question] 👇
 ```
 
+`{bullet}` is one of 👉 / 💡 / 🔑 — the prompt picks one per caption and that single emoji is used for every sub-point in the caption. Do not mix.
+
 ### Per-Tip Format
-- **Header:** Starts with ✅ and number. Bold, declarative, short. Not a question. Period at the end.
+- **Header:** Starts with the keycap number emoji for that tip (1️⃣ for tip 1, 2️⃣ for tip 2, …, 🔟 for tip 10). Bold, declarative, short. Not a question. Period at the end.
 - **Bridge:** One line of empathetic context explaining why this matters or why people get it wrong. Italicized tone, conversational.
-- **Sub-points:** Exactly 3 per tip, always. Each starts with 👉. No exceptions. If a caption needs trimming, shorten the sub-points but never drop below 3.
+- **Sub-points:** Exactly 3 per tip, always. Each starts with the same sub-bullet emoji — 👉, 💡, or 🔑 — chosen once per caption and applied to every sub-point. The prompt will tell you which one to use for this caption. Do not mix bullets within a caption. If a caption needs trimming, shorten the sub-points but never drop below 3.
 
 ---
 
@@ -117,15 +119,15 @@ NEVER write "I am," "do not," "can not," "it is," "you are" etc. in full form.
 - **"Genuinely," "honestly," or "straightforward."**
 
 ### Emoji Rules
-- ✅ before each tip number (visual anchor for skimmers)
-- 👉 before each sub-point (creates scannable rhythm)
+- Keycap number emoji before each tip header — 1️⃣, 2️⃣, 3️⃣, 4️⃣, 5️⃣, 6️⃣, 7️⃣, 8️⃣, 9️⃣, 🔟 — one per tip, in order. Encodes the count for skimmers.
+- ONE of 👉 / 💡 / 🔑 before each sub-point — picked once per caption (specified in the prompt) and used consistently for every sub-point. Never mix two of them in the same caption.
 - 👇 at end of CTA only
-- Use GL🫛-1 for GLP-1 if emoji substitution is needed to avoid algorithmic suppression
+- "GLP-1" and "GLP1" are both fine in the caption body — no emoji substitution required.
 - No other emojis in the caption body
 
 ### Formatting
 - Line breaks between every tip (critical for mobile readability)
-- Line break between bridge line and first 👉 sub-point
+- Line break between bridge line and first sub-point
 - All lowercase for hook and body text (matches TikTok native voice)
 
 ---
@@ -168,11 +170,11 @@ Intentionally include 2-3 tips per caption that map to these themes to drive com
 From the original 700k-view post:
 
 ```
-✅ 6. Your emotions are going to surprise you and that is not a bad sign
+6️⃣ Your emotions are going to surprise you and that is not a bad sign
 When the food noise goes quiet, feelings that were buried under it start coming up.
 👉 A lot of people feel randomly sad, or suddenly cry at things, and assume something is wrong
 👉 Nothing is wrong. The distraction is gone and your actual inner life is showing up
 👉 I started logging my mood in the DreamMe app alongside my physical symptoms and it helped me see the emotional pattern clearly instead of just feeling blindsided by it every week.
 ```
 
-This tip works because: declarative header, empathetic bridge, three sub-points that go problem → reframe → action with DreamMe woven in as personal experience.
+This example happens to use 👉 as its sub-bullet — a different generation might use 💡 or 🔑 instead, applied consistently to all three sub-points. This tip works because: declarative header, empathetic bridge, three sub-points that go problem → reframe → action with DreamMe woven in as personal experience.

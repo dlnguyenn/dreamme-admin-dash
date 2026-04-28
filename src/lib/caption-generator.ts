@@ -93,6 +93,23 @@ function stripFences(s: string): string {
   return m ? m[1].trim() : s.trim();
 }
 
+const SUB_BULLETS = ["👉", "💡", "🔑"] as const;
+type SubBullet = (typeof SUB_BULLETS)[number];
+
+function pickSubBullet(): SubBullet {
+  return SUB_BULLETS[Math.floor(Math.random() * SUB_BULLETS.length)];
+}
+
+function detectSubBullet(caption: string): SubBullet {
+  for (const b of SUB_BULLETS) {
+    if (caption.includes(b)) return b;
+  }
+  return "👉";
+}
+
+const TIP_NUMBER_EMOJIS =
+  "1️⃣, 2️⃣, 3️⃣, 4️⃣, 5️⃣, 6️⃣, 7️⃣, 8️⃣, 9️⃣, 🔟";
+
 function buildCachedSystem(styleGuide: string): SystemBlock[] {
   const text = `You are writing a TikTok caption for DreamMe, a GLP-1 community app. The style guide below is non-negotiable — follow every rule.
 
@@ -124,6 +141,7 @@ export async function generateCaption(
   const { hook, model, notes, avoidThemes, styleGuide } = params;
 
   const system = buildCachedSystem(styleGuide);
+  const subBullet = pickSubBullet();
 
   const parts: string[] = [`HOOK (use exactly as the first line, lowercase):\n${hook}`];
   if (notes && notes.trim()) {
@@ -137,7 +155,7 @@ export async function generateCaption(
     );
   }
   parts.push(
-    `Now write the full caption for this hook. Exactly 7-10 tips, each with 3 👉 sub-points, closing CTA. Target 3500 characters; hard ceiling 4000.`,
+    `Now write the full caption for this hook. Exactly 7-10 tips, closing CTA. Number the tip headers with keycap emojis in order: ${TIP_NUMBER_EMOJIS} (one per tip). Each tip has exactly 3 sub-points and EVERY sub-point in this caption starts with ${subBullet} — use ${subBullet} consistently for all sub-points; do not switch to a different bullet emoji partway through. Target 3500 characters; hard ceiling 4000.`,
   );
 
   const raw = await callClaudeText({
@@ -163,10 +181,12 @@ export async function compressCaption(
   const { oversizedCaption, model, styleGuide } = params;
 
   const system = buildCachedSystem(styleGuide);
+  const subBullet = detectSubBullet(oversizedCaption);
 
   const userText = `The caption below is over the 4000-character hard ceiling (${oversizedCaption.length} chars). Rewrite it to fit UNDER 3800 characters while preserving:
 - The exact same hook (first line, lowercase, unchanged)
-- Exactly 7-10 tips, each with ✅ header + one-line bridge + exactly 3 👉 sub-points
+- Exactly 7-10 tips, each with a keycap-number header (1️⃣–🔟 in order) + one-line bridge + exactly 3 ${subBullet} sub-points
+- Keep ${subBullet} as the sub-point bullet for every sub-point — do not switch to a different bullet emoji
 - Both DreamMe product mentions (same placement pattern)
 - The closing CTA with "save this for later." + engagement question + 👇
 
