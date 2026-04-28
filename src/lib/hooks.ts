@@ -22,6 +22,8 @@ function mapPost(row: TikTokPostRow): TikTokPost {
     likeCount: Number(row.like_count ?? 0),
     commentCount: Number(row.comment_count ?? 0),
     shareCount: Number(row.share_count ?? 0),
+    performanceRatio: row.performance_ratio ?? null,
+    performanceClass: row.performance_class ?? null,
     caption: row.caption ?? "",
     firstSlideUrl: row.first_slide_url ?? "",
     firstSlideText: row.first_slide_text ?? "",
@@ -41,6 +43,10 @@ function mapGenerated(row: GeneratedHookRow): GeneratedHook {
     inspiredByPostIds: row.inspired_by_post_ids ?? [],
     used: !!row.used,
     createdAt: row.created_at,
+    postedPostId: row.posted_post_id ?? null,
+    deployedAt: row.deployed_at ?? null,
+    matchConfidence: row.match_confidence ?? null,
+    matchSource: row.match_source ?? null,
   };
 }
 

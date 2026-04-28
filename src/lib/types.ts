@@ -94,6 +94,8 @@ export interface TikTokPostRow {
   category: string | null;
   last_scraped_at: string;
   created_at: string;
+  performance_ratio: number | null;
+  performance_class: "flop" | "mid" | "hit" | null;
 }
 
 export interface TikTokPost {
@@ -105,6 +107,8 @@ export interface TikTokPost {
   likeCount: number;
   commentCount: number;
   shareCount: number;
+  performanceRatio: number | null;
+  performanceClass: "flop" | "mid" | "hit" | null;
   caption: string;
   firstSlideUrl: string;
   firstSlideText: string;
@@ -122,6 +126,10 @@ export interface GeneratedHookRow {
   inspired_by_post_ids: string[];
   used: boolean;
   created_at: string;
+  posted_post_id: string | null;
+  deployed_at: string | null;
+  match_confidence: number | null;
+  match_source: "auto_normalized" | "auto_embedding" | "manual" | null;
 }
 
 export interface GeneratedHook {
@@ -133,6 +141,10 @@ export interface GeneratedHook {
   inspiredByPostIds: string[];
   used: boolean;
   createdAt: string;
+  postedPostId: string | null;
+  deployedAt: string | null;
+  matchConfidence: number | null;
+  matchSource: "auto_normalized" | "auto_embedding" | "manual" | null;
 }
 
 export type SpendVendor =

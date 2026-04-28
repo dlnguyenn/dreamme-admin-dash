@@ -8,6 +8,17 @@ import {
 import { PERSONA_TIKTOK_PROFILES, extractFirstSlideUrl } from "@/lib/apify";
 import { normalizeHook } from "@/lib/hook-categories";
 import type { HookRepository } from "@/lib/repositories/hook-repository";
+import {
+  classifyPerformance,
+  type BaselineMap,
+  type PerformanceClass,
+} from "@/lib/baseline";
+import {
+  loadIndex,
+  tryMatch,
+  type MatcherIndex,
+  type MatcherStore,
+} from "@/lib/hook-matcher";
 
 export interface Scraper {
   run(opts: { profiles: string[]; resultsPerPage: number }): Promise<unknown>;
@@ -16,6 +27,11 @@ export interface Scraper {
 export interface OCR {
   extract(imageUrl: string): Promise<string>;
   categorize(hookText: string): Promise<string>;
+}
+
+export interface FeedbackDeps {
+  baselines: BaselineMap;
+  matcherStore: MatcherStore;
 }
 
 export interface ScrapeRequestBody {
@@ -31,6 +47,7 @@ export interface ScrapeResult {
   ocred: number;
   skippedNoSlide: number;
   parseFailed: number;
+  matched: number;
   errors: string[];
 }
 
@@ -64,7 +81,12 @@ async function readBody(req: Request): Promise<ScrapeRequestBody> {
 
 export async function handleScrape(
   req: Request,
-  deps: { scraper: Scraper; repo: HookRepository; ocr: OCR },
+  deps: {
+    scraper: Scraper;
+    repo: HookRepository;
+    ocr: OCR;
+    feedback?: FeedbackDeps;
+  },
 ): Promise<Response> {
   const body = await readBody(req);
   const personas = body.personas?.length ? body.personas : PERSONA_IDS;
@@ -77,9 +99,19 @@ export async function handleScrape(
 
   logApifyRunSummary({ raw, items, parseFailed, profiles });
 
+  let matcherIndex: MatcherIndex | null = null;
+  if (deps.feedback) {
+    try {
+      matcherIndex = await loadIndex(deps.feedback.matcherStore);
+    } catch (e) {
+      console.warn("[scrape-tiktok] matcher index load failed", e);
+    }
+  }
+
   let ocred = 0;
   let upserted = 0;
   let skippedNoSlide = 0;
+  let matched = 0;
   const errors: string[] = [];
 
   for (const item of items) {
@@ -89,9 +121,12 @@ export async function handleScrape(
         reocr: body.reocr === true,
         ocr: deps.ocr,
         repo: deps.repo,
+        feedback: deps.feedback,
+        matcherIndex,
         onOcr: () => ocred++,
         onUpsert: () => upserted++,
         onSkipNoSlide: () => skippedNoSlide++,
+        onMatch: () => matched++,
       });
     } catch (e) {
       errors.push((e as Error).message);
@@ -105,6 +140,7 @@ export async function handleScrape(
     ocred,
     skippedNoSlide,
     parseFailed,
+    matched,
     errors: errors.slice(0, 5),
   };
   return NextResponse.json(result);
@@ -149,9 +185,12 @@ async function processItem(
     reocr: boolean;
     ocr: OCR;
     repo: HookRepository;
+    feedback?: FeedbackDeps;
+    matcherIndex: MatcherIndex | null;
     onOcr: () => void;
     onUpsert: () => void;
     onSkipNoSlide: () => void;
+    onMatch: () => void;
   },
 ): Promise<void> {
   const persona = personaFromUsername(item.authorMeta?.name);
@@ -176,21 +215,57 @@ async function processItem(
     category = await ctx.ocr.categorize(hookText);
   }
 
-  await ctx.repo.upsert({
+  const views = item.playCount ?? 0;
+  const hookNormalized = normalizeHook(hookText);
+  let performance_ratio: number | null = null;
+  let performance_class: PerformanceClass | null = null;
+  if (ctx.feedback) {
+    const cls = classifyPerformance(views, persona, ctx.feedback.baselines);
+    performance_ratio = cls.ratio;
+    performance_class = cls.class;
+  }
+
+  const postId = await ctx.repo.upsert({
     persona,
     post_id: item.id ?? null,
     post_url: item.webVideoUrl,
     posted_at: item.createTimeISO ?? null,
-    view_count: item.playCount ?? 0,
+    view_count: views,
     like_count: item.diggCount ?? 0,
     comment_count: item.commentCount ?? 0,
     share_count: item.shareCount ?? 0,
     caption: item.text ?? "",
     first_slide_url: slideUrl,
     first_slide_text: hookText,
-    hook_normalized: normalizeHook(hookText),
+    hook_normalized: hookNormalized,
     category: category || null,
     last_scraped_at: new Date().toISOString(),
+    performance_ratio,
+    performance_class,
   });
   ctx.onUpsert();
+
+  if (ctx.feedback && ctx.matcherIndex && postId && hookNormalized) {
+    const matched = tryMatch(ctx.matcherIndex, {
+      postId,
+      postUrl: item.webVideoUrl,
+      persona,
+      hookNormalized,
+      postedAt: item.createTimeISO ?? null,
+    });
+    if (matched) {
+      try {
+        await ctx.feedback.matcherStore.persistMatch({
+          generatedHookId: matched.id,
+          postId,
+          deployedAt: item.createTimeISO ?? new Date().toISOString(),
+          confidence: 1.0,
+          source: "auto_normalized",
+        });
+        ctx.onMatch();
+      } catch (e) {
+        console.warn("[scrape-tiktok] persistMatch failed", e);
+      }
+    }
+  }
 }

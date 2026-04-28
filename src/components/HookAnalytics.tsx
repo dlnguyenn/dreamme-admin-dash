@@ -10,6 +10,7 @@ import {
   type HookCategory,
 } from "@/lib/hook-categories";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
+import { PerformanceBadge } from "./hook-analytics/PerformanceBadge";
 import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
@@ -153,6 +154,12 @@ export function HookAnalytics() {
       thisWeek,
     };
   }, [posts, generated]);
+
+  const postsById = React.useMemo(() => {
+    const m = new Map<string, TikTokPost>();
+    for (const p of posts) m.set(p.id, p);
+    return m;
+  }, [posts]);
 
   const tabs: Array<{ id: Tab; label: string; personaId: PersonaId | null }> = [
     { id: "all", label: "All", personaId: null },
@@ -468,6 +475,9 @@ export function HookAnalytics() {
                       <HookCard
                         key={h.id}
                         hook={h}
+                        linkedPost={
+                          h.postedPostId ? postsById.get(h.postedPostId) ?? null : null
+                        }
                         onToggleUsed={() => onToggleUsed(h)}
                         onOpenCaption={() => setCaptionHookId(h.id)}
                         onOpenInstagram={() => setIgHookId(h.id)}
@@ -526,6 +536,9 @@ export function HookAnalytics() {
                       <HookCard
                         key={h.id}
                         hook={h}
+                        linkedPost={
+                          h.postedPostId ? postsById.get(h.postedPostId) ?? null : null
+                        }
                         onToggleUsed={() => onToggleUsed(h)}
                         onOpenCaption={() => setCaptionHookId(h.id)}
                         onOpenInstagram={() => setIgHookId(h.id)}
@@ -825,11 +838,13 @@ function EmptyBlock({ children }: { children: React.ReactNode }) {
 
 function HookCard({
   hook,
+  linkedPost,
   onToggleUsed,
   onOpenCaption,
   onOpenInstagram,
 }: {
   hook: GeneratedHook;
+  linkedPost: TikTokPost | null;
   onToggleUsed: () => void;
   onOpenCaption: () => void;
   onOpenInstagram: () => void;
@@ -900,9 +915,20 @@ function HookCard({
           flexWrap: "wrap",
         }}
       >
-        <Chip tone="neutral" style={{ fontSize: 10 }}>
-          {cat}
-        </Chip>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Chip tone="neutral" style={{ fontSize: 10 }}>
+            {cat}
+          </Chip>
+          {linkedPost && (
+            <PerformanceBadge
+              performanceClass={linkedPost.performanceClass}
+              ratio={linkedPost.performanceRatio}
+              title={`Linked TikTok: ${linkedPost.viewCount.toLocaleString()} views (${
+                linkedPost.performanceClass ?? "unlabeled"
+              })`}
+            />
+          )}
+        </span>
         <div
           style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
           onClick={stop}

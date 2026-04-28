@@ -8,6 +8,8 @@ import {
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { handleScrape } from "@/lib/handlers/scrape-tiktok";
 import { createPostgrestHookRepository } from "@/lib/repositories/hook-repository";
+import { loadBaselines } from "@/lib/baseline";
+import { createPostgrestMatcherStore } from "@/lib/hook-matcher";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +41,9 @@ export async function POST(req: Request) {
     );
   }
 
+  const baselines = await loadBaselines().catch(() => new Map());
+  const matcherStore = createPostgrestMatcherStore();
+
   return handleScrape(req, {
     scraper: { run: (opts) => runTikTokScrape(opts) },
     repo: createPostgrestHookRepository(),
@@ -46,6 +51,7 @@ export async function POST(req: Request) {
       extract: (url) => ocrFirstSlide(url),
       categorize: (hook) => categorizeHook(hook),
     },
+    feedback: { baselines, matcherStore },
   });
 }
 

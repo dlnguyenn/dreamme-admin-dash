@@ -1,4 +1,5 @@
 ﻿import type { PersonaId } from "@/lib/personas";
+import type { PerformanceClass } from "@/lib/baseline";
 
 export interface HookRow {
   persona: PersonaId;
@@ -15,6 +16,8 @@ export interface HookRow {
   hook_normalized: string;
   category: string | null;
   last_scraped_at: string;
+  performance_ratio?: number | null;
+  performance_class?: PerformanceClass | null;
 }
 
 export interface ExistingHookMeta {
@@ -24,7 +27,7 @@ export interface ExistingHookMeta {
 
 export interface HookRepository {
   fetchExistingMeta(): Promise<Map<string, ExistingHookMeta>>;
-  upsert(row: HookRow): Promise<void>;
+  upsert(row: HookRow): Promise<string | null>;
 }
 
 export function createPostgrestHookRepository(opts?: {
@@ -85,6 +88,8 @@ export function createPostgrestHookRepository(opts?: {
           `tiktok_posts upsert failed: ${res.status} ${await res.text()}`,
         );
       }
+      const body = (await res.json()) as Array<{ id?: string }>;
+      return Array.isArray(body) && body[0]?.id ? body[0].id : null;
     },
   };
 }
@@ -105,8 +110,9 @@ export class InMemoryHookRepository implements HookRepository {
     return map;
   }
 
-  async upsert(row: HookRow): Promise<void> {
+  async upsert(row: HookRow): Promise<string | null> {
     this.rows.set(row.post_url, row);
+    return null;
   }
 
   all(): HookRow[] {
