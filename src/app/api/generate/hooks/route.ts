@@ -180,7 +180,7 @@ export async function GET() {
     auth: "X-DreamMe-Secret: <INGEST_TOKEN or CRON_SECRET>",
     body: {
       perPersona: "optional number (default 2)",
-      personas: "optional PersonaId[] (default: all three)",
+      personas: "optional PersonaId[] (default: all configured personas)",
     },
   });
 }
