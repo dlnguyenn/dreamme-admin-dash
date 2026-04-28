@@ -19,7 +19,7 @@ Every caption follows this exact skeleton:
 
 [Repeat for 7-10 tips, advancing the keycap: 2️⃣, 3️⃣, …, 🔟]
 
-save this for later. [engagement question] 👇
+[CTA: identity question — specific low-friction action 👇 reciprocity beat [warmth emoji]]
 ```
 
 `{bullet}` is one of 👉 / 💡 / 🔑 — the prompt picks one per caption and that single emoji is used for every sub-point in the caption. Do not mix.
@@ -65,40 +65,49 @@ The softest sell acknowledges alternatives: "i use DreamMe for this but anything
 
 ## Closing CTA
 
-Every caption MUST end with a call-to-action that explicitly asks the reader to engage. The CTA's job is to drive comments and replies, not just saves. Always include an open question AND an explicit invitation to drop a comment — never just a save prompt.
+Every caption ends with an engagement-led CTA placed immediately after the last sub-point of the final tip (one blank line, then the CTA). The CTA's job is to drive comments and replies — saves are a side effect, not the goal.
 
-### Preferred pattern (engagement-led)
+### The pattern
 
 ```
-[engagement question] drop your [thing] below 👇 i read every single one 🌿
+[identity-anchored question] [specific low-friction action] 👇 [reciprocity beat] [warmth emoji]
 ```
 
-Example (proven):
+### Proven example
+
 ```
 where are you in your journey right now? drop your week below 👇 i read every single one 🌿
 ```
 
-The "i read every single one" beat (or a sibling — "i reply to every single one," "every reply matters to me") signals personal attention and measurably lifts comment counts. Keep it warm, lowercase, and end with the 🌿 leaf.
+### Why this works (apply to every fresh CTA)
 
-### Alternate pattern (save-led)
+Each beat does specific psychological work. Vary the surface words; never drop a beat.
 
-```
-save this for later. [engagement question] 👇
-```
+1. **Identity-anchored question** — opens with an open question oriented to the reader's lived experience. Always answerable in 1-3 seconds with a personal data point. Examples: `where are you in your journey right now?` / `what week are you on?` / `how's the food noise treating you today?` / `what's your non-scale win this week?` Avoid yes/no questions ("did this resonate?") and abstract opinion questions ("what do you think?") — they give the reader nothing concrete to type.
 
-Use this only when the tip list is highly utility-focused and the engagement question fits as a coda. Even with this pattern, the engagement question is non-negotiable.
+2. **Specific low-friction action** — tell the reader exactly what to type. The lower the friction, the higher the reply count. Examples: `drop your week below` / `share your week 1 number` / `tell me your appetite 1-10` / `drop one word.` Vague calls ("share your story") raise friction and tank reply counts. Anchor to a small concrete data point or one-word answer.
 
-### Engagement question options (rotate, never repeat across consecutive captions):
-- "where are you in your journey right now?"
-- "which one hit you the hardest?"
-- "what would you add to this list?"
-- "what's your number one must do?"
-- "which mistake did you make too?"
-- "what surprised you the most?"
-- "what do you wish someone told you?"
-- "which one are you trying first?"
-- "be honest, how many tabs do you have open right now?"
-- "what's the one change that made the biggest difference for you?"
+3. **👇** — single down-arrow placed between the action and the reciprocity beat. Visual reinforcement of the action.
+
+4. **Reciprocity beat** — signals personal attention. Always first-person, always present tense. Examples: `i read every single one` / `i reply to every one` / `every comment matters to me` / `i'm reading them all.` This is the lift — it converts passive readers into commenters because they know the comment won't vanish into the void.
+
+5. **Warmth emoji** — 🌿 / 🌱 / 🤍, picked once per caption (the prompt specifies which). Soft sign-off, not a demand. Single emoji only, never stacked.
+
+### Variations that follow the formula
+
+- `what week are you on? tell me below 👇 every comment matters to me 🌱`
+- `what's your biggest non-scale win this week? drop it below 👇 i'm reading them all 🌿`
+- `what's the one thing nobody warned you about? share it below 👇 i reply to every single one 🤍`
+- `how's your appetite today? drop a number 1-10 below 👇 i read every reply 🌱`
+- `what changed first for you — body or food noise? drop one word below 👇 i read every single one 🤍`
+
+### Don'ts
+
+- Never end on just a save prompt — saves alone don't build community.
+- Never use a yes/no or "agree?" hook — kills reply variety.
+- Never demand engagement with exclamations ("comment below!!") — breaks the soft tone.
+- Never stack hashtags or extra emojis in the CTA — keep it clean.
+- Never repeat the same identity question across consecutive captions.
 
 ---
 
@@ -140,8 +149,8 @@ NEVER write "I am," "do not," "can not," "it is," "you are" etc. in full form.
 ### Emoji Rules
 - Keycap number emoji before each tip header — 1️⃣, 2️⃣, 3️⃣, 4️⃣, 5️⃣, 6️⃣, 7️⃣, 8️⃣, 9️⃣, 🔟 — one per tip, in order. Encodes the count for skimmers.
 - ONE of 👉 / 💡 / 🔑 before each sub-point — picked once per caption (specified in the prompt) and used consistently for every sub-point. Never mix two of them in the same caption.
-- 👇 inside the CTA, immediately after the "drop your [thing] below" instruction
-- 🌿 at the very end of the CTA, after the "i read every single one" warmth beat (engagement-led pattern only)
+- 👇 inside the CTA, immediately after the specific low-friction action
+- ONE warmth emoji at the very end of the CTA — 🌿, 🌱, or 🤍, picked once per caption (specified in the prompt). Single emoji only, never stacked.
 - "GLP-1" and "GLP1" are both fine in the caption body — no emoji substitution required.
 - No other emojis in the caption body
 

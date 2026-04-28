@@ -89,6 +89,11 @@ Conventions:
   in order. Sub-points use ONE of 👉 / 💡 / 🔑 picked at random per
   caption in `caption-generator.ts` and applied uniformly to all
   sub-points; never mix bullets within a single caption.
+- Every TikTok caption ends with an engagement-led CTA following the
+  formula in `caption-style-guide.md` (identity question + specific
+  low-friction action + 👇 + reciprocity beat + warmth emoji). Warmth
+  emoji rotates among 🌿 / 🌱 / 🤍, picked per caption in
+  `caption-generator.ts`. Never close on a save prompt alone.
 
 ## Repositories & schemas
 

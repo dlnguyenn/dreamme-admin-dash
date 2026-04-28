@@ -107,6 +107,20 @@ function detectSubBullet(caption: string): SubBullet {
   return "👉";
 }
 
+const WARMTH_EMOJIS = ["🌿", "🌱", "🤍"] as const;
+type WarmthEmoji = (typeof WARMTH_EMOJIS)[number];
+
+function pickWarmthEmoji(): WarmthEmoji {
+  return WARMTH_EMOJIS[Math.floor(Math.random() * WARMTH_EMOJIS.length)];
+}
+
+function detectWarmthEmoji(caption: string): WarmthEmoji {
+  for (const e of WARMTH_EMOJIS) {
+    if (caption.includes(e)) return e;
+  }
+  return "🌿";
+}
+
 const TIP_NUMBER_EMOJIS =
   "1️⃣, 2️⃣, 3️⃣, 4️⃣, 5️⃣, 6️⃣, 7️⃣, 8️⃣, 9️⃣, 🔟";
 
@@ -142,6 +156,7 @@ export async function generateCaption(
 
   const system = buildCachedSystem(styleGuide);
   const subBullet = pickSubBullet();
+  const warmthEmoji = pickWarmthEmoji();
 
   const parts: string[] = [`HOOK (use exactly as the first line, lowercase):\n${hook}`];
   if (notes && notes.trim()) {
@@ -155,7 +170,7 @@ export async function generateCaption(
     );
   }
   parts.push(
-    `Now write the full caption for this hook. Exactly 7-10 tips, closing CTA. Number the tip headers with keycap emojis in order: ${TIP_NUMBER_EMOJIS} (one per tip). Each tip has exactly 3 sub-points and EVERY sub-point in this caption starts with ${subBullet} — use ${subBullet} consistently for all sub-points; do not switch to a different bullet emoji partway through. The closing CTA MUST ask the reader to engage — use the engagement-led pattern from the style guide ("[engagement question] drop your [thing] below 👇 i read every single one 🌿"); never end on just a save prompt. Target 3500 characters; hard ceiling 4000.`,
+    `Now write the full caption for this hook. Exactly 7-10 tips, closing CTA. Number the tip headers with keycap emojis in order: ${TIP_NUMBER_EMOJIS} (one per tip). Each tip has exactly 3 sub-points and EVERY sub-point in this caption starts with ${subBullet} — use ${subBullet} consistently for all sub-points; do not switch to a different bullet emoji partway through. The closing CTA goes immediately after the last sub-point of the final tip and MUST follow the engagement-led formula from the style guide: [identity-anchored question] [specific low-friction action] 👇 [reciprocity beat] ${warmthEmoji}. Apply the WHY-THIS-WORKS principles — every beat does real psychological work. End the CTA with ${warmthEmoji} as the warmth emoji (do not use any other emoji at the close). Never end on a save prompt; never use a yes/no question. Target 3500 characters; hard ceiling 4000.`,
   );
 
   const raw = await callClaudeText({
@@ -182,13 +197,14 @@ export async function compressCaption(
 
   const system = buildCachedSystem(styleGuide);
   const subBullet = detectSubBullet(oversizedCaption);
+  const warmthEmoji = detectWarmthEmoji(oversizedCaption);
 
   const userText = `The caption below is over the 4000-character hard ceiling (${oversizedCaption.length} chars). Rewrite it to fit UNDER 3800 characters while preserving:
 - The exact same hook (first line, lowercase, unchanged)
 - Exactly 7-10 tips, each with a keycap-number header (1️⃣–🔟 in order) + one-line bridge + exactly 3 ${subBullet} sub-points
 - Keep ${subBullet} as the sub-point bullet for every sub-point — do not switch to a different bullet emoji
 - Both DreamMe product mentions (same placement pattern)
-- The closing engagement-led CTA exactly as written in the original (engagement question + "drop your [thing] below 👇" + warmth beat + 🌿, OR the save-led "save this for later. [engagement question] 👇" if that's the original pattern). Whichever pattern the original used, keep it intact — never strip the engagement question.
+- The closing engagement-led CTA following [identity question] [specific low-friction action] 👇 [reciprocity beat] ${warmthEmoji}. Keep all five beats intact — never strip the question, the action, the 👇, the reciprocity beat, or the warmth emoji. Keep ${warmthEmoji} as the closing emoji.
 
 Trim by shortening bridges and sub-points. Never drop a sub-point. Never drop a tip below 7. Never cut a DreamMe mention.
 
