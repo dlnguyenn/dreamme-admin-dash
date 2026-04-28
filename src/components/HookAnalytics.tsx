@@ -897,12 +897,16 @@ function HookCard({
           gap: 8,
           justifyContent: "space-between",
           marginTop: 2,
+          flexWrap: "wrap",
         }}
       >
         <Chip tone="neutral" style={{ fontSize: 10 }}>
           {cat}
         </Chip>
-        <div style={{ display: "flex", gap: 6 }} onClick={stop}>
+        <div
+          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+          onClick={stop}
+        >
           <Button
             variant="ghost"
             size="sm"
