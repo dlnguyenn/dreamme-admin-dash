@@ -18,6 +18,8 @@ export interface HookRow {
   last_scraped_at: string;
   performance_ratio?: number | null;
   performance_class?: PerformanceClass | null;
+  embedding?: string | null;
+  family_id?: string | null;
 }
 
 export interface ExistingHookMeta {

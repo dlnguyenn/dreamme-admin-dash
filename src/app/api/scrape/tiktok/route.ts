@@ -10,6 +10,7 @@ import { handleScrape } from "@/lib/handlers/scrape-tiktok";
 import { createPostgrestHookRepository } from "@/lib/repositories/hook-repository";
 import { loadBaselines } from "@/lib/baseline";
 import { createPostgrestMatcherStore } from "@/lib/hook-matcher";
+import { createPostgrestFamilyStore } from "@/lib/families";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
 
   const baselines = await loadBaselines().catch(() => new Map());
   const matcherStore = createPostgrestMatcherStore();
+  const familyStore = createPostgrestFamilyStore();
 
   return handleScrape(req, {
     scraper: { run: (opts) => runTikTokScrape(opts) },
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
       extract: (url) => ocrFirstSlide(url),
       categorize: (hook) => categorizeHook(hook),
     },
-    feedback: { baselines, matcherStore },
+    feedback: { baselines, matcherStore, familyStore },
   });
 }
 
