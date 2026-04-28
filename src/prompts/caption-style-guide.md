@@ -65,12 +65,31 @@ The softest sell acknowledges alternatives: "i use DreamMe for this but anything
 
 ## Closing CTA
 
-Every caption ends with:
+Every caption MUST end with a call-to-action that explicitly asks the reader to engage. The CTA's job is to drive comments and replies, not just saves. Always include an open question AND an explicit invitation to drop a comment — never just a save prompt.
+
+### Preferred pattern (engagement-led)
+
+```
+[engagement question] drop your [thing] below 👇 i read every single one 🌿
+```
+
+Example (proven):
+```
+where are you in your journey right now? drop your week below 👇 i read every single one 🌿
+```
+
+The "i read every single one" beat (or a sibling — "i reply to every single one," "every reply matters to me") signals personal attention and measurably lifts comment counts. Keep it warm, lowercase, and end with the 🌿 leaf.
+
+### Alternate pattern (save-led)
+
 ```
 save this for later. [engagement question] 👇
 ```
 
+Use this only when the tip list is highly utility-focused and the engagement question fits as a coda. Even with this pattern, the engagement question is non-negotiable.
+
 ### Engagement question options (rotate, never repeat across consecutive captions):
+- "where are you in your journey right now?"
 - "which one hit you the hardest?"
 - "what would you add to this list?"
 - "what's your number one must do?"
@@ -121,7 +140,8 @@ NEVER write "I am," "do not," "can not," "it is," "you are" etc. in full form.
 ### Emoji Rules
 - Keycap number emoji before each tip header — 1️⃣, 2️⃣, 3️⃣, 4️⃣, 5️⃣, 6️⃣, 7️⃣, 8️⃣, 9️⃣, 🔟 — one per tip, in order. Encodes the count for skimmers.
 - ONE of 👉 / 💡 / 🔑 before each sub-point — picked once per caption (specified in the prompt) and used consistently for every sub-point. Never mix two of them in the same caption.
-- 👇 at end of CTA only
+- 👇 inside the CTA, immediately after the "drop your [thing] below" instruction
+- 🌿 at the very end of the CTA, after the "i read every single one" warmth beat (engagement-led pattern only)
 - "GLP-1" and "GLP1" are both fine in the caption body — no emoji substitution required.
 - No other emojis in the caption body
 
