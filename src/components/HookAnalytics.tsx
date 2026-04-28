@@ -11,6 +11,9 @@ import {
 } from "@/lib/hook-categories";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
 import { PerformanceBadge } from "./hook-analytics/PerformanceBadge";
+import { FatiguePanel } from "./hook-analytics/FatiguePanel";
+import { CategoryHeatStrip } from "./hook-analytics/CategoryHeatStrip";
+import { SUPABASE_ANON, SUPABASE_URL } from "@/lib/supabase";
 import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
@@ -503,7 +506,7 @@ export function HookAnalytics() {
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     minWidth: 0,
                     flexWrap: "wrap",
                   }}
@@ -528,6 +531,9 @@ export function HookAnalytics() {
                   >
                     {generatingPersona === pid ? "Generating…" : "Generate"}
                   </Button>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <CategoryHeatStrip persona={pid} posts={posts} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {genForPersona(pid)
@@ -564,6 +570,17 @@ export function HookAnalytics() {
           </div>
         )}
       </section>
+      )}
+
+      {/* Hook family fatigue */}
+      {!isMobile && (
+        <section style={{ marginBottom: 40 }}>
+          <SectionHeader
+            title="Fatigued hook families"
+            hint="In cooldown — generator avoids these"
+          />
+          <FatiguePanel supabaseUrl={SUPABASE_URL} supabaseAnon={SUPABASE_ANON} />
+        </section>
       )}
 
       {/* Top performing hooks */}

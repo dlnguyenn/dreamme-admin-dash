@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIndex,
   tryMatch,
+  tryMatchByEmbedding,
   type UnmatchedGenerated,
 } from "@/lib/hook-matcher";
 import { normalizeHook } from "@/lib/hook-categories";
@@ -11,6 +12,7 @@ function gh(
   persona: "andrea" | "emma" | "olivia",
   hookText: string,
   daysAgo: number,
+  embedding: number[] | null = null,
 ): UnmatchedGenerated {
   return {
     id,
@@ -20,6 +22,7 @@ function gh(
     created_at: new Date(
       Date.now() - daysAgo * 24 * 60 * 60 * 1000,
     ).toISOString(),
+    embedding,
   };
 }
 
@@ -122,5 +125,99 @@ describe("hook-matcher.tryMatch", () => {
       postedAt: new Date().toISOString(),
     });
     expect(result?.id).toBe("a1");
+  });
+});
+
+describe("hook-matcher.tryMatchByEmbedding (tier 2)", () => {
+  // Synthetic embeddings: identical, near, and far. cosine([1,0,0],[1,0,0]) = 1
+  const v_target = [1, 0, 0];
+  const v_near = [0.95, 0.05, 0]; // similarity ~0.998
+  const v_far = [0, 1, 0]; // similarity 0
+
+  it("matches when nearest persona-scoped hook clears the threshold", () => {
+    const idx = buildIndex([gh("a1", "andrea", "completely different text", 5, v_target)]);
+    const r = tryMatchByEmbedding(
+      idx,
+      {
+        persona: "andrea",
+        postEmbedding: v_near,
+        postedAt: new Date().toISOString(),
+      },
+      0.92,
+    );
+    expect(r?.match.id).toBe("a1");
+    expect(r?.similarity).toBeGreaterThan(0.92);
+  });
+
+  it("returns null when nothing clears the threshold", () => {
+    const idx = buildIndex([gh("a1", "andrea", "different", 5, v_far)]);
+    const r = tryMatchByEmbedding(
+      idx,
+      {
+        persona: "andrea",
+        postEmbedding: v_target,
+        postedAt: new Date().toISOString(),
+      },
+      0.92,
+    );
+    expect(r).toBeNull();
+  });
+
+  it("ignores cross-persona candidates", () => {
+    const idx = buildIndex([gh("e1", "emma", "matchable", 2, v_target)]);
+    const r = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_near,
+      postedAt: new Date().toISOString(),
+    });
+    expect(r).toBeNull();
+  });
+
+  it("ignores candidates older than the 14-day window", () => {
+    const idx = buildIndex([gh("a-old", "andrea", "old", 30, v_target)]);
+    const r = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_near,
+      postedAt: new Date().toISOString(),
+    });
+    expect(r).toBeNull();
+  });
+
+  it("ignores candidates created after the post (causality)", () => {
+    const idx = buildIndex([gh("a1", "andrea", "future", 0, v_target)]);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const r = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_near,
+      postedAt: yesterday,
+    });
+    // hook created today, post posted yesterday — should reject
+    expect(r).toBeNull();
+  });
+
+  it("does not match the same candidate twice in one run", () => {
+    const idx = buildIndex([gh("a1", "andrea", "x", 2, v_target)]);
+    const first = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_near,
+      postedAt: new Date().toISOString(),
+    });
+    const second = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_near,
+      postedAt: new Date().toISOString(),
+    });
+    expect(first?.match.id).toBe("a1");
+    expect(second).toBeNull();
+  });
+
+  it("skips candidates with no embedding", () => {
+    const idx = buildIndex([gh("a1", "andrea", "no embed", 2, null)]);
+    const r = tryMatchByEmbedding(idx, {
+      persona: "andrea",
+      postEmbedding: v_target,
+      postedAt: new Date().toISOString(),
+    });
+    expect(r).toBeNull();
   });
 });

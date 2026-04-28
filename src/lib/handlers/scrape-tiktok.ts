@@ -16,9 +16,16 @@ import {
 import {
   loadIndex,
   tryMatch,
+  tryMatchByEmbedding,
   type MatcherIndex,
   type MatcherStore,
 } from "@/lib/hook-matcher";
+import { embedOne, voyageConfigured, toPgVector } from "@/lib/voyage";
+import {
+  attachOrCreate,
+  type FamilyRow,
+  type FamilyStore,
+} from "@/lib/families";
 
 export interface Scraper {
   run(opts: { profiles: string[]; resultsPerPage: number }): Promise<unknown>;
@@ -32,6 +39,7 @@ export interface OCR {
 export interface FeedbackDeps {
   baselines: BaselineMap;
   matcherStore: MatcherStore;
+  familyStore?: FamilyStore;
 }
 
 export interface ScrapeRequestBody {
@@ -48,6 +56,9 @@ export interface ScrapeResult {
   skippedNoSlide: number;
   parseFailed: number;
   matched: number;
+  matchedEmbedding: number;
+  embedded: number;
+  newFamilies: number;
   errors: string[];
 }
 
@@ -108,10 +119,22 @@ export async function handleScrape(
     }
   }
 
+  let families: FamilyRow[] | null = null;
+  if (deps.feedback?.familyStore && voyageConfigured()) {
+    try {
+      families = await deps.feedback.familyStore.fetchAll();
+    } catch (e) {
+      console.warn("[scrape-tiktok] family fetch failed", e);
+    }
+  }
+  const familiesAtStart = families?.length ?? 0;
+
   let ocred = 0;
   let upserted = 0;
   let skippedNoSlide = 0;
   let matched = 0;
+  let matchedEmbedding = 0;
+  let embedded = 0;
   const errors: string[] = [];
 
   for (const item of items) {
@@ -123,10 +146,13 @@ export async function handleScrape(
         repo: deps.repo,
         feedback: deps.feedback,
         matcherIndex,
+        families,
         onOcr: () => ocred++,
         onUpsert: () => upserted++,
         onSkipNoSlide: () => skippedNoSlide++,
         onMatch: () => matched++,
+        onMatchEmbedding: () => matchedEmbedding++,
+        onEmbed: () => embedded++,
       });
     } catch (e) {
       errors.push((e as Error).message);
@@ -141,6 +167,9 @@ export async function handleScrape(
     skippedNoSlide,
     parseFailed,
     matched,
+    matchedEmbedding,
+    embedded,
+    newFamilies: (families?.length ?? 0) - familiesAtStart,
     errors: errors.slice(0, 5),
   };
   return NextResponse.json(result);
@@ -187,10 +216,13 @@ async function processItem(
     repo: HookRepository;
     feedback?: FeedbackDeps;
     matcherIndex: MatcherIndex | null;
+    families: FamilyRow[] | null;
     onOcr: () => void;
     onUpsert: () => void;
     onSkipNoSlide: () => void;
     onMatch: () => void;
+    onMatchEmbedding: () => void;
+    onEmbed: () => void;
   },
 ): Promise<void> {
   const persona = personaFromUsername(item.authorMeta?.name);
@@ -225,6 +257,40 @@ async function processItem(
     performance_class = cls.class;
   }
 
+  // Embed + cluster: only if voyage configured, families fetched, and the
+  // post has hook text. We always re-embed when OCR ran (hook text might
+  // have changed); when reusing prior hook text we skip to keep the
+  // scrape's hot path fast — backfill catches those.
+  let embedding: number[] | null = null;
+  let family_id: string | null = null;
+  const ranOcr = (!prior || ctx.reocr) && !!slideUrl;
+  if (
+    ctx.feedback?.familyStore &&
+    ctx.families &&
+    voyageConfigured() &&
+    hookText.trim() &&
+    ranOcr
+  ) {
+    try {
+      embedding = await embedOne(hookText);
+      ctx.onEmbed();
+      const attach = await attachOrCreate(
+        ctx.feedback.familyStore,
+        ctx.families,
+        {
+          embedding,
+          exemplar_text: hookText,
+          category: category || null,
+        },
+      );
+      family_id = attach.familyId;
+    } catch (e) {
+      console.warn("[scrape-tiktok] embed/family-attach failed", e);
+      embedding = null;
+      family_id = null;
+    }
+  }
+
   const postId = await ctx.repo.upsert({
     persona,
     post_id: item.id ?? null,
@@ -242,29 +308,60 @@ async function processItem(
     last_scraped_at: new Date().toISOString(),
     performance_ratio,
     performance_class,
+    embedding: embedding ? toPgVector(embedding) : null,
+    family_id,
   });
   ctx.onUpsert();
 
-  if (ctx.feedback && ctx.matcherIndex && postId && hookNormalized) {
-    const matched = tryMatch(ctx.matcherIndex, {
+  if (!ctx.feedback || !ctx.matcherIndex || !postId) return;
+
+  // Tier 1: exact normalized text match.
+  if (hookNormalized) {
+    const t1 = tryMatch(ctx.matcherIndex, {
       postId,
       postUrl: item.webVideoUrl,
       persona,
       hookNormalized,
       postedAt: item.createTimeISO ?? null,
     });
-    if (matched) {
+    if (t1) {
       try {
         await ctx.feedback.matcherStore.persistMatch({
-          generatedHookId: matched.id,
+          generatedHookId: t1.id,
           postId,
           deployedAt: item.createTimeISO ?? new Date().toISOString(),
           confidence: 1.0,
           source: "auto_normalized",
+          familyId: family_id ?? null,
         });
         ctx.onMatch();
       } catch (e) {
-        console.warn("[scrape-tiktok] persistMatch failed", e);
+        console.warn("[scrape-tiktok] persistMatch (tier 1) failed", e);
+      }
+      return;
+    }
+  }
+
+  // Tier 2: cosine similarity match within the 14-day window.
+  if (embedding) {
+    const t2 = tryMatchByEmbedding(ctx.matcherIndex, {
+      persona,
+      postEmbedding: embedding,
+      postedAt: item.createTimeISO ?? null,
+    });
+    if (t2) {
+      try {
+        await ctx.feedback.matcherStore.persistMatch({
+          generatedHookId: t2.match.id,
+          postId,
+          deployedAt: item.createTimeISO ?? new Date().toISOString(),
+          confidence: t2.similarity,
+          source: "auto_embedding",
+          familyId: family_id ?? null,
+        });
+        ctx.onMatchEmbedding();
+      } catch (e) {
+        console.warn("[scrape-tiktok] persistMatch (tier 2) failed", e);
       }
     }
   }

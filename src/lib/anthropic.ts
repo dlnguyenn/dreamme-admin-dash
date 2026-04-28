@@ -147,6 +147,21 @@ export interface HookExample {
   views: number;
   category: string;
   postId: string;
+  performanceRatio?: number | null;
+}
+
+export interface FatiguedFamilyExample {
+  exemplarText: string;
+  category: string | null;
+  reason: string | null;
+  cooldownUntil: string | null;
+  fatigueScore: number;
+}
+
+export interface CategoryNudge {
+  category: string;
+  postCount: number;
+  avgPerformanceRatio: number;
 }
 
 export interface GenerationSuggestion {
@@ -161,11 +176,27 @@ export async function generateHooksForPersona(opts: {
   count: number;
   personaTopHooks: HookExample[];
   crossPersonaHooks: HookExample[];
+  personaFlops?: HookExample[];
+  fatiguedFamilies?: FatiguedFamilyExample[];
+  categoryNudges?: CategoryNudge[];
 }): Promise<GenerationSuggestion[]> {
-  const { persona, count, personaTopHooks, crossPersonaHooks } = opts;
+  const {
+    persona,
+    count,
+    personaTopHooks,
+    crossPersonaHooks,
+    personaFlops = [],
+    fatiguedFamilies = [],
+    categoryNudges = [],
+  } = opts;
 
-  const fmt = (h: HookExample) =>
-    `[${h.postId}] @${h.persona} · ${h.views.toLocaleString()} views · ${h.category} · ${JSON.stringify(h.hook)}`;
+  const fmt = (h: HookExample) => {
+    const ratio =
+      h.performanceRatio != null
+        ? ` · ${h.performanceRatio < 10 ? h.performanceRatio.toFixed(2) : h.performanceRatio.toFixed(0)}× baseline`
+        : "";
+    return `[${h.postId}] @${h.persona} · ${h.views.toLocaleString()} views${ratio} · ${h.category} · ${JSON.stringify(h.hook)}`;
+  };
 
   const sys = `You generate TikTok slideshow hooks for a GLP-1 / weight-loss niche creator named "${persona}".
 Rules:
@@ -175,18 +206,51 @@ Rules:
 - Each hook must clearly fit one of these categories: ${HOOK_CATEGORIES.join(", ")}.
 - Output STRICTLY JSON matching this schema: {"hooks": [{"hook": string, "category": string, "rationale": string, "inspiredBy": string[]}]}.
 - "inspiredBy" should list post IDs (from the examples) that informed this hook (can be empty).
-- "rationale" is 1-2 sentences explaining WHY this hook should work for this persona, grounded in the data.`;
+- "rationale" is 1-2 sentences explaining WHY this hook should work for this persona, grounded in the data.
+
+You will see SIGNAL SECTIONS below (top hits, recent flops, fatigued families to avoid, under-explored categories). Use them. Hits show you what works; flops show you what does not work right now; fatigued families are exhausted and must NOT be reused (write something semantically distinct); under-explored categories are angles this persona's audience hasn't seen recently and may respond to.`;
+
+  const fatigueSection = fatiguedFamilies.length
+    ? fatiguedFamilies
+        .slice(0, 10)
+        .map(
+          (f) =>
+            `- ${JSON.stringify(f.exemplarText)} (${f.category ?? "uncat"}, fatigue ${f.fatigueScore.toFixed(2)}, reason: ${f.reason ?? "n/a"}${
+              f.cooldownUntil ? `, cooldown until ${f.cooldownUntil.slice(0, 10)}` : ""
+            })`,
+        )
+        .join("\n")
+    : "(none)";
+
+  const nudgeSection = categoryNudges.length
+    ? categoryNudges
+        .slice(0, 3)
+        .map(
+          (n) =>
+            `- ${n.category} (only ${n.postCount} post${n.postCount === 1 ? "" : "s"} from ${persona} in last 30d, avg ratio ${n.avgPerformanceRatio.toFixed(2)})`,
+        )
+        .join("\n")
+    : "(no signal)";
 
   const user = `Persona: ${persona}
 Generate exactly ${count} hooks.
 
-TOP-PERFORMING HOOKS for ${persona} (learn what works for them):
-${personaTopHooks.length ? personaTopHooks.map(fmt).join("\n") : "(none yet)"}
+TOP-PERFORMING HOOKS for ${persona} (recent hits — learn what works for them):
+${personaTopHooks.length ? personaTopHooks.slice(0, 10).map(fmt).join("\n") : "(none yet)"}
 
-TOP-PERFORMING HOOKS from OTHER personas that ${persona} has NOT yet tried (consider cross-pollinating):
-${crossPersonaHooks.length ? crossPersonaHooks.map(fmt).join("\n") : "(none available)"}
+RECENT FLOPS for ${persona} (anti-examples — these underperformed; avoid these patterns):
+${personaFlops.length ? personaFlops.slice(0, 8).map(fmt).join("\n") : "(none flagged)"}
 
-Balance: at least one of the ${count} should be a cross-pollination from another persona's top hook (if any exist), adapted to ${persona}'s voice.`;
+TOP-PERFORMING HOOKS from OTHER personas that ${persona} has NOT yet tried (cross-pollinate where you can):
+${crossPersonaHooks.length ? crossPersonaHooks.slice(0, 8).map(fmt).join("\n") : "(none available)"}
+
+FATIGUED FAMILIES to AVOID (in cooldown — do NOT propose hooks similar to these; pick a different angle entirely):
+${fatigueSection}
+
+UNDER-EXPLORED CATEGORIES for ${persona} (consider these angles — fewer posts = open territory):
+${nudgeSection}
+
+Balance: at least one of the ${count} should be a cross-pollination from another persona's top hook (adapted to ${persona}'s voice). At least one should target an under-explored category if any are listed. None should be similar to a fatigued family.`;
 
   const raw = await callClaude({
     model: SONNET,
