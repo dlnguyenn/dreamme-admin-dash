@@ -55,7 +55,7 @@ export async function GET() {
     endpoint: "POST /api/scrape/tiktok",
     auth: "X-DreamMe-Secret: <INGEST_TOKEN or CRON_SECRET>",
     body: {
-      personas: "optional PersonaId[] (default: all three)",
+      personas: "optional PersonaId[] (default: all configured handles in PERSONA_TIKTOK_PROFILES)",
       resultsPerPage: "optional number (default 30)",
       reocr: "optional boolean â€” re-OCR even if hook already known",
     },

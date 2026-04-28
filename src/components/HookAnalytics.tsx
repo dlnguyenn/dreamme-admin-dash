@@ -190,7 +190,7 @@ export function HookAnalytics() {
             Hook <span style={{ fontStyle: "italic" }}>analytics</span>
           </>
         }
-        subtitle="Scrapes the three TikTok accounts, OCRs the first-slide hook, categorizes it, and uses top performers to generate two new hooks per persona per day."
+        subtitle="Scrapes the tracked TikTok accounts, OCRs the first-slide hook, categorizes it, and uses top performers to generate two new hooks per persona per day."
         tint="color-mix(in oklab, var(--p-emma) 40%, transparent)"
         actions={
           <>
