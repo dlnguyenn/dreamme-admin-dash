@@ -482,18 +482,20 @@ export function HookAnalytics() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
               gap: 18,
             }}
           >
             {PERSONA_IDS.map((pid) => (
-              <div key={pid}>
+              <div key={pid} style={{ minWidth: 0 }}>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
                     marginBottom: 12,
+                    minWidth: 0,
+                    flexWrap: "wrap",
                   }}
                 >
                   <PersonaChip persona={PERSONAS[pid]} size="sm" />
@@ -964,7 +966,7 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
       rel="noopener noreferrer"
       style={{
         display: "grid",
-        gridTemplateColumns: "38px 70px 1fr 140px 90px 140px",
+        gridTemplateColumns: "38px 70px minmax(0, 1fr) 140px 90px 140px",
         alignItems: "center",
         gap: 16,
         padding: "14px 18px",
