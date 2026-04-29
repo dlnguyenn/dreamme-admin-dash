@@ -87,6 +87,8 @@ export function ContentCard({
         <img
           src={item.imageUrl}
           alt=""
+          loading="lazy"
+          decoding="async"
           style={{
             width: "100%",
             height: "100%",

@@ -435,6 +435,8 @@ function SlideTile({
         <img
           src={slide.imageUrl}
           alt={`Slide ${index + 1}`}
+          loading="lazy"
+          decoding="async"
           style={{
             width: "100%",
             height: "100%",

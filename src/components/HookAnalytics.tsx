@@ -1043,6 +1043,8 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
           <img
             src={post.firstSlideUrl}
             alt=""
+            loading="lazy"
+            decoding="async"
             style={{
               width: 54,
               height: 68,
@@ -1151,6 +1153,8 @@ function MobilePostRow({ post }: { post: TikTokPost }) {
         <img
           src={post.firstSlideUrl}
           alt=""
+          loading="lazy"
+          decoding="async"
           style={{
             width: 64,
             height: 80,
