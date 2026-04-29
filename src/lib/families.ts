@@ -385,7 +385,7 @@ export function createPostgrestFamilyStore(): FamilyStore {
             headers: { ...sbHeaders(), Prefer: "return=minimal" },
             body: JSON.stringify({
               total_uses_14d: p.total_uses_14d,
-              recent_flop_count_14d: p.recent_flop_count_14d,
+              recent_flop_count: p.recent_flop_count_14d,
               cross_persona_uses_14d: p.cross_persona_uses_14d,
               last_use_at: p.last_use_at,
               last_hit_at: p.last_hit_at,

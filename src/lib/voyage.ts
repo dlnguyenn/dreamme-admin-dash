@@ -11,7 +11,7 @@
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY ?? "";
 const API = "https://api.voyageai.com/v1/embeddings";
-const MODEL = "voyage-3-lite";
+const MODEL = "voyage-3-large";
 export const EMBEDDING_DIM = 1024;
 const BATCH = 128;
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
