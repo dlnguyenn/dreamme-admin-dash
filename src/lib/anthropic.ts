@@ -11,6 +11,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const API = "https://api.anthropic.com/v1/messages";
 const HAIKU = "claude-haiku-4-5-20251001";
 const SONNET = "claude-sonnet-4-6";
+const OPUS = "claude-opus-4-7";
 
 export function anthropicConfigured() {
   return !!ANTHROPIC_API_KEY;
@@ -271,4 +272,181 @@ Balance: at least one of the ${count} should be a cross-pollination from another
         : [],
     }))
     .slice(0, count);
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline hook (n8n Content Pipeline endpoint, Opus 4.7)
+//
+// Two divergent prompts depending on whether the persona's recent posts hit
+// viral velocity. Explore mode pushes new categories / cross-pollination /
+// inverted patterns. Exploit mode leans hard on what's already worked.
+// ---------------------------------------------------------------------------
+
+export interface PipelineHookInput {
+  persona: PersonaId;
+  personaName: string;
+  personaTagline: string;
+  personaVoice: string;
+  mode: "explore" | "exploit";
+  recentPosts: Array<{
+    postId: string;
+    hook: string;
+    views: number;
+    postedAt: string;
+    category: string;
+    performanceClass: string | null;
+  }>;
+  topHistoricalHits: Array<{
+    postId: string;
+    hook: string;
+    views: number;
+    category: string;
+  }>;
+  recentViralPosts: Array<{ postId: string; hook: string; views: number }>;
+  crossPersonaWinners: Array<{
+    persona: PersonaId;
+    postId: string;
+    hook: string;
+    views: number;
+    category: string;
+  }>;
+  underExploredCategories: string[];
+  hooksToAvoid: string[];
+}
+
+export interface PipelineHookOutput {
+  hook: string;
+  rationale: string;
+  category: HookCategory;
+  inspiredBy: string[];
+}
+
+function fmtPost(p: {
+  postId: string;
+  hook: string;
+  views: number;
+  category?: string;
+  postedAt?: string;
+}): string {
+  const date = p.postedAt ? ` · ${p.postedAt.slice(0, 10)}` : "";
+  const cat = p.category ? ` · ${p.category}` : "";
+  return `[${p.postId}] ${p.views.toLocaleString()} views${cat}${date} · ${JSON.stringify(p.hook)}`;
+}
+
+function buildExploitPrompt(input: PipelineHookInput): {
+  system: string;
+  user: string;
+} {
+  const system = `You generate ONE TikTok slideshow hook for "${input.personaName}", a GLP-1 / weight-loss creator. Persona voice: ${input.personaVoice}.
+
+Mode: EXPLOIT. The audience has been TEPID on this persona's recent content — none of the last ${input.recentPosts.length} posts hit viral velocity. This is not the moment to take risks. Lean hard on what has historically worked for this persona. Identify the angles, structures, and categories that drove their top hits, and write a hook that fits squarely into that proven territory. You are NOT trying to be novel — you are giving the audience MORE of what they have already shown they like.
+
+Rules:
+- Hooks are short first-slide text overlays, typically 4-12 words.
+- Native TikTok voice, not ad copy.
+- No hashtags, emoji, or quotation marks in the hook text itself.
+- Each hook must clearly fit one of these categories: ${HOOK_CATEGORIES.join(", ")}.
+- Output STRICTLY JSON: {"hook": string, "rationale": string, "category": string, "inspiredBy": string[]}
+- "inspiredBy" lists post IDs from the historical hits that informed this hook.
+- "rationale" is 1-2 sentences explaining WHY this exact hook will work for this persona, grounded in the data below.`;
+
+  const user = `Persona: ${input.personaName} (${input.personaTagline})
+
+LAST ${input.recentPosts.length} POSTS (none viral — audience is tepid):
+${input.recentPosts.length ? input.recentPosts.map(fmtPost).join("\n") : "(none)"}
+
+TOP HISTORICAL HITS for ${input.personaName} (these are the proven winners — ground your hook in their patterns):
+${input.topHistoricalHits.length ? input.topHistoricalHits.map(fmtPost).join("\n") : "(none)"}
+
+RECENT HOOKS to AVOID (do not repeat or near-repeat these):
+${input.hooksToAvoid.length ? input.hooksToAvoid.map((h) => `- ${JSON.stringify(h)}`).join("\n") : "(none)"}
+
+Generate ONE hook that lives squarely in this persona's proven territory.`;
+
+  return { system, user };
+}
+
+function buildExplorePrompt(input: PipelineHookInput): {
+  system: string;
+  user: string;
+} {
+  const system = `You generate ONE TikTok slideshow hook for "${input.personaName}", a GLP-1 / weight-loss creator. Persona voice: ${input.personaVoice}.
+
+Mode: EXPLORE. The audience is HOT — ${input.recentViralPosts.length} of the last ${input.recentPosts.length} posts hit viral velocity. When attention is high, this is the moment to take a creative risk and EXPAND the persona's territory rather than copy the most recent winners. Use this hook to test new ground while audience momentum is on your side.
+
+Tactics:
+- Borrow a proven format from another persona that ${input.personaName} has not used yet.
+- Push into a category that ${input.personaName} has under-explored recently.
+- Invert a high-performing structure (e.g., flip "things I wish I knew" → "things I'm glad I didn't know").
+- Shift register: if their last winners were utility-list, try emotional confession; if confessional, try data/stat.
+
+Rules:
+- Hooks are short first-slide text overlays, typically 4-12 words.
+- Native TikTok voice, not ad copy.
+- No hashtags, emoji, or quotation marks in the hook text itself.
+- Each hook must clearly fit one of these categories: ${HOOK_CATEGORIES.join(", ")}.
+- Output STRICTLY JSON: {"hook": string, "rationale": string, "category": string, "inspiredBy": string[]}
+- "inspiredBy" can include post IDs from any of the sections below.
+- "rationale" is 1-2 sentences explaining what new territory you are testing and why this is the right moment to test it.`;
+
+  const user = `Persona: ${input.personaName} (${input.personaTagline})
+
+RECENT VIRAL POSTS (the audience is currently engaged — ride this momentum):
+${input.recentViralPosts.length ? input.recentViralPosts.map(fmtPost).join("\n") : "(none — falling back to last posts as proxy)"}
+
+LAST ${input.recentPosts.length} POSTS (full context):
+${input.recentPosts.length ? input.recentPosts.map(fmtPost).join("\n") : "(none)"}
+
+OTHER PERSONAS' TOP HITS that ${input.personaName} has NOT tried (cross-pollination candidates):
+${input.crossPersonaWinners.length ? input.crossPersonaWinners.map((p) => `[${p.postId}] @${p.persona} · ${p.views.toLocaleString()} views · ${p.category} · ${JSON.stringify(p.hook)}`).join("\n") : "(none)"}
+
+UNDER-EXPLORED CATEGORIES for ${input.personaName} (open territory):
+${input.underExploredCategories.length ? input.underExploredCategories.map((c) => `- ${c}`).join("\n") : "(no clear gaps)"}
+
+RECENT HOOKS to AVOID (do not repeat or near-repeat these):
+${input.hooksToAvoid.length ? input.hooksToAvoid.map((h) => `- ${JSON.stringify(h)}`).join("\n") : "(none)"}
+
+Generate ONE hook that takes a calculated creative risk for ${input.personaName} while the audience is paying attention.`;
+
+  return { system, user };
+}
+
+export async function generatePipelineHook(
+  input: PipelineHookInput,
+): Promise<PipelineHookOutput> {
+  const { system, user } =
+    input.mode === "explore"
+      ? buildExplorePrompt(input)
+      : buildExploitPrompt(input);
+
+  const raw = await callClaude({
+    model: OPUS,
+    system,
+    content: [{ type: "text", text: user }],
+    maxTokens: 600,
+  });
+
+  const parsed = firstJson(raw) as {
+    hook?: unknown;
+    rationale?: unknown;
+    category?: unknown;
+    inspiredBy?: unknown;
+  };
+
+  const hook =
+    typeof parsed?.hook === "string" ? parsed.hook.trim() : "";
+  if (!hook) throw new Error("Opus returned no hook");
+
+  const category: HookCategory = isHookCategory(parsed?.category)
+    ? parsed.category
+    : "other";
+
+  const rationale =
+    typeof parsed?.rationale === "string" ? parsed.rationale : "";
+
+  const inspiredBy = Array.isArray(parsed?.inspiredBy)
+    ? parsed.inspiredBy.filter((x): x is string => typeof x === "string")
+    : [];
+
+  return { hook, rationale, category, inspiredBy };
 }
