@@ -101,6 +101,7 @@ export function App() {
   }, [tweaks, hydrated]);
 
   const refresh = React.useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       setSyncError(null);
       const data = await API.fetchAll();
@@ -116,8 +117,15 @@ export function App() {
   React.useEffect(() => {
     if (!authed) return;
     refresh();
-    const id = setInterval(refresh, 30000);
-    return () => clearInterval(id);
+    const id = setInterval(refresh, 120000);
+    const onVisible = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [authed, refresh]);
 
   // Keyboard shortcut: Cmd/Ctrl+. to toggle Tweaks panel

@@ -433,6 +433,8 @@ function ResourceCard({
             <img
               src={resource.imageUrl}
               alt={resource.title}
+              loading="lazy"
+              decoding="async"
               style={{
                 width: "100%",
                 height: "100%",
