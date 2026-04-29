@@ -10,9 +10,10 @@ import {
   type HookCategory,
 } from "@/lib/hook-categories";
 import { PERSONAS, PERSONA_IDS, type PersonaId } from "@/lib/personas";
-import { PerformanceBadge } from "./hook-analytics/PerformanceBadge";
 import { FatiguePanel } from "./hook-analytics/FatiguePanel";
 import { CategoryHeatStrip } from "./hook-analytics/CategoryHeatStrip";
+import { HookCard } from "./hook-analytics/HookCard";
+import { HookBankDrawer } from "./hook-analytics/HookBankDrawer";
 import { SUPABASE_ANON, SUPABASE_URL } from "@/lib/supabase";
 import { HooksAPI } from "@/lib/hooks";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
@@ -44,6 +45,7 @@ export function HookAnalytics() {
   const [generatingPersona, setGeneratingPersona] = React.useState<PersonaId | null>(null);
   const [captionHookId, setCaptionHookId] = React.useState<string | null>(null);
   const [igHookId, setIgHookId] = React.useState<string | null>(null);
+  const [bankPersona, setBankPersona] = React.useState<PersonaId | null>(null);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -438,6 +440,9 @@ export function HookAnalytics() {
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             {(tab === "all" ? PERSONA_IDS : [tab as PersonaId]).map((pid) => {
               const pHooks = genForPersona(pid);
+              const pUnused = pHooks.filter((h) => !h.used);
+              const pVisible = pUnused.slice(0, 2);
+              const pBankCount = pHooks.length - pVisible.length;
               if (tab !== "all" && pHooks.length === 0) return (
                 <EmptyBlock key={pid}>
                   No hooks yet for {PERSONAS[pid].name}.
@@ -450,8 +455,9 @@ export function HookAnalytics() {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
+                      gap: 8,
                       marginBottom: 10,
+                      flexWrap: "wrap",
                     }}
                   >
                     <div
@@ -460,7 +466,22 @@ export function HookAnalytics() {
                     >
                       {PERSONAS[pid].name}&apos;s hooks
                     </div>
+                    <span
+                      className="mono"
+                      style={{ fontSize: 10, color: "var(--ink-4)" }}
+                      title={`${pUnused.length} unused · ${pHooks.length - pUnused.length} used`}
+                    >
+                      {pUnused.length} active · {pBankCount} in bank
+                    </span>
                     <div style={{ flex: 1 }} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setBankPersona(pid)}
+                      disabled={pHooks.length === 0}
+                    >
+                      Bank
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -474,18 +495,24 @@ export function HookAnalytics() {
                   <div
                     style={{ display: "flex", flexDirection: "column", gap: 10 }}
                   >
-                    {pHooks.slice(0, 6).map((h) => (
-                      <HookCard
-                        key={h.id}
-                        hook={h}
-                        linkedPost={
-                          h.postedPostId ? postsById.get(h.postedPostId) ?? null : null
-                        }
-                        onToggleUsed={() => onToggleUsed(h)}
-                        onOpenCaption={() => setCaptionHookId(h.id)}
-                        onOpenInstagram={() => setIgHookId(h.id)}
-                      />
-                    ))}
+                    {pVisible.length > 0 ? (
+                      pVisible.map((h) => (
+                        <HookCard
+                          key={h.id}
+                          hook={h}
+                          linkedPost={
+                            h.postedPostId ? postsById.get(h.postedPostId) ?? null : null
+                          }
+                          onToggleUsed={() => onToggleUsed(h)}
+                          onOpenCaption={() => setCaptionHookId(h.id)}
+                          onOpenInstagram={() => setIgHookId(h.id)}
+                        />
+                      ))
+                    ) : (
+                      <EmptyBlock>
+                        No active hooks for {PERSONAS[pid].name}. Generate to see candidates.
+                      </EmptyBlock>
+                    )}
                   </div>
                 </div>
               );
@@ -499,13 +526,18 @@ export function HookAnalytics() {
               gap: 18,
             }}
           >
-            {PERSONA_IDS.map((pid) => (
+            {PERSONA_IDS.map((pid) => {
+              const all = genForPersona(pid);
+              const unused = all.filter((h) => !h.used);
+              const visible = unused.slice(0, 2);
+              const bankCount = all.length - visible.length;
+              return (
               <div key={pid} style={{ minWidth: 0 }}>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 10,
+                    gap: 8,
                     marginBottom: 8,
                     minWidth: 0,
                     flexWrap: "wrap",
@@ -518,10 +550,20 @@ export function HookAnalytics() {
                       color: "var(--ink-4)",
                       fontFamily: "var(--font-geist-mono), monospace",
                     }}
+                    title={`${unused.length} unused · ${all.length - unused.length} used · ${all.length} total`}
                   >
-                    {genForPersona(pid).length} hooks
+                    {unused.length} active · {bankCount} in bank
                   </span>
                   <div style={{ flex: 1 }} />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setBankPersona(pid)}
+                    disabled={all.length === 0}
+                    title={`Open ${PERSONAS[pid].name}'s hook bank`}
+                  >
+                    Bank
+                  </Button>
                   <Button
                     variant="secondary"
                     icon={<Icons.Sparkles size={12} />}
@@ -536,9 +578,8 @@ export function HookAnalytics() {
                   <CategoryHeatStrip persona={pid} posts={posts} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {genForPersona(pid)
-                    .slice(0, 6)
-                    .map((h) => (
+                  {visible.length > 0 ? (
+                    visible.map((h) => (
                       <HookCard
                         key={h.id}
                         hook={h}
@@ -549,8 +590,8 @@ export function HookAnalytics() {
                         onOpenCaption={() => setCaptionHookId(h.id)}
                         onOpenInstagram={() => setIgHookId(h.id)}
                       />
-                    ))}
-                  {genForPersona(pid).length === 0 && (
+                    ))
+                  ) : (
                     <div
                       style={{
                         padding: 16,
@@ -559,14 +600,32 @@ export function HookAnalytics() {
                         border: "1px dashed var(--line-2)",
                         borderRadius: 10,
                         textAlign: "center",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        alignItems: "center",
                       }}
                     >
-                      No hooks yet for {PERSONAS[pid].name}.
+                      <span>
+                        {all.length === 0
+                          ? `No hooks yet for ${PERSONAS[pid].name}.`
+                          : `No active hooks for ${PERSONAS[pid].name}.`}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Icons.Sparkles size={12} />}
+                        onClick={() => runGeneratePersona(pid)}
+                        disabled={running !== null}
+                      >
+                        {generatingPersona === pid ? "Generating…" : "Generate now"}
+                      </Button>
                     </div>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -760,6 +819,23 @@ export function HookAnalytics() {
       </section>
       )}
 
+      <HookBankDrawer
+        open={bankPersona !== null}
+        persona={bankPersona}
+        hooks={generated}
+        postsById={postsById}
+        onClose={() => setBankPersona(null)}
+        onToggleUsed={(h) => onToggleUsed(h)}
+        onOpenCaption={(h) => {
+          setBankPersona(null);
+          setCaptionHookId(h.id);
+        }}
+        onOpenInstagram={(h) => {
+          setBankPersona(null);
+          setIgHookId(h.id);
+        }}
+      />
+
       {captionHookId && (() => {
         const target = generated.find((h) => h.id === captionHookId);
         if (!target) return null;
@@ -853,154 +929,6 @@ function EmptyBlock({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HookCard({
-  hook,
-  linkedPost,
-  onToggleUsed,
-  onOpenCaption,
-  onOpenInstagram,
-}: {
-  hook: GeneratedHook;
-  linkedPost: TikTokPost | null;
-  onToggleUsed: () => void;
-  onOpenCaption: () => void;
-  onOpenInstagram: () => void;
-}) {
-  const { copied, copy } = useCopy();
-  const cat = (HOOK_CATEGORY_LABELS as Record<string, string>)[hook.category] ??
-    hook.category;
-  const [hover, setHover] = React.useState(false);
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpenCaption}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpenCaption();
-        }
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        padding: 14,
-        background: "var(--surface)",
-        border: `1px solid ${hover ? "var(--ink-4)" : "var(--line-2)"}`,
-        borderRadius: 12,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        opacity: hook.used ? 0.55 : 1,
-        cursor: "pointer",
-        transition: "border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease",
-        boxShadow: hover ? "var(--shadow-sm)" : "none",
-        transform: hover ? "translateY(-1px)" : "none",
-      }}
-    >
-      <div
-        className="serif"
-        style={{
-          fontSize: 16,
-          fontWeight: 400,
-          lineHeight: 1.35,
-          color: "var(--ink)",
-          textDecoration: hook.used ? "line-through" : "none",
-        }}
-      >
-        {hook.hookText}
-      </div>
-      {hook.rationale && (
-        <div
-          style={{
-            fontSize: 12,
-            color: "var(--ink-3)",
-            lineHeight: 1.5,
-          }}
-        >
-          {hook.rationale}
-        </div>
-      )}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          justifyContent: "space-between",
-          marginTop: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Chip tone="neutral" style={{ fontSize: 10 }}>
-            {cat}
-          </Chip>
-          {linkedPost && (
-            <PerformanceBadge
-              performanceClass={linkedPost.performanceClass}
-              ratio={linkedPost.performanceRatio}
-              title={`Linked TikTok: ${linkedPost.viewCount.toLocaleString()} views (${
-                linkedPost.performanceClass ?? "unlabeled"
-              })`}
-            />
-          )}
-        </span>
-        <div
-          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-          onClick={stop}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Icons.Sparkles />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenCaption();
-            }}
-            title="Generate TikTok caption from this hook"
-          >
-            TikTok
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Icons.Sparkles />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenInstagram();
-            }}
-            title="Generate Instagram caption from this hook"
-          >
-            Instagram
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={copied ? <Icons.Check /> : <Icons.Copy />}
-            onClick={(e) => {
-              e.stopPropagation();
-              copy(hook.hookText);
-            }}
-          >
-            {copied ? "Copied" : "Copy"}
-          </Button>
-          <Button
-            variant={hook.used ? "secondary" : "ghost"}
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleUsed();
-            }}
-            title={hook.used ? "Mark unused" : "Mark used"}
-          >
-            {hook.used ? "Used" : "Mark used"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
   const persona = PERSONAS[post.personaId];
