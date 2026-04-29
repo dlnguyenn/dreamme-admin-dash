@@ -23,7 +23,7 @@ const SERVICE_ROLE =
     process.env.SUPABASE_SERVICE_ROLE_KEY) ??
   "";
 
-export const SIMILARITY_THRESHOLD = 0.85;
+export const SIMILARITY_THRESHOLD = 0.92;
 export const COOLDOWN_DAYS = 7;
 export const FATIGUE_THRESHOLD = 0.6;
 
@@ -109,10 +109,15 @@ export interface FatiguedFamily {
 }
 
 /**
- * Greedy attach: find the closest existing family centroid; if its
- * cosine similarity meets the threshold, attach (update centroid as a
- * running mean and bump member_count). Otherwise create a new family
- * with this embedding as both centroid and exemplar.
+ * Greedy attach: find the closest existing family centroid (within the
+ * input's category) that meets SIMILARITY_THRESHOLD. Attach by updating
+ * centroid as a running mean and bumping member_count. Otherwise create
+ * a new family with this embedding as both centroid and exemplar.
+ *
+ * Category gate: when both input and family have a category, they must
+ * match. Null categories are wildcards (attach freely). This stops
+ * structural similarity (e.g. all listicles look alike) from collapsing
+ * semantically distinct hooks into one family.
  *
  * NOTE: not safe for concurrent scrape runs against the same family —
  * if two posts attach to the same family in parallel, the second
@@ -134,6 +139,7 @@ export async function attachOrCreate(
   let bestSim = -1;
   let bestFamily: FamilyRow | null = null;
   for (const f of families) {
+    if (input.category && f.category && input.category !== f.category) continue;
     const sim = cosineSimilarity(input.embedding, f.centroid);
     if (sim > bestSim) {
       bestSim = sim;

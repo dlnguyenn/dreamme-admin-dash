@@ -124,6 +124,97 @@ describe("families.attachOrCreate", () => {
     expect(inserts).toHaveLength(1);
     expect(families).toHaveLength(2);
   });
+
+  it("creates a new family at borderline (0.88 cosine, below 0.92 threshold)", async () => {
+    const { store, inserts } = makeStubStore();
+    // [1,0] vs [0.88, sqrt(1-0.88^2)] gives cosine ~0.88
+    const x = 0.88;
+    const y = Math.sqrt(1 - x * x);
+    const families: FamilyRow[] = [
+      {
+        id: "f-anchor",
+        centroid: [1, 0],
+        exemplar_text: "anchor",
+        category: "listicle",
+        member_count: 5,
+      },
+    ];
+    const r = await attachOrCreate(store, families, {
+      embedding: [x, y],
+      exemplar_text: "borderline",
+      category: "listicle",
+    });
+    expect(r.isNew).toBe(true);
+    expect(inserts).toHaveLength(1);
+  });
+
+  it("does not attach across category mismatch even with high similarity", async () => {
+    const { store, inserts } = makeStubStore();
+    const families: FamilyRow[] = [
+      {
+        id: "f-listicle",
+        centroid: [1, 0, 0],
+        exemplar_text: "listicle anchor",
+        category: "listicle",
+        member_count: 4,
+      },
+    ];
+    const r = await attachOrCreate(store, families, {
+      embedding: [0.99, 0.01, 0], // near-identical embedding
+      exemplar_text: "would-be neighbor but different category",
+      category: "pain_point",
+    });
+    expect(r.isNew).toBe(true);
+    expect(inserts).toHaveLength(1);
+    expect(families).toHaveLength(2);
+  });
+
+  it("attaches across null categories (wildcard)", async () => {
+    const { store } = makeStubStore();
+    const families: FamilyRow[] = [
+      {
+        id: "f-wildcard",
+        centroid: [1, 0, 0],
+        exemplar_text: "no category",
+        category: null,
+        member_count: 1,
+      },
+    ];
+    const r = await attachOrCreate(store, families, {
+      embedding: [0.99, 0.01, 0],
+      exemplar_text: "matches via wildcard",
+      category: "listicle",
+    });
+    expect(r.isNew).toBe(false);
+    expect(r.familyId).toBe("f-wildcard");
+  });
+
+  it("ignores closer cross-category centroid in favor of farther same-category one", async () => {
+    const { store } = makeStubStore();
+    const families: FamilyRow[] = [
+      {
+        id: "f-other",
+        centroid: [1, 0, 0],
+        exemplar_text: "very close but wrong category",
+        category: "pain_point",
+        member_count: 3,
+      },
+      {
+        id: "f-same",
+        centroid: [0.95, 0.05, 0],
+        exemplar_text: "slightly less close but right category",
+        category: "listicle",
+        member_count: 3,
+      },
+    ];
+    const r = await attachOrCreate(store, families, {
+      embedding: [0.99, 0.01, 0],
+      exemplar_text: "input",
+      category: "listicle",
+    });
+    expect(r.isNew).toBe(false);
+    expect(r.familyId).toBe("f-same");
+  });
 });
 
 describe("families.computeFatigue", () => {
