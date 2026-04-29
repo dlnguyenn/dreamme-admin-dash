@@ -7,7 +7,7 @@ import {
   createPostgrestFamilyStore,
   fetchCategoryCoverage,
 } from "@/lib/families";
-import { embedOne, voyageConfigured, toPgVector } from "@/lib/voyage";
+import { embed, voyageConfigured, toPgVector } from "@/lib/voyage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -152,6 +152,11 @@ export async function POST(req: Request) {
   const familyRoster = familyStore ? await familyStore.fetchAll().catch(() => []) : [];
 
   const allGenerated: Array<Record<string, unknown>> = [];
+  const pendingForFamily: Array<{
+    row: Record<string, unknown>;
+    hook: string;
+    category: string;
+  }> = [];
 
   for (const persona of personas) {
     const own = hooksByPersona.get(persona) ?? [];
@@ -246,21 +251,35 @@ export async function POST(req: Request) {
         category: s.category,
         inspired_by_post_ids: s.inspiredBy,
       };
-      if (familyStore) {
+      allGenerated.push(row);
+      pendingForFamily.push({ row, hook: s.hook, category: s.category });
+    }
+  }
+
+  // Batch-embed every newly-generated hook in a single Voyage call so we
+  // don't burn N rate-limit slots in series. Voyage's batch limit is 128;
+  // a daily generate run produces ~14-16 rows so one call always suffices.
+  if (familyStore && pendingForFamily.length) {
+    try {
+      const vectors = await embed(pendingForFamily.map((p) => p.hook));
+      for (let i = 0; i < pendingForFamily.length; i++) {
+        const v = vectors[i];
+        const p = pendingForFamily[i];
+        if (!v) continue;
         try {
-          const embedding = await embedOne(s.hook);
           const attach = await attachOrCreate(familyStore, familyRoster, {
-            embedding,
-            exemplar_text: s.hook,
-            category: s.category,
+            embedding: v,
+            exemplar_text: p.hook,
+            category: p.category,
           });
-          row.embedding = toPgVector(embedding);
-          row.family_id = attach.familyId;
+          p.row.embedding = toPgVector(v);
+          p.row.family_id = attach.familyId;
         } catch (e) {
-          console.warn("[generate-hooks] embed/family-attach failed", e);
+          console.warn("[generate-hooks] family-attach failed", e);
         }
       }
-      allGenerated.push(row);
+    } catch (e) {
+      console.warn("[generate-hooks] embed batch failed", e);
     }
   }
 
