@@ -4,6 +4,7 @@ import * as React from "react";
 import { Icons } from "../Icons";
 import { Button, PersonaChip } from "../ui";
 import { SideDrawer } from "../SideDrawer";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, type PersonaId } from "@/lib/personas";
 import type { GeneratedHook, TikTokPost } from "@/lib/types";
 import { HookCard } from "./HookCard";
@@ -35,6 +36,7 @@ export function HookBankDrawer({
   onOpenCaption: (h: GeneratedHook) => void;
   onOpenInstagram: (h: GeneratedHook) => void;
 }) {
+  const isMobile = useIsMobile();
   const [filter, setFilter] = React.useState<Filter>("unused");
 
   const filtered = React.useMemo(() => {
@@ -56,59 +58,64 @@ export function HookBankDrawer({
   }, [hooks, persona]);
 
   const personaMeta = persona ? PERSONAS[persona] : null;
+  const padX = isMobile ? 16 : 24;
+  const padY = isMobile ? 14 : 20;
 
   return (
     <SideDrawer open={open} onClose={onClose} ariaLabel="Hook bank" desktopWidth={720}>
+      {/* Header — flexShrink: 0 so it never collapses */}
       <div
         style={{
+          flexShrink: 0,
+          padding: `${padY}px ${padX}px`,
+          borderBottom: "1px solid var(--line)",
           display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          padding: 24,
-          gap: 18,
-          overflow: "hidden",
+          alignItems: "center",
+          gap: 12,
+          background: personaMeta?.soft ?? "var(--surface)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          {personaMeta && <PersonaChip persona={personaMeta} size="sm" />}
-          <div>
-            <div
-              className="serif"
-              style={{ fontSize: 22, fontStyle: "italic" }}
-            >
-              {personaMeta?.name ?? "—"}'s hook bank
-            </div>
-            <div
-              className="mono"
-              style={{
-                fontSize: 11,
-                color: "var(--ink-4)",
-                marginTop: 2,
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              {counts.unused} active · {counts.used} used · {counts.all} total
-            </div>
-          </div>
-          <div style={{ flex: 1 }} />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Icons.Close />}
-            onClick={onClose}
+        {personaMeta && <PersonaChip persona={personaMeta} size="sm" />}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            className="serif"
+            style={{
+              fontSize: isMobile ? 18 : 22,
+              fontStyle: "italic",
+              lineHeight: 1.2,
+            }}
           >
-            Close
-          </Button>
+            {personaMeta?.name ?? "—"}'s hook bank
+          </div>
+          <div
+            className="mono"
+            style={{
+              fontSize: 10,
+              color: "var(--ink-4)",
+              marginTop: 3,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {counts.unused} active · {counts.used} used · {counts.all} total
+          </div>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Icons.Close size={16} />}
+          onClick={onClose}
+          aria-label="Close"
+        />
+      </div>
 
+      {/* Filter chips — also flexShrink: 0 */}
+      <div
+        style={{
+          flexShrink: 0,
+          padding: `12px ${padX}px 0`,
+        }}
+      >
         <div
           role="tablist"
           aria-label="Filter"
@@ -168,38 +175,44 @@ export function HookBankDrawer({
             );
           })}
         </div>
+      </div>
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            paddingRight: 4,
-          }}
-        >
-          {filtered.length === 0 ? (
-            <div
-              style={{
-                padding: 24,
-                fontSize: 13,
-                color: "var(--ink-4)",
-                border: "1px dashed var(--line-2)",
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-            >
-              {filter === "unused"
-                ? `No unused hooks for ${personaMeta?.name ?? "this persona"}. Generate fresh ones from the column header.`
-                : filter === "used"
-                  ? `Nothing used yet for ${personaMeta?.name ?? "this persona"}.`
-                  : `No hooks for ${personaMeta?.name ?? "this persona"} yet.`}
-            </div>
-          ) : (
-            filtered.map((h) => (
+      {/* Scrollable cards body — flex: 1 + minHeight: 0 + overflow auto.
+          minHeight: 0 is required so the flex child can be SMALLER than its
+          content, which is what enables the scrollbar to engage. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          padding: `12px ${padX}px ${padY + 16}px`,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        {filtered.length === 0 ? (
+          <div
+            style={{
+              padding: 24,
+              fontSize: 13,
+              color: "var(--ink-4)",
+              border: "1px dashed var(--line-2)",
+              borderRadius: 10,
+              textAlign: "center",
+            }}
+          >
+            {filter === "unused"
+              ? `No unused hooks for ${personaMeta?.name ?? "this persona"}. Generate fresh ones from the column header.`
+              : filter === "used"
+                ? `Nothing used yet for ${personaMeta?.name ?? "this persona"}.`
+                : `No hooks for ${personaMeta?.name ?? "this persona"} yet.`}
+          </div>
+        ) : (
+          filtered.map((h) => (
+            <div key={h.id} style={{ flexShrink: 0 }}>
               <HookCard
-                key={h.id}
                 hook={h}
                 linkedPost={
                   h.postedPostId ? postsById.get(h.postedPostId) ?? null : null
@@ -208,10 +221,11 @@ export function HookBankDrawer({
                 onOpenCaption={() => onOpenCaption(h)}
                 onOpenInstagram={() => onOpenInstagram(h)}
               />
-            ))
-          )}
-        </div>
+            </div>
+          ))
+        )}
       </div>
     </SideDrawer>
   );
 }
+
