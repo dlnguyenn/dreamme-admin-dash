@@ -24,6 +24,7 @@ const Body = z.object({
     "diane",
     "sydney",
     "maddy",
+    "hannah",
   ]),
   image_base64: z.string().min(1),
   image_mime: z.string().optional(),

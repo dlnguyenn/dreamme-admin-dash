@@ -25,6 +25,7 @@ const Body = z.object({
     "diane",
     "sydney",
     "maddy",
+    "hannah",
   ]),
   referenceImageUrl: z.string().url(),
   count: z.number().int().min(1).max(4).optional(),

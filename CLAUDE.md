@@ -59,7 +59,7 @@ repo). Two in-repo files keep voice + UI in sync:
   goalWeightLbs, writingStyle. **Update both files when changing a
   persona.**
 
-Eight personas: andrea, emma, olivia, mia, abby, diane, sydney, maddy.
+Nine personas: andrea, emma, olivia, mia, abby, diane, sydney, maddy, hannah.
 
 ## Caption generation
 
