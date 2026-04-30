@@ -13,7 +13,7 @@ const INGEST_SECRET = process.env.INGEST_TOKEN ?? "";
 
 const ItemSchema = z
   .object({
-    persona: z.enum(["andrea", "emma", "olivia", "mia", "abby", "diane", "sydney", "maddy"]),
+    persona: z.enum(["andrea", "emma", "olivia", "mia", "abby", "diane", "sydney", "maddy", "hannah"]),
     caption: z.string().optional(),
     image_url: z.string().url().optional(),
     image_base64: z.string().min(1).optional(),
@@ -206,7 +206,7 @@ export async function GET() {
     auth: "send X-DreamMe-Secret (or Authorization: Bearer <INGEST_TOKEN>)",
     schema: {
       single: {
-        persona: "andrea | emma | olivia | mia | abby | diane | sydney | maddy",
+        persona: "andrea | emma | olivia | mia | abby | diane | sydney | maddy | hannah",
         caption: "string (required unless is_before=true)",
         image_url: "string (optional)",
         image_base64: "string (optional)",

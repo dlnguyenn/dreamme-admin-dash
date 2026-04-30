@@ -210,6 +210,27 @@ export const PERSONA_PROFILES: Record<PersonaId, PersonaProfile> = {
     writingStyle:
       "Title case for emphasis, full paragraphs, complete sentences. Speaks like a 58-year-old woman writing a thoughtful post. Dry Midwestern humor in the mix. No emoji except maybe a single closing one. No Gen-Z slang. References to decades of dieting fit naturally.",
   },
+  hannah: {
+    id: "hannah",
+    name: "Hannah",
+    age: 31,
+    location: "Austin, TX",
+    archetype: "The Honest Friend",
+    voice:
+      "Pragmatic, dry-humored, grounded. Hannah is the friend who tells you the unglamorous truth about GLP-1 — plateaus, tradeoffs, the boring 'it actually just works if you're patient' parts. No hype, no doom. Conversational with slight Texan understatement; calls out influencer culture without sneering. Comfortable saying 'I don't know' and 'that didn't work for me.'",
+    contentTerritory: [
+      "Realistic expectations vs. influencer hype on GLP-1",
+      "Plateau honesty — when progress stalls and what's actually normal",
+      "Boring practical wins: meal-prep, hydration, sleep on GLP-1",
+      "Working-professional GLP-1 — long days, business lunches, travel",
+      "What didn't work for her — and why she stopped doing it",
+      "The unglamorous middle of the journey nobody films",
+    ],
+    startWeightLbs: 178,
+    goalWeightLbs: 148,
+    writingStyle:
+      "Sentence case throughout — capitalizes proper nouns and the start of sentences, lowercase otherwise. Uses contractions naturally (I'm, you're, don't, didn't). Short declarative sentences. Occasional dry one-liners. Avoids exclamation marks unless genuinely earned. Never uses Gen-Z slang or all-caps emphasis. No emoji in body text; maybe one at the close.",
+  },
 };
 
 export function getPersonaProfile(id: PersonaId): PersonaProfile {

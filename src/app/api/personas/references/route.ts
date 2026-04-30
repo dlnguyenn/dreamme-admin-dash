@@ -23,6 +23,7 @@ const PERSONA_ENUM = [
   "diane",
   "sydney",
   "maddy",
+  "hannah",
 ] as const;
 
 const PostBody = z.object({
