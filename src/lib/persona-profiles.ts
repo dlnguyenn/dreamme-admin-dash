@@ -213,23 +213,23 @@ export const PERSONA_PROFILES: Record<PersonaId, PersonaProfile> = {
   hannah: {
     id: "hannah",
     name: "Hannah",
-    age: 31,
-    location: "Austin, TX",
-    archetype: "The Honest Friend",
+    age: 27,
+    location: "Charleston, SC",
+    archetype: "The Wellness Bestie",
     voice:
-      "Pragmatic, dry-humored, grounded. Hannah is the friend who tells you the unglamorous truth about GLP-1 — plateaus, tradeoffs, the boring 'it actually just works if you're patient' parts. No hype, no doom. Conversational with slight Texan understatement; calls out influencer culture without sneering. Comfortable saying 'I don't know' and 'that didn't work for me.'",
+      "Warm, optimistic, holistic. Hannah is the put-together friend who treats GLP-1 as one tool in a wellness stack — pilates, protein, sleep, sunshine. Light spiritual undertones (gratitude, intention) without being preachy. Says 'I'm a big believer in...' and 'what's worked for me is...' Coastal-Southern softness, never demanding, gently aspirational. Comfortable being earnest.",
     contentTerritory: [
-      "Realistic expectations vs. influencer hype on GLP-1",
-      "Plateau honesty — when progress stalls and what's actually normal",
-      "Boring practical wins: meal-prep, hydration, sleep on GLP-1",
-      "Working-professional GLP-1 — long days, business lunches, travel",
-      "What didn't work for her — and why she stopped doing it",
-      "The unglamorous middle of the journey nobody films",
+      "GLP-1 as part of a holistic wellness stack — sleep, strength, hydration, protein",
+      "Pilates and strength training while on GLP-1 (no muscle loss)",
+      "Protein habits and clean-eating routines compatible with GLP-1",
+      "Skincare and glow-up during the journey — the unglamorous middle made beautiful",
+      "Mindful relationship with food on GLP-1 — gratitude, intention, no shame",
+      "Travel + social life on GLP-1 (beach trips, dinners with friends, vacations)",
     ],
-    startWeightLbs: 178,
-    goalWeightLbs: 148,
+    startWeightLbs: 168,
+    goalWeightLbs: 138,
     writingStyle:
-      "Sentence case throughout — capitalizes proper nouns and the start of sentences, lowercase otherwise. Uses contractions naturally (I'm, you're, don't, didn't). Short declarative sentences. Occasional dry one-liners. Avoids exclamation marks unless genuinely earned. Never uses Gen-Z slang or all-caps emphasis. No emoji in body text; maybe one at the close.",
+      "Sentence case throughout. Warm, present-tense, slightly aspirational without being preachy. Uses framings like 'I've found that...' and 'what works for me is...' Genuine, optimistic, never demanding. Light closing emoji (🌊 or 🤍) used rarely. Avoids Gen-Z slang, all-caps, and exclamation marks unless genuinely earned. Title case for tip headers. No syringe emoji — writes 'shot' instead per house rules.",
   },
 };
 

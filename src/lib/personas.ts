@@ -88,8 +88,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     name: "Hannah",
     color: "var(--p-hannah)",
     soft: "var(--p-hannah-soft)",
-    tagline: "weathered linen, plainspoken",
-    avatar: "☕",
+    tagline: "sun-bleached, clean-girl glow",
+    avatar: "🌊",
   },
 };
 
