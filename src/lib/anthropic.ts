@@ -5,12 +5,14 @@ import {
   isHookCategory,
   type HookCategory,
 } from "./hook-categories";
+import { MODELS } from "./models";
 import type { PersonaId } from "./personas";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const API = "https://api.anthropic.com/v1/messages";
 const HAIKU = "claude-haiku-4-5-20251001";
-const SONNET = "claude-sonnet-4-6";
+const SONNET = MODELS.SONNET_4_6;
+const OPUS = MODELS.OPUS_4_7;
 
 export function anthropicConfigured() {
   return !!ANTHROPIC_API_KEY;
@@ -164,16 +166,20 @@ export interface CategoryNudge {
   avgPerformanceRatio: number;
 }
 
+export type HookStrategy = "exploit" | "explore";
+
 export interface GenerationSuggestion {
   hook: string;
   category: HookCategory;
   rationale: string;
   inspiredBy: string[];
+  strategy: HookStrategy;
 }
 
 export async function generateHooksForPersona(opts: {
   persona: PersonaId;
   count: number;
+  exploreCount?: number;
   personaTopHooks: HookExample[];
   crossPersonaHooks: HookExample[];
   personaFlops?: HookExample[];
@@ -189,6 +195,15 @@ export async function generateHooksForPersona(opts: {
     fatiguedFamilies = [],
     categoryNudges = [],
   } = opts;
+  // Default split: floor(count/3) explore, rest exploit. So count=3 -> 2/1,
+  // count=2 -> 1/1, count=1 -> 1/0.
+  const defaultExplore =
+    Math.floor(count / 3) > 0 ? Math.floor(count / 3) : count > 1 ? 1 : 0;
+  const exploreCount = Math.max(
+    0,
+    Math.min(count, opts.exploreCount ?? defaultExplore),
+  );
+  const exploitCount = count - exploreCount;
 
   const fmt = (h: HookExample) => {
     const ratio =
@@ -204,9 +219,12 @@ Rules:
 - They must feel native to TikTok, not like ad copy.
 - Do not use hashtags, emoji, or quotation marks in the hook text itself.
 - Each hook must clearly fit one of these categories: ${HOOK_CATEGORIES.join(", ")}.
-- Output STRICTLY JSON matching this schema: {"hooks": [{"hook": string, "category": string, "rationale": string, "inspiredBy": string[]}]}.
-- "inspiredBy" should list post IDs (from the examples) that informed this hook (can be empty).
-- "rationale" is 1-2 sentences explaining WHY this hook should work for this persona, grounded in the data.
+- Each hook is tagged with a "strategy" of either "exploit" or "explore":
+  - exploit: closely riffs on a TOP-PERFORMING pattern for ${persona} (or a cross-pollinated top hit). Adapts the proven angle without copying wording. Aim for high expected hit rate.
+  - explore: deliberately steps outside known winners — a fresh angle, an under-explored category, an emotional register or hook-shape this persona hasn't tried in the last 30 days. Higher variance, intended to discover new territory.
+- Output STRICTLY JSON matching this schema: {"hooks": [{"hook": string, "category": string, "rationale": string, "inspiredBy": string[], "strategy": "exploit" | "explore"}]}.
+- "inspiredBy" should list post IDs (from the examples) that informed this hook (can be empty for explore hooks).
+- "rationale" is 1-2 sentences explaining WHY this hook should work for this persona AND why it qualifies as exploit vs explore, grounded in the data.
 
 You will see SIGNAL SECTIONS below (top hits, recent flops, fatigued families to avoid, under-explored categories). Use them. Hits show you what works; flops show you what does not work right now; fatigued families are exhausted and must NOT be reused (write something semantically distinct); under-explored categories are angles this persona's audience hasn't seen recently and may respond to.`;
 
@@ -233,35 +251,42 @@ You will see SIGNAL SECTIONS below (top hits, recent flops, fatigued families to
     : "(no signal)";
 
   const user = `Persona: ${persona}
-Generate exactly ${count} hooks.
+Generate exactly ${count} hooks: ${exploitCount} tagged "exploit" and ${exploreCount} tagged "explore".
 
-TOP-PERFORMING HOOKS for ${persona} (recent hits — learn what works for them):
+TOP-PERFORMING HOOKS for ${persona} (recent hits — exploit hooks should riff on these patterns):
 ${personaTopHooks.length ? personaTopHooks.slice(0, 10).map(fmt).join("\n") : "(none yet)"}
 
-RECENT FLOPS for ${persona} (anti-examples — these underperformed; avoid these patterns):
+RECENT FLOPS for ${persona} (anti-examples — these underperformed; avoid these patterns even on explore):
 ${personaFlops.length ? personaFlops.slice(0, 8).map(fmt).join("\n") : "(none flagged)"}
 
-TOP-PERFORMING HOOKS from OTHER personas that ${persona} has NOT yet tried (cross-pollinate where you can):
+TOP-PERFORMING HOOKS from OTHER personas that ${persona} has NOT yet tried (great source for either strategy: cross-pollinate top hits as exploit, or invert/twist as explore):
 ${crossPersonaHooks.length ? crossPersonaHooks.slice(0, 8).map(fmt).join("\n") : "(none available)"}
 
 FATIGUED FAMILIES to AVOID (in cooldown — do NOT propose hooks similar to these; pick a different angle entirely):
 ${fatigueSection}
 
-UNDER-EXPLORED CATEGORIES for ${persona} (consider these angles — fewer posts = open territory):
+UNDER-EXPLORED CATEGORIES for ${persona} (preferred targets for explore hooks — fewer posts = open territory):
 ${nudgeSection}
 
-Balance: at least one of the ${count} should be a cross-pollination from another persona's top hook (adapted to ${persona}'s voice). At least one should target an under-explored category if any are listed. None should be similar to a fatigued family.`;
+Balance:
+- Exploit hooks (${exploitCount}): each must clearly riff on a specific top-performing pattern. Reference the postId(s) you adapted in inspiredBy. Strategy = "exploit".
+- Explore hooks (${exploreCount}): pick angles ${persona} hasn't tried in the last 30 days. Prefer under-explored categories listed above. inspiredBy may be empty. Strategy = "explore".
+- None of the ${count} hooks should be semantically similar to a fatigued family.
+- Hooks must be distinct from each other.`;
 
   const raw = await callClaude({
-    model: SONNET,
+    model: OPUS,
     system: sys,
     content: [{ type: "text", text: user }],
-    maxTokens: 1500,
+    maxTokens: 1800,
   });
-  const parsed = firstJson(raw) as { hooks?: GenerationSuggestion[] };
+  const parsed = firstJson(raw) as { hooks?: Array<Partial<GenerationSuggestion>> };
   const hooks = Array.isArray(parsed?.hooks) ? parsed.hooks : [];
-  return hooks
-    .filter((h) => h && typeof h.hook === "string" && h.hook.trim())
+  const normalized: GenerationSuggestion[] = hooks
+    .filter(
+      (h): h is Partial<GenerationSuggestion> & { hook: string } =>
+        !!h && typeof h.hook === "string" && h.hook.trim().length > 0,
+    )
     .map((h) => ({
       hook: h.hook.trim(),
       category: isHookCategory(h.category) ? h.category : "other",
@@ -269,6 +294,28 @@ Balance: at least one of the ${count} should be a cross-pollination from another
       inspiredBy: Array.isArray(h.inspiredBy)
         ? h.inspiredBy.filter((x): x is string => typeof x === "string")
         : [],
+      strategy: (h.strategy === "explore" ? "explore" : "exploit") as HookStrategy,
     }))
     .slice(0, count);
+
+  // Defensive rebalance: if Opus returned the wrong split, force the
+  // earliest entries into the requested counts. Cheap and deterministic.
+  let seenExploit = 0;
+  let seenExplore = 0;
+  for (const h of normalized) {
+    if (h.strategy === "exploit") seenExploit++;
+    else seenExplore++;
+  }
+  if (seenExploit !== exploitCount || seenExplore !== exploreCount) {
+    let exploitLeft = exploitCount;
+    for (const h of normalized) {
+      if (exploitLeft > 0) {
+        h.strategy = "exploit";
+        exploitLeft--;
+      } else {
+        h.strategy = "explore";
+      }
+    }
+  }
+  return normalized;
 }

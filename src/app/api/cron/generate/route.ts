@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
+import { assignDailyHooks } from "@/lib/daily-hooks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +17,26 @@ export async function GET(req: Request) {
       "content-type": "application/json",
       "x-dreamme-secret": secret,
     },
-    body: JSON.stringify({ perPersona: 2 }),
+    body: JSON.stringify({ perPersona: 3 }),
   });
   const json = await res.json();
-  return NextResponse.json({ ok: res.ok, inner: json }, { status: res.ok ? 200 : 500 });
+  if (!res.ok) {
+    return NextResponse.json({ ok: false, inner: json }, { status: 500 });
+  }
+
+  let assignment: unknown = null;
+  let assignmentError: string | null = null;
+  try {
+    assignment = await assignDailyHooks();
+  } catch (e) {
+    assignmentError = (e as Error).message;
+    console.error("[cron/generate] assignDailyHooks failed", e);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    inner: json,
+    assignment,
+    assignmentError,
+  });
 }

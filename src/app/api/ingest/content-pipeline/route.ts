@@ -19,6 +19,7 @@ const ItemSchema = z
     image_base64: z.string().min(1).optional(),
     image_mime: z.string().optional(),
     is_before: z.boolean().optional().default(false),
+    source_hook_id: z.string().uuid().optional(),
   })
   .refine((v) => !!v.image_url || !!v.image_base64, {
     message: "Provide either image_url or image_base64",
@@ -147,6 +148,7 @@ async function ingestOne(
       caption,
       image_url: imageUrl,
       is_before: isBefore,
+      source_hook_id: raw.source_hook_id ?? null,
     }),
   });
   if (!insert.ok) {
@@ -155,7 +157,29 @@ async function ingestOne(
     );
   }
   const rows = await insert.json();
-  return Array.isArray(rows) ? rows[0] : rows;
+  const row = Array.isArray(rows) ? rows[0] : rows;
+
+  // Close the loop: stamp the daily assignment with the resulting
+  // delivery_id so we can later trace which hook seeded which post.
+  if (raw.source_hook_id && row?.id) {
+    void fetch(
+      `${SUPABASE_URL}/rest/v1/daily_hook_assignments?hook_id=eq.${raw.source_hook_id}&delivery_id=is.null`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${SERVICE_ROLE}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ delivery_id: row.id }),
+      },
+    ).catch((e) =>
+      console.warn("[ingest] daily_hook_assignments link failed", e),
+    );
+  }
+
+  return row;
 }
 
 export async function POST(req: Request) {
@@ -212,6 +236,7 @@ export async function GET() {
         image_base64: "string (optional)",
         image_mime: "string (optional, default image/png)",
         is_before: "boolean (optional, default false) - marks this as a before photo for transformation posts",
+        source_hook_id: "uuid (optional) - the generated_hooks.id this delivery was seeded from (returned by GET /api/hooks/daily)",
       },
       batched: {
         caption: "optional fallback for items without caption",

@@ -69,15 +69,18 @@ async function loadFatiguedFamilies(): Promise<FatiguedFamilyRow[]> {
   return (await res.json()) as FatiguedFamilyRow[];
 }
 
-async function insertHooks(
-  rows: Array<{
-    persona: PersonaId;
-    hook_text: string;
-    rationale: string;
-    category: string;
-    inspired_by_post_ids: string[];
-  }>,
-) {
+interface GeneratedHookRow {
+  persona: PersonaId;
+  hook_text: string;
+  rationale: string;
+  category: string;
+  inspired_by_post_ids: string[];
+  strategy: "exploit" | "explore";
+  embedding?: string;
+  family_id?: string;
+}
+
+async function insertHooks(rows: GeneratedHookRow[]) {
   if (!rows.length) return [];
   const res = await fetch(`${SUPABASE_URL}/rest/v1/generated_hooks`, {
     method: "POST",
@@ -92,6 +95,7 @@ async function insertHooks(
 
 interface GenerateBody {
   perPersona?: number;
+  exploreCount?: number;
   personas?: PersonaId[];
 }
 
@@ -117,7 +121,8 @@ export async function POST(req: Request) {
   } catch {
     // empty body allowed
   }
-  const perPersona = body.perPersona ?? 2;
+  const perPersona = body.perPersona ?? 3;
+  const exploreCount = body.exploreCount;
   const personas = body.personas?.length ? body.personas : PERSONA_IDS;
 
   const all = await loadPosts();
@@ -151,7 +156,7 @@ export async function POST(req: Request) {
   const familyStore = voyageConfigured() ? createPostgrestFamilyStore() : null;
   const familyRoster = familyStore ? await familyStore.fetchAll().catch(() => []) : [];
 
-  const allGenerated: Array<Record<string, unknown>> = [];
+  const allGenerated: GeneratedHookRow[] = [];
 
   for (const persona of personas) {
     const own = hooksByPersona.get(persona) ?? [];
@@ -231,6 +236,7 @@ export async function POST(req: Request) {
     const suggestions = await generateHooksForPersona({
       persona,
       count: perPersona,
+      exploreCount,
       personaTopHooks: ownTop,
       crossPersonaHooks: crossTop,
       personaFlops,
@@ -239,12 +245,13 @@ export async function POST(req: Request) {
     });
 
     for (const s of suggestions) {
-      const row: Record<string, unknown> = {
+      const row: GeneratedHookRow = {
         persona,
         hook_text: s.hook,
         rationale: s.rationale,
         category: s.category,
         inspired_by_post_ids: s.inspiredBy,
+        strategy: s.strategy,
       };
       if (familyStore) {
         try {
@@ -264,15 +271,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const inserted = (await insertHooks(
-    allGenerated as Array<{
-      persona: PersonaId;
-      hook_text: string;
-      rationale: string;
-      category: string;
-      inspired_by_post_ids: string[];
-    }>,
-  )) as unknown[];
+  const inserted = (await insertHooks(allGenerated)) as unknown[];
 
   return NextResponse.json({ ok: true, generated: inserted.length, rows: inserted });
 }
@@ -283,7 +282,8 @@ export async function GET() {
     endpoint: "POST /api/generate/hooks",
     auth: "X-DreamMe-Secret: <INGEST_TOKEN or CRON_SECRET>",
     body: {
-      perPersona: "optional number (default 2)",
+      perPersona: "optional number (default 3)",
+      exploreCount: "optional number — how many of perPersona should be 'explore' strategy (default: floor(perPersona/3) or 1)",
       personas: "optional PersonaId[] (default: all configured personas)",
     },
   });
