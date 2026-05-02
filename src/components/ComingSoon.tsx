@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Chip } from "./ui";
+import { Chip, PersonaChip } from "./ui";
 import { PageHeader, type NavItem } from "./Shell";
 import { Icons } from "./Icons";
+import { PERSONA_IDS, PERSONAS } from "@/lib/personas";
+import { PERSONA_TIKTOK_PROFILES } from "@/lib/apify";
 
 const BULLETS: Record<string, string[]> = {
   analytics: [
@@ -209,6 +211,115 @@ export function ComingSoon({ item }: { item: NavItem }) {
           </ul>
         </div>
       </div>
+
+      {item.id === "analytics" && (
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: 20,
+            padding: 24,
+            marginBottom: 32,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontFamily: "var(--font-geist-mono), monospace",
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                color: "var(--ink-4)",
+              }}
+            >
+              Tracked TikTok accounts
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--ink-4)",
+                fontFamily: "var(--font-geist-mono), monospace",
+              }}
+            >
+              {
+                PERSONA_IDS.filter((p) => PERSONA_TIKTOK_PROFILES[p]).length
+              }{" / "}
+              {PERSONA_IDS.length} active
+            </div>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 10,
+            }}
+          >
+            {PERSONA_IDS.map((pid) => {
+              const persona = PERSONAS[pid];
+              const handle = PERSONA_TIKTOK_PROFILES[pid];
+              const tracked = !!handle;
+              return (
+                <div
+                  key={pid}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 10,
+                    minWidth: 0,
+                    opacity: tracked ? 1 : 0.55,
+                  }}
+                >
+                  <PersonaChip persona={persona} size="sm" />
+                  {tracked ? (
+                    <a
+                      href={`https://www.tiktok.com/@${handle}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        fontSize: 12,
+                        color: "var(--ink-2)",
+                        textDecoration: "none",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        minWidth: 0,
+                      }}
+                      title={`Open @${handle} on TikTok`}
+                    >
+                      @{handle}
+                    </a>
+                  ) : (
+                    <span
+                      style={{
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        fontSize: 11,
+                        color: "var(--ink-4)",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      not yet tracked
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div
         style={{
