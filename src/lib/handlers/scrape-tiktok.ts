@@ -291,6 +291,7 @@ async function processItem(
     }
   }
 
+  const slideCount = item.slideshowImageLinks?.length ?? 0;
   const postId = await ctx.repo.upsert({
     persona,
     post_id: item.id ?? null,
@@ -310,6 +311,7 @@ async function processItem(
     performance_class,
     embedding: embedding ? toPgVector(embedding) : null,
     family_id,
+    slide_count: slideCount,
   });
   ctx.onUpsert();
 
