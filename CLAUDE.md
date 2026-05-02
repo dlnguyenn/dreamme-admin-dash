@@ -178,6 +178,34 @@ Two subtabs (`Resources.tsx`):
 
 Active subtab persists to `localStorage["dreamme.resourcesSubtab"]`.
 
+## Spy Tool
+
+Admin-only competitive-intel surface for browsing what's going viral in
+the GLP-1 niche on TikTok. Distinct from Hook Analytics (which tracks
+OUR personas). Lives at `src/components/SpyTool.tsx` with sub-components
+under `src/components/spy/`.
+
+- **Discovery**: Apify `clockworks/tiktok-scraper` in hashtag mode (the
+  same actor we use for personas, just with `hashtags: [...]` body).
+  Hashtag list lives in `src/lib/spy-hashtags.ts` — edit + redeploy to
+  add/remove hashtags.
+- **Cron**: `/api/cron/scrape-spy` runs daily at 03:00 UTC, before the
+  baseline + scrape + fatigue + generate sequence.
+- **Viral threshold**: `view_count >= 50K within 7d` OR `view_count >= 10K
+  within 48h` (early velocity catches rocketships before they fully blow
+  up). Logic in `src/lib/spy-viral.ts:computeIsViral`.
+- **Storage**: re-hosted first slides at `spy/{hashtag}/{post_id}.{ext}`
+  in the existing `dreamme-admin-internal-images` bucket.
+- **Tables**: `spy_videos` (one row per scraped post) + `spy_favorites`
+  (admin saves). Schema in `supabase/migrations/0015_spy_videos.sql`.
+- **API**: `/api/spy/{videos, favorites, trends, why/[id]}`. The `why`
+  endpoint lazy-computes a 1-2 sentence Haiku "why this hit" summary on
+  first card click and caches it on `spy_videos.why_it_hit`.
+- **Sub-tabs**: Browse / Trends / Favorites; persists to
+  `localStorage["dreamme.spyTab"]`.
+- **Cost**: ~$0.30/hashtag/day × 9 hashtags = ~$2.70/day = ~$80/month
+  Apify spend. Trim `SPY_HASHTAGS` if it climbs.
+
 ## Things that have bitten us
 
 - **Shell cwd resets between Bash calls.** Wrap commands in

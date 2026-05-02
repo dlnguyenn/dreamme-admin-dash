@@ -10,6 +10,7 @@ export type DashId =
   | "analytics"
   | "comments"
   | "hooks"
+  | "spy"
   | "poster"
   | "resources"
   | "spend"
@@ -29,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "captions", label: "Caption Library", icon: "Message", status: "live", desc: "All captions, searchable" },
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },
   { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas", adminOnly: true },
+  { id: "spy", label: "Spy Tool", icon: "Search", status: "live", desc: "What's going viral in GLP-1", adminOnly: true },
   { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
   { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
