@@ -14,6 +14,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
+import { SpyTool } from "./SpyTool";
 import { SpendDashboard } from "./SpendDashboard";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
@@ -193,6 +194,8 @@ export function App() {
     );
   } else if (current === "hooks") {
     screen = <HookAnalytics />;
+  } else if (current === "spy") {
+    screen = <SpyTool />;
   } else if (current === "spend") {
     screen = <SpendDashboard />;
   } else if (current === "requests") {
