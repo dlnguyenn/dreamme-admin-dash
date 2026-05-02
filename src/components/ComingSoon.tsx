@@ -4,8 +4,110 @@ import * as React from "react";
 import { Chip, PersonaChip } from "./ui";
 import { PageHeader, type NavItem } from "./Shell";
 import { Icons } from "./Icons";
-import { PERSONA_IDS, PERSONAS } from "@/lib/personas";
+import { PERSONA_IDS, PERSONAS, type PersonaId } from "@/lib/personas";
 import { PERSONA_TIKTOK_PROFILES } from "@/lib/apify";
+import { SUPABASE_ANON, SUPABASE_URL } from "@/lib/supabase";
+
+interface ScrapedRow {
+  persona: PersonaId;
+  view_count: number | null;
+  slide_count: number | null;
+  posted_at: string | null;
+}
+
+interface PersonaStats {
+  totalViews: number;
+  totalPosts: number;
+  transformationViews: number;
+  transformationCount: number;
+  singleViews: number;
+  singleCount: number;
+  unclassifiedViews: number;
+  unclassifiedCount: number;
+}
+
+const EMPTY_STATS: PersonaStats = {
+  totalViews: 0,
+  totalPosts: 0,
+  transformationViews: 0,
+  transformationCount: 0,
+  singleViews: 0,
+  singleCount: 0,
+  unclassifiedViews: 0,
+  unclassifiedCount: 0,
+};
+
+function formatViewCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+function aggregate(rows: ScrapedRow[]): Map<PersonaId, PersonaStats> {
+  const out = new Map<PersonaId, PersonaStats>();
+  for (const id of PERSONA_IDS) out.set(id, { ...EMPTY_STATS });
+  for (const r of rows) {
+    const s = out.get(r.persona);
+    if (!s) continue;
+    const views = Number(r.view_count ?? 0);
+    s.totalViews += views;
+    s.totalPosts += 1;
+    if (r.slide_count == null) {
+      s.unclassifiedViews += views;
+      s.unclassifiedCount += 1;
+    } else if (r.slide_count > 1) {
+      s.transformationViews += views;
+      s.transformationCount += 1;
+    } else if (r.slide_count === 1) {
+      s.singleViews += views;
+      s.singleCount += 1;
+    } else {
+      // slide_count === 0 → not a slideshow, treat as unclassified
+      s.unclassifiedViews += views;
+      s.unclassifiedCount += 1;
+    }
+  }
+  return out;
+}
+
+function useTrackedPostStats(enabled: boolean): {
+  stats: Map<PersonaId, PersonaStats> | null;
+  error: string | null;
+} {
+  const [stats, setStats] = React.useState<Map<PersonaId, PersonaStats> | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!enabled || !SUPABASE_URL || !SUPABASE_ANON) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cutoff = new Date(
+          Date.now() - 14 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const url = `${SUPABASE_URL}/rest/v1/tiktok_posts?select=persona,view_count,slide_count,posted_at&posted_at=gte.${cutoff}&limit=1000`;
+        const res = await fetch(url, {
+          headers: {
+            apikey: SUPABASE_ANON,
+            Authorization: `Bearer ${SUPABASE_ANON}`,
+          },
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (cancelled) return;
+        const rows = (await res.json()) as ScrapedRow[];
+        setStats(aggregate(rows));
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  return { stats, error };
+}
 
 const BULLETS: Record<string, string[]> = {
   analytics: [
@@ -45,6 +147,7 @@ export function ComingSoon({ item }: { item: NavItem }) {
   const IconComp = Icons[item.icon];
   const things = BULLETS[item.id] ?? [];
   const tint = TINTS[item.id] ?? "var(--accent)";
+  const { stats } = useTrackedPostStats(item.id === "analytics");
 
   return (
     <div>
@@ -267,14 +370,15 @@ export function ComingSoon({ item }: { item: NavItem }) {
               const persona = PERSONAS[pid];
               const handle = PERSONA_TIKTOK_PROFILES[pid];
               const tracked = !!handle;
+              const s = stats?.get(pid);
               return (
                 <div
                   key={pid}
                   style={{
                     display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 12px",
+                    flexDirection: "column",
+                    gap: 8,
+                    padding: "12px 14px",
                     background: "var(--surface-2)",
                     border: "1px solid var(--line)",
                     borderRadius: 10,
@@ -282,37 +386,113 @@ export function ComingSoon({ item }: { item: NavItem }) {
                     opacity: tracked ? 1 : 0.55,
                   }}
                 >
-                  <PersonaChip persona={persona} size="sm" />
-                  {tracked ? (
-                    <a
-                      href={`https://www.tiktok.com/@${handle}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      minWidth: 0,
+                    }}
+                  >
+                    <PersonaChip persona={persona} size="sm" />
+                    {tracked ? (
+                      <a
+                        href={`https://www.tiktok.com/@${handle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          fontFamily: "var(--font-geist-mono), monospace",
+                          fontSize: 12,
+                          color: "var(--ink-2)",
+                          textDecoration: "none",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          minWidth: 0,
+                        }}
+                        title={`Open @${handle} on TikTok`}
+                      >
+                        @{handle}
+                      </a>
+                    ) : (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-geist-mono), monospace",
+                          fontSize: 11,
+                          color: "var(--ink-4)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        not yet tracked
+                      </span>
+                    )}
+                  </div>
+                  {tracked && (
+                    <div
                       style={{
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        fontSize: 12,
-                        color: "var(--ink-2)",
-                        textDecoration: "none",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        minWidth: 0,
-                      }}
-                      title={`Open @${handle} on TikTok`}
-                    >
-                      @{handle}
-                    </a>
-                  ) : (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        fontSize: 11,
-                        color: "var(--ink-4)",
-                        fontStyle: "italic",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        paddingTop: 6,
+                        borderTop: "1px solid var(--line)",
                       }}
                     >
-                      not yet tracked
-                    </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          gap: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span
+                          className="serif"
+                          style={{
+                            fontSize: 18,
+                            color: "var(--ink)",
+                            fontWeight: 400,
+                            letterSpacing: "-0.01em",
+                          }}
+                        >
+                          {s ? formatViewCount(s.totalViews) : "—"}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "var(--ink-4)",
+                            fontFamily: "var(--font-geist-mono), monospace",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.08em",
+                          }}
+                        >
+                          views · 14d
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          fontSize: 11,
+                          color: "var(--ink-3)",
+                          fontFamily: "var(--font-geist-mono), monospace",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span title="Slideshow posts with more than one slide (transformation arcs, narrative)">
+                          {s ? formatViewCount(s.transformationViews) : "—"}
+                          <span style={{ color: "var(--ink-4)", marginLeft: 4 }}>
+                            transformation ({s?.transformationCount ?? 0})
+                          </span>
+                        </span>
+                        <span style={{ color: "var(--ink-4)" }}>·</span>
+                        <span title="Single-slide photo posts with text overlay">
+                          {s ? formatViewCount(s.singleViews) : "—"}
+                          <span style={{ color: "var(--ink-4)", marginLeft: 4 }}>
+                            single ({s?.singleCount ?? 0})
+                          </span>
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
               );

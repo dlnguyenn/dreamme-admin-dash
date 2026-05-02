@@ -20,6 +20,7 @@ export interface HookRow {
   performance_class?: PerformanceClass | null;
   embedding?: string | null;
   family_id?: string | null;
+  slide_count?: number | null;
 }
 
 export interface ExistingHookMeta {
