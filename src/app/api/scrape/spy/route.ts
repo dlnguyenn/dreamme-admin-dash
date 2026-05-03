@@ -58,13 +58,13 @@ export async function GET() {
     endpoint: "POST /api/scrape/spy",
     auth: "X-DreamMe-Secret: <INGEST_TOKEN or CRON_SECRET>",
     body: {
-      resultsPerPage: "optional number (default 30)",
+      resultsPerPage: "optional number (default 15)",
       hashtags:
         "optional string[] (default: SPY_HASHTAGS from src/lib/spy-hashtags.ts)",
       queries:
         "optional string[] (default: SPY_QUERIES from src/lib/spy-queries.ts)",
     },
     notes:
-      "Scrapes configured GLP-1 hashtags AND free-text search queries via Apify clockworks/tiktok-scraper, OCRs first slides, categorizes hooks, and upserts into spy_videos. Each row is tagged with source_type='hashtag' or 'search'. Daily cron at /api/cron/scrape-spy fires this at 03:00 UTC.",
+      "Scrapes configured GLP-1 hashtags AND free-text search queries via Apify clockworks/tiktok-scraper, OCRs first slides, categorizes hooks, and upserts into spy_videos. Each row is tagged with source_type='hashtag' or 'search'. Cron at /api/cron/scrape-spy fires Mon/Wed/Fri at 03:00 UTC.",
   });
 }
