@@ -192,8 +192,9 @@ under `src/components/spy/`.
   Each row in `spy_videos` is tagged with `source_type='hashtag'` or
   `'search'` so the UI / trends can split the two streams. Edit the
   config files + redeploy to add/remove either kind of source.
-- **Cron**: `/api/cron/scrape-spy` runs daily at 03:00 UTC, before the
-  baseline + scrape + fatigue + generate sequence.
+- **Cron**: `/api/cron/scrape-spy` runs Mon/Wed/Fri at 03:00 UTC, before the
+  baseline + scrape + fatigue + generate sequence. (Was daily; throttled to
+  3×/week to keep Apify spend ~$22/month.)
 - **Viral threshold**: `view_count >= 50K within 7d` OR `view_count >= 10K
   within 48h` (early velocity catches rocketships before they fully blow
   up). Logic in `src/lib/spy-viral.ts:computeIsViral`.
@@ -206,9 +207,10 @@ under `src/components/spy/`.
   first card click and caches it on `spy_videos.why_it_hit`.
 - **Sub-tabs**: Browse / Trends / Favorites; persists to
   `localStorage["dreamme.spyTab"]`.
-- **Cost**: ~$0.30/source/day × (9 hashtags + 2 search queries) =
-  ~$3.30/day = ~$100/month Apify spend. Trim `SPY_HASHTAGS` or
-  `SPY_QUERIES` if it climbs.
+- **Cost**: ~$0.15/source/run (15 results each) × (9 hashtags + 2 search
+  queries) × 3 runs/week = ~$22/month Apify spend. Trim `SPY_HASHTAGS` or
+  `SPY_QUERIES` if it climbs, or bump frequency back to daily by changing
+  the cron in `vercel.json` to `0 3 * * *`.
 
 ## Things that have bitten us
 
