@@ -28,7 +28,12 @@ interface MonthlyResponse {
       endAt?: string;
     };
     totalUsdBilled?: number;
+    totalUsdBilledCredits?: number;
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 export async function fetchApifyCurrentCycle(): Promise<ApifyCycleUsage> {
@@ -56,20 +61,28 @@ export async function fetchApifyCurrentCycle(): Promise<ApifyCycleUsage> {
     d.monthlyServiceUsage?.periodEnd ??
     new Date().toISOString();
 
+  // Apify reports cash-billed and credit-funded usage as two separate fields.
+  // Sum both so credit-covered compute still shows up as true spend.
   const daily = d.dailyServiceUsages ?? [];
   const dailyBreakdown = daily
     .filter((x) => x.date)
     .map((x) => ({
       date: String(x.date).slice(0, 10),
-      usd: Math.round(Number(x.totalUsdBilled ?? 0) * 100) / 100,
+      usd: round2(
+        Number(x.totalUsdBilled ?? 0) + Number(x.totalUsdBilledCredits ?? 0),
+      ),
     }));
 
+  const apiTotal =
+    typeof d.totalUsdBilled === "number" ||
+    typeof d.totalUsdBilledCredits === "number"
+      ? Number(d.totalUsdBilled ?? 0) + Number(d.totalUsdBilledCredits ?? 0)
+      : null;
+
   const usdTotal =
-    typeof d.totalUsdBilled === "number"
-      ? Math.round(d.totalUsdBilled * 100) / 100
-      : Math.round(
-          dailyBreakdown.reduce((s, x) => s + x.usd, 0) * 100,
-        ) / 100;
+    apiTotal !== null
+      ? round2(apiTotal)
+      : round2(dailyBreakdown.reduce((s, x) => s + x.usd, 0));
 
   return {
     cycleStart: cycleStart.slice(0, 10),
