@@ -93,7 +93,8 @@ export function SpyVideoDrawer({
               marginBottom: 4,
             }}
           >
-            #{video.source_hashtag} · {relative(video.posted_at)}
+            {video.source_type === "search" ? "q:" : "#"}
+            {video.source_hashtag} · {relative(video.posted_at)}
           </div>
           <div
             className="serif"

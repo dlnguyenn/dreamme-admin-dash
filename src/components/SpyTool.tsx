@@ -12,7 +12,8 @@ type SubtabId = "browse" | "trends" | "favorites";
 const SUBTAB_KEY = "dreamme.spyTab";
 
 const DEFAULT_FILTERS: SpyFilters = {
-  hashtag: "all",
+  source: "all",
+  sourceType: "all",
   category: "all",
   viralOnly: false,
   sort: "views",
@@ -53,7 +54,8 @@ export function SpyTool() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (filters.hashtag !== "all") params.set("hashtag", filters.hashtag);
+      if (filters.source !== "all") params.set("hashtag", filters.source);
+      if (filters.sourceType !== "all") params.set("source_type", filters.sourceType);
       if (filters.category !== "all") params.set("category", filters.category);
       if (filters.viralOnly) params.set("viral_only", "true");
       params.set("sort", filters.sort);

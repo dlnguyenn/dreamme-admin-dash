@@ -44,3 +44,41 @@ export async function runHashtagScrape(opts: {
   const data = (await res.json()) as unknown;
   return Array.isArray(data) ? data : [];
 }
+
+/**
+ * Free-text search query mode of the same actor. Same shape as
+ * runHashtagScrape but uses the actor's `searchQueries` field instead
+ * of `hashtags`. One query per call (separate Apify runs per query —
+ * gives us independent per-query cost attribution and isolates failures).
+ */
+export async function runSearchQueryScrape(opts: {
+  query: string;
+  resultsPerPage?: number;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    ACTOR_ID,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    searchQueries: [opts.query],
+    resultsPerPage: opts.resultsPerPage ?? 30,
+    shouldDownloadCovers: false,
+    shouldDownloadVideos: false,
+    shouldDownloadSlideshowImages: true,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify search-query run failed (${opts.query}): ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}

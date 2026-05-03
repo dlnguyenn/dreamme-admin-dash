@@ -26,6 +26,9 @@ export async function GET(req: Request) {
   const hashtag = u.searchParams.get("hashtag");
   const category = u.searchParams.get("category");
   const viralOnly = u.searchParams.get("viral_only") === "true";
+  const sourceTypeRaw = u.searchParams.get("source_type");
+  const sourceType =
+    sourceTypeRaw === "hashtag" || sourceTypeRaw === "search" ? sourceTypeRaw : null;
   const sort = u.searchParams.get("sort") === "recent" ? "recent" : "views";
   const limit = Math.min(
     Math.max(parseInt(u.searchParams.get("limit") ?? "50", 10) || 50, 1),
@@ -35,6 +38,7 @@ export async function GET(req: Request) {
 
   const filters: string[] = [];
   if (hashtag) filters.push(`source_hashtag=eq.${encodeURIComponent(hashtag)}`);
+  if (sourceType) filters.push(`source_type=eq.${sourceType}`);
   if (category) filters.push(`category=eq.${encodeURIComponent(category)}`);
   if (viralOnly) filters.push("is_viral=eq.true");
   const order = sort === "recent" ? "posted_at.desc.nullslast" : "view_count.desc";

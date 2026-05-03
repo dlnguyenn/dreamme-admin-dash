@@ -242,67 +242,90 @@ export function SpyTrendsView() {
         {trends.hashtags.length === 0 ? (
           <Empty>No hashtag data yet.</Empty>
         ) : (
-          <div
-            style={{
-              background: "var(--surface)",
-              border: "1px solid var(--line)",
-              borderRadius: 12,
-              overflow: "hidden",
-            }}
-          >
-            {trends.hashtags.map((h, i) => (
-              <div
-                key={h.hashtag}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) 80px 80px 80px",
-                  gap: 12,
-                  alignItems: "center",
-                  padding: "12px 16px",
-                  borderBottom:
-                    i < trends.hashtags.length - 1
-                      ? "1px solid var(--line)"
-                      : "none",
-                }}
-              >
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 12,
-                    color: "var(--ink-2)",
-                  }}
-                >
-                  #{h.hashtag}
-                </span>
-                <div
-                  className="serif"
-                  style={{ fontSize: 16, color: "var(--ink)", textAlign: "right" }}
-                  title="Total views surfaced from this hashtag in the window"
-                >
-                  {fmt(h.views)}
-                </div>
-                <div
-                  className="mono"
-                  style={{ fontSize: 11, color: "var(--ink-4)", textAlign: "right" }}
-                >
-                  {h.posts} posts
-                </div>
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    color:
-                      h.viralCount > 0 ? "var(--accent)" : "var(--ink-4)",
-                    textAlign: "right",
-                  }}
-                >
-                  {h.viralCount} viral
-                </div>
-              </div>
-            ))}
-          </div>
+          <SourceTable
+            rows={trends.hashtags.map((h) => ({
+              label: `#${h.hashtag}`,
+              views: h.views,
+              posts: h.posts,
+              viralCount: h.viralCount,
+            }))}
+          />
         )}
       </Section>
+
+      {/* Top search queries */}
+      <Section title="Top search queries (by surfaced views)">
+        {trends.searchQueries.length === 0 ? (
+          <Empty>No search-query data yet.</Empty>
+        ) : (
+          <SourceTable
+            rows={trends.searchQueries.map((q) => ({
+              label: `q:${q.query}`,
+              views: q.views,
+              posts: q.posts,
+              viralCount: q.viralCount,
+            }))}
+          />
+        )}
+      </Section>
+    </div>
+  );
+}
+
+function SourceTable({
+  rows,
+}: {
+  rows: Array<{ label: string; views: number; posts: number; viralCount: number }>;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
+    >
+      {rows.map((r, i) => (
+        <div
+          key={r.label}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 80px 80px 80px",
+            gap: 12,
+            alignItems: "center",
+            padding: "12px 16px",
+            borderBottom: i < rows.length - 1 ? "1px solid var(--line)" : "none",
+          }}
+        >
+          <span className="mono" style={{ fontSize: 12, color: "var(--ink-2)" }}>
+            {r.label}
+          </span>
+          <div
+            className="serif"
+            style={{ fontSize: 16, color: "var(--ink)", textAlign: "right" }}
+            title="Total views surfaced in the window"
+          >
+            {fmt(r.views)}
+          </div>
+          <div
+            className="mono"
+            style={{ fontSize: 11, color: "var(--ink-4)", textAlign: "right" }}
+          >
+            {r.posts} posts
+          </div>
+          <div
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: r.viralCount > 0 ? "var(--accent)" : "var(--ink-4)",
+              textAlign: "right",
+            }}
+          >
+            {r.viralCount} viral
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
