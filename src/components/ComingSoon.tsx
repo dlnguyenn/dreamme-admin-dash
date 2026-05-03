@@ -43,6 +43,86 @@ function formatViewCount(n: number): string {
   return n.toLocaleString();
 }
 
+interface PayPeriod {
+  start: Date; // inclusive, UTC midnight
+  end: Date; // exclusive, UTC midnight
+}
+
+// Pay periods: 1st–15th and 16th–end of month (UTC).
+// Boundaries are UTC midnight; posts whose UTC timestamp lands inside [start, end)
+// belong to that period. Local-tz posts near midnight may slip ±1 period — flagged
+// in the UI hint. Internal payout sanity check, not source of truth.
+function getPayPeriod(at: Date): PayPeriod {
+  const y = at.getUTCFullYear();
+  const m = at.getUTCMonth();
+  const d = at.getUTCDate();
+  if (d <= 15) {
+    return {
+      start: new Date(Date.UTC(y, m, 1)),
+      end: new Date(Date.UTC(y, m, 16)),
+    };
+  }
+  return {
+    start: new Date(Date.UTC(y, m, 16)),
+    end: new Date(Date.UTC(y, m + 1, 1)),
+  };
+}
+
+function shiftPayPeriod(period: PayPeriod, dir: -1 | 1): PayPeriod {
+  const y = period.start.getUTCFullYear();
+  const m = period.start.getUTCMonth();
+  const d = period.start.getUTCDate();
+  if (dir === -1) {
+    if (d === 16) {
+      return {
+        start: new Date(Date.UTC(y, m, 1)),
+        end: new Date(Date.UTC(y, m, 16)),
+      };
+    }
+    return {
+      start: new Date(Date.UTC(y, m - 1, 16)),
+      end: new Date(Date.UTC(y, m, 1)),
+    };
+  }
+  if (d === 1) {
+    return {
+      start: new Date(Date.UTC(y, m, 16)),
+      end: new Date(Date.UTC(y, m + 1, 1)),
+    };
+  }
+  return {
+    start: new Date(Date.UTC(y, m + 1, 1)),
+    end: new Date(Date.UTC(y, m + 1, 16)),
+  };
+}
+
+function samePayPeriod(a: PayPeriod, b: PayPeriod): boolean {
+  return a.start.getTime() === b.start.getTime();
+}
+
+function formatPeriodLabel(p: PayPeriod): string {
+  // "May 1 – 15, 2026" or "May 16 – 31, 2026"
+  const startMonth = p.start.toLocaleString("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  const startDay = p.start.getUTCDate();
+  // end is exclusive — last day of period is end - 1 day
+  const lastDay = new Date(p.end.getTime() - 24 * 60 * 60 * 1000);
+  const endDay = lastDay.getUTCDate();
+  const year = p.start.getUTCFullYear();
+  return `${startMonth} ${startDay} – ${endDay}, ${year}`;
+}
+
+function formatPayoutDate(p: PayPeriod): string {
+  const lastDay = new Date(p.end.getTime() - 24 * 60 * 60 * 1000);
+  return lastDay.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function aggregate(rows: ScrapedRow[]): Map<PersonaId, PersonaStats> {
   const out = new Map<PersonaId, PersonaStats>();
   for (const id of PERSONA_IDS) out.set(id, { ...EMPTY_STATS });
@@ -70,22 +150,31 @@ function aggregate(rows: ScrapedRow[]): Map<PersonaId, PersonaStats> {
   return out;
 }
 
-function useTrackedPostStats(enabled: boolean): {
+function useTrackedPostStats(
+  enabled: boolean,
+  period: PayPeriod,
+): {
   stats: Map<PersonaId, PersonaStats> | null;
   error: string | null;
 } {
   const [stats, setStats] = React.useState<Map<PersonaId, PersonaStats> | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const startIso = period.start.toISOString();
+  const endIso = period.end.toISOString();
 
   React.useEffect(() => {
     if (!enabled || !SUPABASE_URL || !SUPABASE_ANON) return;
     let cancelled = false;
+    setStats(null);
+    setError(null);
     (async () => {
       try {
-        const cutoff = new Date(
-          Date.now() - 14 * 24 * 60 * 60 * 1000,
-        ).toISOString();
-        const url = `${SUPABASE_URL}/rest/v1/tiktok_posts?select=persona,view_count,slide_count,posted_at&posted_at=gte.${cutoff}&limit=1000`;
+        const url =
+          `${SUPABASE_URL}/rest/v1/tiktok_posts` +
+          `?select=persona,view_count,slide_count,posted_at` +
+          `&posted_at=gte.${encodeURIComponent(startIso)}` +
+          `&posted_at=lt.${encodeURIComponent(endIso)}` +
+          `&limit=1000`;
         const res = await fetch(url, {
           headers: {
             apikey: SUPABASE_ANON,
@@ -104,7 +193,7 @@ function useTrackedPostStats(enabled: boolean): {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, startIso, endIso]);
 
   return { stats, error };
 }
@@ -147,7 +236,12 @@ export function ComingSoon({ item }: { item: NavItem }) {
   const IconComp = Icons[item.icon];
   const things = BULLETS[item.id] ?? [];
   const tint = TINTS[item.id] ?? "var(--accent)";
-  const { stats } = useTrackedPostStats(item.id === "analytics");
+  const [period, setPeriod] = React.useState<PayPeriod>(() =>
+    getPayPeriod(new Date()),
+  );
+  const currentPeriod = React.useMemo(() => getPayPeriod(new Date()), []);
+  const isCurrent = samePayPeriod(period, currentPeriod);
+  const { stats } = useTrackedPostStats(item.id === "analytics", period);
 
   return (
     <div>
@@ -359,6 +453,13 @@ export function ComingSoon({ item }: { item: NavItem }) {
               {PERSONA_IDS.length} active
             </div>
           </div>
+
+          <PayPeriodNav
+            period={period}
+            isCurrent={isCurrent}
+            onShift={(dir) => setPeriod((p) => shiftPayPeriod(p, dir))}
+            onResetCurrent={() => setPeriod(currentPeriod)}
+          />
           <div
             style={{
               display: "grid",
@@ -465,7 +566,7 @@ export function ComingSoon({ item }: { item: NavItem }) {
                             letterSpacing: "0.08em",
                           }}
                         >
-                          views · 14d
+                          views · pay period
                         </span>
                       </div>
                       <div
@@ -550,6 +651,128 @@ export function ComingSoon({ item }: { item: NavItem }) {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+function PayPeriodNav({
+  period,
+  isCurrent,
+  onShift,
+  onResetCurrent,
+}: {
+  period: PayPeriod;
+  isCurrent: boolean;
+  onShift: (dir: -1 | 1) => void;
+  onResetCurrent: () => void;
+}) {
+  const arrowBtn = (
+    label: string,
+    onClick: () => void,
+    disabled = false,
+  ): React.ReactNode => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      style={{
+        width: 28,
+        height: 28,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "transparent",
+        border: "1px solid var(--line)",
+        borderRadius: 8,
+        color: disabled ? "var(--ink-4)" : "var(--ink-2)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontSize: 14,
+        fontFamily: "inherit",
+        opacity: disabled ? 0.5 : 1,
+        transition: "background 120ms ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = "var(--surface-2)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+        padding: "10px 12px",
+        marginBottom: 16,
+        background: "var(--surface-2)",
+        border: "1px solid var(--line)",
+        borderRadius: 10,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          fontFamily: "var(--font-geist-mono), monospace",
+          color: "var(--ink-4)",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+        }}
+      >
+        Pay period
+      </div>
+      <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        {arrowBtn("‹", () => onShift(-1))}
+        <div
+          className="serif"
+          style={{
+            fontSize: 14,
+            color: "var(--ink)",
+            minWidth: 150,
+            textAlign: "center",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {formatPeriodLabel(period)}
+        </div>
+        {arrowBtn("›", () => onShift(1), isCurrent)}
+      </div>
+      <div
+        style={{
+          fontSize: 10,
+          fontFamily: "var(--font-geist-mono), monospace",
+          color: "var(--ink-4)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+        title="Pay periods close on the 15th and the last day of each month (UTC)."
+      >
+        Payout · {formatPayoutDate(period)}
+      </div>
+      {!isCurrent && (
+        <button
+          onClick={onResetCurrent}
+          style={{
+            marginLeft: "auto",
+            padding: "4px 10px",
+            fontSize: 11,
+            fontFamily: "inherit",
+            background: "transparent",
+            border: "1px solid var(--line)",
+            borderRadius: 6,
+            color: "var(--ink-2)",
+            cursor: "pointer",
+          }}
+        >
+          Today
+        </button>
+      )}
     </div>
   );
 }
