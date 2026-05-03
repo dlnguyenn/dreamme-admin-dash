@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 interface SpyRow {
   id: string;
   source_hashtag: string;
+  source_type: "hashtag" | "search";
   view_count: number;
   category: string | null;
   first_slide_text: string | null;
@@ -29,7 +30,7 @@ export async function GET() {
   }
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const url =
-    `${SUPABASE_URL}/rest/v1/spy_videos?select=id,source_hashtag,view_count,category,first_slide_text,hook_normalized,posted_at,is_viral` +
+    `${SUPABASE_URL}/rest/v1/spy_videos?select=id,source_hashtag,source_type,view_count,category,first_slide_text,hook_normalized,posted_at,is_viral` +
     `&posted_at=gte.${cutoff}&limit=2000`;
   const res = await fetch(url, {
     headers: {
@@ -77,17 +78,23 @@ export async function GET() {
     .map(([category, v]) => ({ category, ...v }))
     .sort((a, b) => b.views - a.views);
 
-  // Top hashtags by surfaced views
+  // Top hashtags by surfaced views (only source_type='hashtag')
   const byHashtag = new Map<string, { posts: number; views: number; viralCount: number }>();
+  // Top search queries by surfaced views (only source_type='search')
+  const byQuery = new Map<string, { posts: number; views: number; viralCount: number }>();
   for (const r of rows) {
-    const cur = byHashtag.get(r.source_hashtag) ?? { posts: 0, views: 0, viralCount: 0 };
+    const target = r.source_type === "search" ? byQuery : byHashtag;
+    const cur = target.get(r.source_hashtag) ?? { posts: 0, views: 0, viralCount: 0 };
     cur.posts += 1;
     cur.views += r.view_count;
     if (r.is_viral) cur.viralCount += 1;
-    byHashtag.set(r.source_hashtag, cur);
+    target.set(r.source_hashtag, cur);
   }
   const hashtags = Array.from(byHashtag.entries())
     .map(([hashtag, v]) => ({ hashtag, ...v }))
+    .sort((a, b) => b.views - a.views);
+  const searchQueries = Array.from(byQuery.entries())
+    .map(([query, v]) => ({ query, ...v }))
     .sort((a, b) => b.views - a.views);
 
   return NextResponse.json({
@@ -97,5 +104,6 @@ export async function GET() {
     topHooks,
     categories,
     hashtags,
+    searchQueries,
   });
 }

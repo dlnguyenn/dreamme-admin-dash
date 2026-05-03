@@ -203,7 +203,10 @@ export function SpyVideoCard({
             letterSpacing: "0.08em",
           }}
         >
-          <span>#{video.source_hashtag}</span>
+          <span>
+            {video.source_type === "search" ? "q:" : "#"}
+            {video.source_hashtag}
+          </span>
           <span>·</span>
           <span>{formatRelative(video.posted_at)}</span>
           {video.author_handle && (

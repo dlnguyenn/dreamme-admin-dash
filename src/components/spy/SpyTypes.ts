@@ -1,6 +1,7 @@
 export interface SpyVideoRow {
   id: string;
   source_hashtag: string;
+  source_type: "hashtag" | "search";
   tiktok_id: string | null;
   post_url: string;
   author_handle: string | null;
@@ -30,6 +31,12 @@ export interface SpyTrends {
   categories: Array<{ category: string; posts: number; views: number }>;
   hashtags: Array<{
     hashtag: string;
+    posts: number;
+    views: number;
+    viralCount: number;
+  }>;
+  searchQueries: Array<{
+    query: string;
     posts: number;
     views: number;
     viralCount: number;

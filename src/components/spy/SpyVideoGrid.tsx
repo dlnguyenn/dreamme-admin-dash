@@ -2,14 +2,17 @@
 
 import * as React from "react";
 import { SPY_HASHTAGS } from "@/lib/spy-hashtags";
+import { SPY_QUERIES } from "@/lib/spy-queries";
 import { HOOK_CATEGORIES, HOOK_CATEGORY_LABELS, type HookCategory } from "@/lib/hook-categories";
 import { SpyVideoCard } from "./SpyVideoCard";
 import type { SpyVideoRow } from "./SpyTypes";
 
 export type SortMode = "views" | "recent";
+export type SourceTypeFilter = "all" | "hashtag" | "search";
 
 export interface SpyFilters {
-  hashtag: string | "all";
+  source: string | "all"; // "all" | one of SPY_HASHTAGS | one of SPY_QUERIES
+  sourceType: SourceTypeFilter;
   category: HookCategory | "all";
   viralOnly: boolean;
   sort: SortMode;
@@ -51,13 +54,68 @@ export function SpyVideoGrid({
         }}
       >
         <FilterRow
+          label="Source"
+          options={[
+            { id: "all", label: "All" },
+            { id: "__type:hashtag", label: "Hashtags only" },
+            { id: "__type:search", label: "Search only" },
+          ]}
+          active={
+            filters.sourceType === "all" && filters.source === "all"
+              ? "all"
+              : filters.sourceType !== "all"
+                ? `__type:${filters.sourceType}`
+                : "all"
+          }
+          onChange={(id) => {
+            if (id === "all") onFiltersChange({ ...filters, source: "all", sourceType: "all" });
+            else if (id === "__type:hashtag")
+              onFiltersChange({ ...filters, source: "all", sourceType: "hashtag" });
+            else if (id === "__type:search")
+              onFiltersChange({ ...filters, source: "all", sourceType: "search" });
+          }}
+        />
+        <FilterRow
           label="Hashtag"
           options={[
             { id: "all", label: "All" },
             ...SPY_HASHTAGS.map((h) => ({ id: h, label: `#${h}` })),
           ]}
-          active={filters.hashtag}
-          onChange={(id) => onFiltersChange({ ...filters, hashtag: id })}
+          active={
+            filters.sourceType === "hashtag" || filters.sourceType === "all"
+              ? SPY_HASHTAGS.includes(filters.source as (typeof SPY_HASHTAGS)[number])
+                ? filters.source
+                : "all"
+              : "all"
+          }
+          onChange={(id) =>
+            onFiltersChange({
+              ...filters,
+              source: id,
+              sourceType: id === "all" ? filters.sourceType : "hashtag",
+            })
+          }
+        />
+        <FilterRow
+          label="Search"
+          options={[
+            { id: "all", label: "All" },
+            ...SPY_QUERIES.map((q) => ({ id: q, label: q })),
+          ]}
+          active={
+            filters.sourceType === "search" || filters.sourceType === "all"
+              ? (SPY_QUERIES as readonly string[]).includes(filters.source)
+                ? filters.source
+                : "all"
+              : "all"
+          }
+          onChange={(id) =>
+            onFiltersChange({
+              ...filters,
+              source: id,
+              sourceType: id === "all" ? filters.sourceType : "search",
+            })
+          }
         />
         <FilterRow
           label="Category"

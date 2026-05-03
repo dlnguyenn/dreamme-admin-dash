@@ -185,10 +185,13 @@ the GLP-1 niche on TikTok. Distinct from Hook Analytics (which tracks
 OUR personas). Lives at `src/components/SpyTool.tsx` with sub-components
 under `src/components/spy/`.
 
-- **Discovery**: Apify `clockworks/tiktok-scraper` in hashtag mode (the
-  same actor we use for personas, just with `hashtags: [...]` body).
-  Hashtag list lives in `src/lib/spy-hashtags.ts` — edit + redeploy to
-  add/remove hashtags.
+- **Discovery**: Apify `clockworks/tiktok-scraper` runs in two modes
+  per scrape — hashtag mode (`hashtags: [...]` from
+  `src/lib/spy-hashtags.ts`) and free-text search mode (`searchQueries:
+  [...]` from `src/lib/spy-queries.ts`). Same actor, same `APIFY_KEY`.
+  Each row in `spy_videos` is tagged with `source_type='hashtag'` or
+  `'search'` so the UI / trends can split the two streams. Edit the
+  config files + redeploy to add/remove either kind of source.
 - **Cron**: `/api/cron/scrape-spy` runs daily at 03:00 UTC, before the
   baseline + scrape + fatigue + generate sequence.
 - **Viral threshold**: `view_count >= 50K within 7d` OR `view_count >= 10K
@@ -203,8 +206,9 @@ under `src/components/spy/`.
   first card click and caches it on `spy_videos.why_it_hit`.
 - **Sub-tabs**: Browse / Trends / Favorites; persists to
   `localStorage["dreamme.spyTab"]`.
-- **Cost**: ~$0.30/hashtag/day × 9 hashtags = ~$2.70/day = ~$80/month
-  Apify spend. Trim `SPY_HASHTAGS` if it climbs.
+- **Cost**: ~$0.30/source/day × (9 hashtags + 2 search queries) =
+  ~$3.30/day = ~$100/month Apify spend. Trim `SPY_HASHTAGS` or
+  `SPY_QUERIES` if it climbs.
 
 ## Things that have bitten us
 
