@@ -6,6 +6,7 @@
     { "path": "/api/cron/fatigue", "schedule": "45 6 * * *" },
     { "path": "/api/cron/generate", "schedule": "0 7 * * *" },
     { "path": "/api/cron/spend/anthropic", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/spend/apify", "schedule": "15 8 * * *" }
+    { "path": "/api/cron/spend/apify", "schedule": "15 8 * * *" },
+    { "path": "/api/cron/spend/gemini", "schedule": "30 8 * * *" }
   ]
 }

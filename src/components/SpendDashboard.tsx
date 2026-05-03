@@ -5,6 +5,7 @@ import { PageHeader } from "./Shell";
 import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { SpendAddModal } from "./SpendAddModal";
+import { SpendImportCsvModal } from "./SpendImportCsvModal";
 import { API } from "@/lib/supabase";
 import type {
   SpendCategory,
@@ -93,6 +94,7 @@ export function SpendDashboard() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [showAdd, setShowAdd] = React.useState(false);
+  const [showImport, setShowImport] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
 
   const refresh = React.useCallback(async () => {
@@ -137,6 +139,7 @@ export function SpendDashboard() {
       const endpoints: Array<{ name: string; url: string }> = [
         { name: "anthropic", url: "/api/cron/spend/anthropic" },
         { name: "apify", url: "/api/cron/spend/apify" },
+        { name: "gemini", url: "/api/cron/spend/gemini" },
       ];
       const results = await Promise.allSettled(
         endpoints.map(async (e) => {
@@ -200,6 +203,7 @@ export function SpendDashboard() {
             >
               {syncing ? "Syncing…" : "Sync now"}
             </Button>
+            <Button onClick={() => setShowImport(true)}>Import CSV</Button>
             <Button
               variant="primary"
               icon={<Icons.Plus />}
@@ -286,6 +290,16 @@ export function SpendDashboard() {
           onSaved={() => {
             setShowAdd(false);
             toast("Expense added");
+            refresh();
+          }}
+        />
+      )}
+
+      {showImport && (
+        <SpendImportCsvModal
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            toast("CSV imported");
             refresh();
           }}
         />

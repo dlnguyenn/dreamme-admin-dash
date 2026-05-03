@@ -114,6 +114,7 @@ export async function POST(req: Request) {
         prompt: buildBeforePhotoPrompt(scenario, lb),
         timeoutMs: 22_000,
         maxRetries: 1,
+        route: "/api/generate/before-photo",
       }).then((r) => ({ ...r, targetLb: lb, scenario }));
     });
 

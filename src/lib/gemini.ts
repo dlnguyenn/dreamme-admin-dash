@@ -1,3 +1,6 @@
+import { logAiUsageEvent } from "./vendors/ai-usage-logger";
+import { priceGeminiUsage } from "./vendors/gemini-pricing";
+
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
 const MODEL =
   process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
@@ -28,9 +31,15 @@ interface Candidate {
   content?: { parts?: Part[] };
   finishReason?: string;
 }
+interface UsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
 interface GeminiResponse {
   candidates?: Candidate[];
   promptFeedback?: { blockReason?: string };
+  usageMetadata?: UsageMetadata;
 }
 
 export async function editImage(params: {
@@ -46,6 +55,12 @@ export async function editImage(params: {
    * two parallel calls within a 60s budget) should pass a smaller value.
    */
   timeoutMs?: number;
+  /**
+   * Free-form route tag attached to spend events (e.g.
+   * "/api/modify/image"). Used to attribute Gemini cost back to the
+   * surface that triggered it.
+   */
+  route?: string;
 }): Promise<{ imageBase64: string; mimeType: string }> {
   if (!GOOGLE_API_KEY) throw new Error("GOOGLE_API_KEY not set");
   const maxRetries = params.maxRetries ?? 3;
@@ -115,6 +130,24 @@ export async function editImage(params: {
       for (const p of parts) {
         const inline = p.inlineData ?? p.inline_data;
         if (inline?.data) {
+          const usage = data.usageMetadata ?? {};
+          const inputTokens = usage.promptTokenCount ?? 0;
+          const outputTokens = usage.candidatesTokenCount ?? 0;
+          void logAiUsageEvent({
+            vendor: "google",
+            model: MODEL,
+            route: params.route,
+            inputTokens,
+            outputTokens,
+            imageCount: 1,
+            computedUsd: priceGeminiUsage({
+              model: MODEL,
+              inputTokens,
+              outputTokens,
+              imageCount: 1,
+            }),
+            metadata: { attempt },
+          });
           return {
             imageBase64: inline.data,
             mimeType: inline.mimeType ?? inline.mime_type ?? "image/png",
