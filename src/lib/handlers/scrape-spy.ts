@@ -270,7 +270,7 @@ export async function handleSpyScrape(opts: {
 }): Promise<Response> {
   const hashtags = opts.hashtags ?? SPY_HASHTAGS;
   const queries = opts.queries ?? SPY_QUERIES;
-  const resultsPerPage = opts.resultsPerPage ?? 30;
+  const resultsPerPage = opts.resultsPerPage ?? 15;
   const scraper = opts.deps?.scraper ?? {
     run: (o) => runHashtagScrape(o),
   };
