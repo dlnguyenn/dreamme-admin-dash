@@ -119,6 +119,24 @@ are callable from the dashboard UI (same-origin is allowed).
 **Apply the migration** (`supabase/migrations/0002_hooks.sql`) to get the
 `tiktok_posts` and `generated_hooks` tables.
 
+## SynthID Research (internal only)
+
+Admin-only screen for studying Google's SynthID watermark on Gemini-generated
+images. Calls a separate Python FastAPI service that wraps
+[aloshdenny/reverse-SynthID](https://github.com/aloshdenny/reverse-SynthID).
+
+**This is research-only.** The upstream tool's license restricts use to
+academic research / security analysis, and removing SynthID likely violates
+the Gemini API ToS. Do not pipe output into the customer-facing pipeline.
+
+**Setup:**
+
+1. In the analytics repo, run the service: see `services/synthid/README.md`.
+2. Set `SYNTHID_SERVICE_URL` and `SYNTHID_SERVICE_TOKEN` in `.env.local`.
+3. Apply `supabase/migrations/0010_synthid_research.sql` (run-log table only).
+
+The screen lives at the **SynthID Research** nav entry (admin view only).
+
 ## Deploy
 
 1. Push to GitHub, import in Vercel.

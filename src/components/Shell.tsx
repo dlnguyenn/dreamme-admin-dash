@@ -14,7 +14,8 @@ export type DashId =
   | "poster"
   | "resources"
   | "spend"
-  | "requests";
+  | "requests"
+  | "synthid-research";
 
 export interface NavItem {
   id: DashId;
@@ -36,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
   { id: "spend", label: "Spend", icon: "Chart", status: "live", desc: "AI + business expenses", adminOnly: true },
   { id: "requests", label: "Feature Requests", icon: "Bookmark", status: "live", desc: "User-submitted product asks", adminOnly: true },
+  { id: "synthid-research", label: "SynthID Research", icon: "Image", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
 ];
 
 export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
