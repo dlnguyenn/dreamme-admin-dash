@@ -137,6 +137,7 @@ export function SpendDashboard() {
       const endpoints: Array<{ name: string; url: string }> = [
         { name: "anthropic", url: "/api/cron/spend/anthropic" },
         { name: "apify", url: "/api/cron/spend/apify" },
+        { name: "gemini", url: "/api/cron/spend/gemini" },
       ];
       const results = await Promise.allSettled(
         endpoints.map(async (e) => {

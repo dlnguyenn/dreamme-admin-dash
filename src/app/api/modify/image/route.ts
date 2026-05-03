@@ -45,6 +45,7 @@ export async function POST(req: Request) {
       imageBytes,
       mimeType: mime,
       prompt: parsed.prompt,
+      route: "/api/modify/image",
     });
     return NextResponse.json({
       ok: true,
