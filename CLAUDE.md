@@ -20,9 +20,20 @@ AI captions, curate references, and track spend.
 - **Prod branch is `claude/dreamme-dashboard-Cut5m`.** Push there, Vercel
   picks it up. PRs are optional, not required.
 - Default working branch matches prod.
-- Apply DB migrations with `npm run db:migrate` after merging schema
-  changes. Migrations live in `supabase/migrations/000N_*.sql` and run in
-  order via `scripts/apply-migrations.ts`.
+- **Migrations apply automatically.** The `db-migrate.yml` GitHub
+  workflow runs `npm run db:migrate` on every push to the prod branch
+  whenever `supabase/migrations/**` changes, and exposes a manual
+  `workflow_dispatch` trigger. **Never instruct the user to run
+  `npm run db:migrate` themselves** — they don't need to. New
+  migrations under `supabase/migrations/000N_*.sql` ship to prod when
+  the branch is merged into the prod branch (or fire the workflow
+  manually from the Actions tab). The workflow needs these repo
+  secrets set: `SUPABASE_ACCESS_TOKEN` and either
+  `NEXT_PUBLIC_SUPABASE_URL` or `SUPABASE_PROJECT_REF`.
+- The Supabase MCP server attached to Claude Code sessions points at
+  the **DreamMe consumer app DB**, not the admin-dash DB. Do NOT use
+  `mcp__*__apply_migration` for admin-dash schema changes — it would
+  pollute the wrong database. Use the workflow above instead.
 
 ## Common scripts
 
