@@ -18,6 +18,7 @@ import { SpyTool } from "./SpyTool";
 import { SpendDashboard } from "./SpendDashboard";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
+import { SynthIDResearch } from "./SynthIDResearch";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -202,6 +203,13 @@ export function App() {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "resources") {
     screen = <Resources isAdmin={role === "admin"} />;
+  } else if (current === "synthid-research") {
+    // Defense-in-depth: nav is hidden for non-admins via visibleNavItems(),
+    // but the dash id can persist in localStorage so re-check role at render
+    // time and bounce non-admins back to a safe default.
+    screen = role === "admin"
+      ? <SynthIDResearch />
+      : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;
   }
