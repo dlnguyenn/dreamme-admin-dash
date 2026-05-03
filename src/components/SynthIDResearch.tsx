@@ -109,24 +109,6 @@ export function SynthIDResearch() {
 
       <div
         style={{
-          padding: "12px 14px",
-          marginBottom: 20,
-          borderRadius: 10,
-          background: "color-mix(in oklab, var(--accent) 8%, transparent)",
-          border: "1px solid color-mix(in oklab, var(--accent) 35%, transparent)",
-          fontSize: 12,
-          color: "var(--ink-2)",
-          lineHeight: 1.55,
-        }}
-      >
-        <strong>Research only.</strong> Removing SynthID likely violates the
-        Gemini API ToS, and the upstream tool's license restricts use to
-        academic research / security analysis. Do not pipe output from this
-        page into the customer-facing Content Pipeline.
-      </div>
-
-      <div
-        style={{
           display: "grid",
           gridTemplateColumns: "minmax(0,1fr) 320px",
           gap: 24,
