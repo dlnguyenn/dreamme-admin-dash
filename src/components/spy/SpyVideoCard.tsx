@@ -102,8 +102,8 @@ export function SpyVideoCard({
             no slide
           </div>
         )}
-        {/* Viral badge */}
-        {video.is_viral && (
+        {/* Outlier / viral badge */}
+        {(video.outlier_score != null || video.is_viral) && (
           <div
             style={{
               position: "absolute",
@@ -120,8 +120,15 @@ export function SpyVideoCard({
               color: "var(--accent)",
               fontWeight: 600,
             }}
+            title={
+              video.outlier_score != null
+                ? `Post views ÷ author's baseline median (${video.author_baseline_count ?? "?"} prior posts)`
+                : "Crossed absolute view threshold (no per-author baseline)"
+            }
           >
-            viral
+            {video.outlier_score != null
+              ? `${video.outlier_score.toFixed(1)}× outlier`
+              : "viral"}
           </div>
         )}
         {/* View count */}

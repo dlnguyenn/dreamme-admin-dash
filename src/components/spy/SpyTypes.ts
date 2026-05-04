@@ -19,6 +19,10 @@ export interface SpyVideoRow {
   is_viral: boolean;
   viral_first_seen_at: string | null;
   why_it_hit: string | null;
+  views_per_hour: number | null;
+  author_baseline_median: number | null;
+  author_baseline_count: number | null;
+  outlier_score: number | null;
   last_scraped_at: string;
   created_at: string;
 }

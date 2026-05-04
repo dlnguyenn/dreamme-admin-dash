@@ -206,9 +206,15 @@ under `src/components/spy/`.
 - **Cron**: `/api/cron/scrape-spy` runs Mon/Wed/Fri at 03:00 UTC, before the
   baseline + scrape + fatigue + generate sequence. (Was daily; throttled to
   3×/week to keep Apify spend ~$22/month.)
-- **Viral threshold**: `view_count >= 50K within 7d` OR `view_count >= 10K
-  within 48h` (early velocity catches rocketships before they fully blow
-  up). Logic in `src/lib/spy-viral.ts:computeIsViral`.
+- **Viral threshold**: SpyTok-style outlier-first. For each newly-surfaced
+  post we scrape that author's last 10 profile posts, compute the median,
+  and store `outlier_score = view_count / baseline_median`. Viral when
+  `outlier_score >= 5×`. Falls back to absolute thresholds (50K/7d or
+  10K/48h) when baseline is unavailable. Velocity (`views_per_hour`) is
+  also stored as a tiebreaker signal. Logic in `src/lib/spy-outlier.ts`.
+- **Library floor**: posts with `view_count < 10K` are skipped at insert
+  time (no OCR, no rehost, no profile scrape, no row). Existing rows still
+  get view-count updates so we can see if a post stalls.
 - **Storage**: re-hosted first slides at `spy/{hashtag}/{post_id}.{ext}`
   in the existing `dreamme-admin-internal-images` bucket.
 - **Tables**: `spy_videos` (one row per scraped post) + `spy_favorites`
@@ -218,10 +224,12 @@ under `src/components/spy/`.
   first card click and caches it on `spy_videos.why_it_hit`.
 - **Sub-tabs**: Browse / Trends / Favorites; persists to
   `localStorage["dreamme.spyTab"]`.
-- **Cost**: ~$0.15/source/run (15 results each) × (9 hashtags + 2 search
-  queries) × 3 runs/week = ~$22/month Apify spend. Trim `SPY_HASHTAGS` or
-  `SPY_QUERIES` if it climbs, or bump frequency back to daily by changing
-  the cron in `vercel.json` to `0 3 * * *`.
+- **Cost**: ~$0.15/source/run × (9 hashtags + 7 search queries) × 3 runs/week
+  ≈ $32/month for the main scrape. Author baseline scrapes (1 per unique
+  newly-surfaced author) add roughly $10-15/month assuming the 10K floor
+  filters ~half the noise. Total ≈ $40-50/month. Trim `SPY_HASHTAGS` /
+  `SPY_QUERIES`, drop scrape frequency, or raise the 10K floor in
+  `scrape-spy.ts:MIN_VIEWS_FOR_LIBRARY` if it climbs.
 
 ## Things that have bitten us
 
