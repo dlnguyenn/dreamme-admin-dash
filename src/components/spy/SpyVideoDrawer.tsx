@@ -321,12 +321,30 @@ export function SpyVideoDrawer({
 }
 
 function Stats({ video }: { video: SpyVideoRow }) {
-  const cells: Array<{ label: string; value: string }> = [
+  const cells: Array<{ label: string; value: string; title?: string }> = [
     { label: "Views", value: fmt(video.view_count) },
     { label: "Likes", value: fmt(video.like_count) },
     { label: "Comments", value: fmt(video.comment_count) },
     { label: "Shares", value: fmt(video.share_count) },
   ];
+  if (video.outlier_score != null) {
+    cells.push({
+      label: "Outlier",
+      value: `${video.outlier_score.toFixed(1)}×`,
+      title: `Views ÷ author baseline median${
+        video.author_baseline_median != null
+          ? ` (${fmt(video.author_baseline_median)} median across ${video.author_baseline_count ?? "?"} posts)`
+          : ""
+      }`,
+    });
+  }
+  if (video.views_per_hour != null) {
+    cells.push({
+      label: "Velocity",
+      value: `${fmt(Math.round(video.views_per_hour))}/hr`,
+      title: "Average views per hour since posted",
+    });
+  }
   return (
     <div
       style={{
@@ -338,6 +356,7 @@ function Stats({ video }: { video: SpyVideoRow }) {
       {cells.map((c) => (
         <div
           key={c.label}
+          title={c.title}
           style={{
             padding: "10px 12px",
             background: "var(--surface)",

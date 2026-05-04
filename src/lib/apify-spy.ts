@@ -82,3 +82,43 @@ export async function runSearchQueryScrape(opts: {
   const data = (await res.json()) as unknown;
   return Array.isArray(data) ? data : [];
 }
+
+/**
+ * Profile-mode scrape — fetches a single TikTok creator's recent posts
+ * so we can compute their baseline view count and the outlier score of
+ * any individual post against that baseline.
+ *
+ * Light-weight: skips slideshow image download since we only need view
+ * counts. ~$0.05 per call at 10 results.
+ */
+export async function runProfileScrape(opts: {
+  profile: string;
+  resultsPerPage?: number;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    ACTOR_ID,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    profiles: [opts.profile],
+    resultsPerPage: opts.resultsPerPage ?? 10,
+    shouldDownloadCovers: false,
+    shouldDownloadVideos: false,
+    shouldDownloadSlideshowImages: false,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify profile run failed (${opts.profile}): ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}
