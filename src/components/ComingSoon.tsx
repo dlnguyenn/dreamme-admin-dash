@@ -123,6 +123,25 @@ function formatPayoutDate(p: PayPeriod): string {
   });
 }
 
+const PAY_PER_1K_SINGLE = 0.25;
+const PAY_PER_1K_TRANSFORMATION = 0.75;
+
+function calculatePay(s: PersonaStats): number {
+  return (
+    (s.singleViews / 1000) * PAY_PER_1K_SINGLE +
+    (s.transformationViews / 1000) * PAY_PER_1K_TRANSFORMATION
+  );
+}
+
+function formatUSD(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function aggregate(rows: ScrapedRow[]): Map<PersonaId, PersonaStats> {
   const out = new Map<PersonaId, PersonaStats>();
   for (const id of PERSONA_IDS) out.set(id, { ...EMPTY_STATS });
@@ -242,6 +261,17 @@ export function ComingSoon({ item }: { item: NavItem }) {
   const currentPeriod = React.useMemo(() => getPayPeriod(new Date()), []);
   const isCurrent = samePayPeriod(period, currentPeriod);
   const { stats } = useTrackedPostStats(item.id === "analytics", period);
+  const [showPay, setShowPay] = React.useState(false);
+  const totalPay = React.useMemo(() => {
+    if (!stats) return 0;
+    let sum = 0;
+    for (const pid of PERSONA_IDS) {
+      if (!PERSONA_TIKTOK_PROFILES[pid]) continue;
+      const s = stats.get(pid);
+      if (s) sum += calculatePay(s);
+    }
+    return sum;
+  }, [stats]);
 
   return (
     <div>
@@ -459,6 +489,10 @@ export function ComingSoon({ item }: { item: NavItem }) {
             isCurrent={isCurrent}
             onShift={(dir) => setPeriod((p) => shiftPayPeriod(p, dir))}
             onResetCurrent={() => setPeriod(currentPeriod)}
+            showPay={showPay}
+            onTogglePay={() => setShowPay((v) => !v)}
+            totalPay={totalPay}
+            statsReady={stats !== null}
           />
           <div
             style={{
@@ -593,6 +627,43 @@ export function ComingSoon({ item }: { item: NavItem }) {
                           </span>
                         </span>
                       </div>
+                      {showPay && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            paddingTop: 6,
+                            borderTop: "1px dashed var(--line-2)",
+                            display: "flex",
+                            alignItems: "baseline",
+                            gap: 6,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span
+                            className="serif"
+                            style={{
+                              fontSize: 16,
+                              color: "var(--ink)",
+                              fontWeight: 400,
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                            title={`Single ${formatUSD((s?.singleViews ?? 0) / 1000 * PAY_PER_1K_SINGLE)} + Transformation ${formatUSD((s?.transformationViews ?? 0) / 1000 * PAY_PER_1K_TRANSFORMATION)}`}
+                          >
+                            {s ? formatUSD(calculatePay(s)) : "—"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: "var(--ink-4)",
+                              fontFamily: "var(--font-geist-mono), monospace",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.08em",
+                            }}
+                          >
+                            payout
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -660,11 +731,19 @@ function PayPeriodNav({
   isCurrent,
   onShift,
   onResetCurrent,
+  showPay,
+  onTogglePay,
+  totalPay,
+  statsReady,
 }: {
   period: PayPeriod;
   isCurrent: boolean;
   onShift: (dir: -1 | 1) => void;
   onResetCurrent: () => void;
+  showPay: boolean;
+  onTogglePay: () => void;
+  totalPay: number;
+  statsReady: boolean;
 }) {
   const arrowBtn = (
     label: string,
@@ -755,24 +834,87 @@ function PayPeriodNav({
       >
         Payout · {formatPayoutDate(period)}
       </div>
-      {!isCurrent && (
+      <div
+        style={{
+          marginLeft: "auto",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        {showPay && (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "baseline",
+              gap: 6,
+              padding: "4px 10px",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
+              borderRadius: 6,
+            }}
+            title="Sum of payouts owed across all tracked accounts this period"
+          >
+            <span
+              style={{
+                fontSize: 9,
+                fontFamily: "var(--font-geist-mono), monospace",
+                color: "var(--ink-4)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+              }}
+            >
+              Total
+            </span>
+            <span
+              className="serif"
+              style={{
+                fontSize: 14,
+                color: "var(--ink)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {formatUSD(totalPay)}
+            </span>
+          </div>
+        )}
         <button
-          onClick={onResetCurrent}
+          onClick={onTogglePay}
+          disabled={!statsReady}
           style={{
-            marginLeft: "auto",
             padding: "4px 10px",
             fontSize: 11,
             fontFamily: "inherit",
-            background: "transparent",
-            border: "1px solid var(--line)",
+            background: showPay ? "var(--ink)" : "transparent",
+            border: "1px solid " + (showPay ? "var(--ink)" : "var(--line)"),
             borderRadius: 6,
-            color: "var(--ink-2)",
-            cursor: "pointer",
+            color: showPay ? "var(--surface)" : "var(--ink-2)",
+            cursor: statsReady ? "pointer" : "not-allowed",
+            opacity: statsReady ? 1 : 0.5,
           }}
+          title="$0.25 / 1K views (single) · $0.75 / 1K views (transformation)"
         >
-          Today
+          {showPay ? "Hide pay" : "Calculate pay"}
         </button>
-      )}
+        {!isCurrent && (
+          <button
+            onClick={onResetCurrent}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontFamily: "inherit",
+              background: "transparent",
+              border: "1px solid var(--line)",
+              borderRadius: 6,
+              color: "var(--ink-2)",
+              cursor: "pointer",
+            }}
+          >
+            Today
+          </button>
+        )}
+      </div>
     </div>
   );
 }
