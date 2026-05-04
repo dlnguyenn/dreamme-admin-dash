@@ -80,6 +80,10 @@ export async function POST(req: Request) {
   const image = incoming.get("image");
   const version = String(incoming.get("version") ?? "v3");
   const strength = String(incoming.get("strength") ?? "final");
+  // V4-only: which Gemini model produced the image. The codebook stores
+  // separate per-model carrier profiles; the right hint produces a much
+  // stronger bypass. Ignored by V3.
+  const model = String(incoming.get("model") ?? "gemini-3.1-flash-image-preview");
   if (!(image instanceof File)) {
     return NextResponse.json({ ok: false, error: "missing image file" }, { status: 400 });
   }
@@ -95,6 +99,7 @@ export async function POST(req: Request) {
   fwd.append("image", new Blob([inputBytes], { type: inputType }), image.name);
   fwd.append("version", version);
   fwd.append("strength", strength);
+  fwd.append("model", model);
 
   const upstream = await fetch(`${serviceUrl.replace(/\/$/, "")}/bypass`, {
     method: "POST",
@@ -128,6 +133,9 @@ export async function POST(req: Request) {
       output_path: outputPath,
       version,
       strength,
+      // V4 only — captured in notes since the schema doesn't have a
+      // model column yet.
+      notes: version === "v4" ? `model=${model}` : null,
     });
 
     return NextResponse.json({

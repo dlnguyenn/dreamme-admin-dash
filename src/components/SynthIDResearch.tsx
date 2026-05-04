@@ -20,6 +20,10 @@ export function SynthIDResearch() {
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [version, setVersion] = React.useState<"v3" | "v4">("v3");
   const [strength, setStrength] = React.useState("final");
+  // Source-model hint for V4. The codebook has separate carrier profiles
+  // per Gemini model; the wrong hint produces a much weaker bypass. V3
+  // ignores this.
+  const [model, setModel] = React.useState("gemini-3.1-flash-image-preview");
 
   const [detecting, setDetecting] = React.useState(false);
   const [bypassing, setBypassing] = React.useState(false);
@@ -85,6 +89,7 @@ export function SynthIDResearch() {
       fd.append("image", file, file.name);
       fd.append("version", version);
       fd.append("strength", strength);
+      fd.append("model", model);
       const res = await fetch("/api/research/synthid/bypass", {
         method: "POST",
         body: fd,
@@ -200,6 +205,23 @@ export function SynthIDResearch() {
               <option value="final">final</option>
             </select>
           </Field>
+
+          {version === "v4" && (
+            <Field label="Source model">
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="gemini-3.1-flash-image-preview">
+                  gemini-3.1-flash-image-preview
+                </option>
+                <option value="nano-banana-pro-preview">
+                  nano-banana-pro-preview
+                </option>
+              </select>
+            </Field>
+          )}
 
           <Button
             variant="primary"
