@@ -106,6 +106,31 @@ Conventions:
   emoji rotates among 🌿 / 🌱 / 🤍, picked per caption in
   `caption-generator.ts`. Never close on a save prompt alone.
 
+## Spend tracking
+
+Single source: `spend_line_items`, one row per (vendor, period, source).
+Sources today: `api` (Anthropic Admin API, Apify usage, our own Gemini
+per-call rollup), `manual`, `csv` (Chase CSV importer), `plaid` (Plaid
+auto-sync).
+
+- `src/lib/vendors/anthropic-admin.ts`, `apify-usage.ts`,
+  `gemini-pricing.ts`, `ai-usage-logger.ts` — vendor-specific clients.
+- `src/lib/spend/chase-csv.ts` — Chase CSV parse + merchant
+  categorization (shared by Plaid sync — keep merchant rules in this
+  one file).
+- `src/lib/spend/plaid-sync.ts` — pulls Plaid transactions, mirrors
+  into `plaid_transactions`, then re-aggregates the past 40 days into
+  `spend_line_items` from scratch (idempotent under add / modify /
+  remove).
+- `src/lib/vendors/plaid.ts` — lazy `PlaidApi` client. Server-only.
+  Required env: `PLAID_CLIENT_ID`, `PLAID_SECRET`, optional `PLAID_ENV`
+  (`sandbox` default), optional `PLAID_WEBHOOK_URL`.
+- Charges to vendors we already track via API (Anthropic, Google,
+  Apify, Vercel, Supabase) are SKIPPED by both the CSV importer and
+  Plaid sync to avoid double-counting. Don't add a row twice if you're
+  rolling up an `api`-sourced vendor — extend the
+  `AUTO_TRACKED_VENDORS` set instead.
+
 ## Repositories & schemas
 
 - `src/lib/repositories/` — typed Supabase queries (one file per table)

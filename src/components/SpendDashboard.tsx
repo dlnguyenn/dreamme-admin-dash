@@ -6,6 +6,7 @@ import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { SpendAddModal } from "./SpendAddModal";
 import { SpendImportCsvModal } from "./SpendImportCsvModal";
+import { PlaidConnect } from "./PlaidConnect";
 import { API } from "@/lib/supabase";
 import type {
   SpendCategory,
@@ -140,6 +141,7 @@ export function SpendDashboard() {
         { name: "anthropic", url: "/api/cron/spend/anthropic" },
         { name: "apify", url: "/api/cron/spend/apify" },
         { name: "gemini", url: "/api/cron/spend/gemini" },
+        { name: "plaid", url: "/api/cron/spend/plaid" },
       ];
       const results = await Promise.allSettled(
         endpoints.map(async (e) => {
@@ -269,6 +271,7 @@ export function SpendDashboard() {
       <div style={{ height: 28 }} />
 
       <SectionLabel>Business spend</SectionLabel>
+      <PlaidConnect onChange={refresh} />
       <CardGrid>
         {BUSINESS_VENDORS.map((v) => (
           <VendorCard
