@@ -60,19 +60,22 @@ const TOOL_DEFINITION = {
         enum: [...ASPECT_RATIOS],
         description: "Optional aspect ratio. Defaults to 1:1.",
       },
-      reference_image_urls: {
-        type: "array",
-        items: { type: "string", format: "uri" },
-        maxItems: 3,
+      image_url: {
+        type: "string",
+        format: "uri",
         description:
-          "Optional public http(s) URLs (max 3) to reference images that condition the generation (style, subject, composition).",
+          "Optional public http(s) URL of a reference image. When provided, the model edits / re-renders that image guided by the prompt (image-to-image). Useful for iterative tweaks (e.g. \"make it green\" with the previous output URL).",
       },
-      count: {
-        type: "integer",
-        minimum: 1,
-        maximum: 4,
-        default: 1,
-        description: "Number of variations to generate (1-4). Defaults to 1.",
+      image_base64: {
+        type: "string",
+        description:
+          "Optional base64-encoded reference image bytes (alternative to image_url). Pair with image_mime_type when set.",
+      },
+      image_mime_type: {
+        type: "string",
+        enum: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+        description:
+          "MIME type for image_base64. Defaults to image/png.",
       },
     },
     required: ["prompt"],
@@ -147,8 +150,9 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
       arguments?: {
         prompt?: unknown;
         aspect_ratio?: unknown;
-        reference_image_urls?: unknown;
-        count?: unknown;
+        image_url?: unknown;
+        image_base64?: unknown;
+        image_mime_type?: unknown;
       };
     };
     if (params.name !== "generate_image") {
@@ -166,41 +170,39 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
         ? (aspectRaw as AspectRatio)
         : undefined;
 
-    let referenceImageUrls: string[] | undefined;
-    if (args.reference_image_urls !== undefined) {
-      if (!Array.isArray(args.reference_image_urls)) {
-        return rpcError(id, -32602, "reference_image_urls must be an array of strings");
+    let referenceImageUrl: string | undefined;
+    if (args.image_url !== undefined) {
+      if (typeof args.image_url !== "string") {
+        return rpcError(id, -32602, "image_url must be a string");
       }
-      if (args.reference_image_urls.length > 3) {
-        return rpcError(id, -32602, "reference_image_urls accepts at most 3 URLs");
-      }
-      const urls: string[] = [];
-      for (const u of args.reference_image_urls) {
-        if (typeof u !== "string") {
-          return rpcError(id, -32602, "reference_image_urls entries must be strings");
+      try {
+        const parsed = new URL(args.image_url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return rpcError(id, -32602, `image_url must be http(s); got ${parsed.protocol}`);
         }
-        try {
-          const parsed = new URL(u);
-          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-            return rpcError(id, -32602, `reference_image_urls must be http(s); got ${parsed.protocol}`);
-          }
-        } catch {
-          return rpcError(id, -32602, `Invalid reference_image_urls entry: ${u}`);
-        }
-        urls.push(u);
+      } catch {
+        return rpcError(id, -32602, `Invalid image_url: ${args.image_url}`);
       }
-      referenceImageUrls = urls;
+      referenceImageUrl = args.image_url;
     }
 
-    let count: number | undefined;
-    if (args.count !== undefined) {
-      if (typeof args.count !== "number" || !Number.isInteger(args.count)) {
-        return rpcError(id, -32602, "count must be an integer");
+    let referenceImageBase64: string | undefined;
+    let referenceImageMimeType: string | undefined;
+    if (args.image_base64 !== undefined) {
+      if (typeof args.image_base64 !== "string") {
+        return rpcError(id, -32602, "image_base64 must be a base64-encoded string");
       }
-      if (args.count < 1 || args.count > 4) {
-        return rpcError(id, -32602, "count must be between 1 and 4");
+      referenceImageBase64 = args.image_base64;
+      if (args.image_mime_type !== undefined) {
+        if (typeof args.image_mime_type !== "string") {
+          return rpcError(id, -32602, "image_mime_type must be a string");
+        }
+        referenceImageMimeType = args.image_mime_type;
       }
-      count = args.count;
+    }
+
+    if (referenceImageUrl && referenceImageBase64) {
+      return rpcError(id, -32602, "Provide either image_url or image_base64, not both");
     }
 
     if (!imageGenerationConfigured()) {
@@ -208,30 +210,28 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
     }
 
     try {
-      const { batchId, images } = await generateImage({
+      const result = await generateImage({
         prompt,
         aspectRatio,
-        referenceImageUrls,
-        count,
+        referenceImageUrl,
+        referenceImageBase64,
+        referenceImageMimeType,
         source: "mcp",
       });
-      // One text content block per generated image (URL on its own line)
-      // is the most portable shape across MCP clients.
       return rpcResult(id, {
-        content: images.map((img) => ({
-          type: "text",
-          text: img.imageUrl,
-        })),
+        content: [
+          {
+            type: "text",
+            text: result.imageUrl,
+          },
+        ],
         structuredContent: {
-          batch_id: batchId,
-          images: images.map((img) => ({
-            image_url: img.imageUrl,
-            id: img.id,
-            aspect_ratio: img.aspectRatio,
-            gemini_model: img.geminiModel,
-            created_at: img.createdAt,
-            reference_urls: img.referenceUrls,
-          })),
+          image_url: result.imageUrl,
+          id: result.id,
+          aspect_ratio: result.aspectRatio,
+          gemini_model: result.geminiModel,
+          created_at: result.createdAt,
+          reference_image_url: result.referenceImageUrl,
         },
       });
     } catch (err) {

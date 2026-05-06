@@ -283,7 +283,6 @@ async function insertRow(row: {
   gemini_model: string;
   source: "mcp" | "dashboard";
   reference_urls: string[] | null;
-  batch_id: string | null;
 }): Promise<{ id: string; created_at: string }> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/image_generations`, {
     method: "POST",
@@ -312,27 +311,22 @@ export interface GenerateImageResult {
   aspectRatio: AspectRatio | null;
   geminiModel: string;
   createdAt: string;
-  referenceUrls: string[];
-  batchId: string;
+  referenceImageUrl: string | null;
 }
-
-export interface GenerateImageBatchResult {
-  batchId: string;
-  images: GenerateImageResult[];
-}
-
-const MAX_REFERENCE_IMAGES = 3;
-const MAX_BATCH_COUNT = 4;
 
 export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
-  referenceImageUrls?: string[];
-  count?: number;
+  /** Optional public http(s) URL of a reference image (image-to-image mode). */
+  referenceImageUrl?: string;
+  /** Optional inline base64-encoded reference image (alternative to referenceImageUrl). */
+  referenceImageBase64?: string;
+  /** mimeType for referenceImageBase64. Defaults to "image/png". */
+  referenceImageMimeType?: string;
   source: "mcp" | "dashboard";
   /** Per-attempt timeout in ms. Default 60s — Gemini image gen is usually 5-25s. */
   timeoutMs?: number;
-}): Promise<GenerateImageBatchResult> {
+}): Promise<GenerateImageResult> {
   if (!imageGenerationConfigured()) {
     throw new Error(
       "image generation not configured (missing GOOGLE_API_KEY or Supabase env)",
@@ -341,97 +335,93 @@ export async function generateImage(params: {
   const prompt = params.prompt.trim();
   if (!prompt) throw new Error("prompt is required");
 
-  const referenceUrls = params.referenceImageUrls ?? [];
-  if (referenceUrls.length > MAX_REFERENCE_IMAGES) {
-    throw new Error(
-      `At most ${MAX_REFERENCE_IMAGES} reference images allowed`,
-    );
-  }
+  await checkRateLimit(1);
 
-  const count = params.count ?? 1;
-  if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH_COUNT) {
-    throw new Error(`count must be an integer between 1 and ${MAX_BATCH_COUNT}`);
-  }
-
-  await checkRateLimit(count);
-
-  const referenceImages = referenceUrls.length
-    ? await Promise.all(referenceUrls.map(fetchReferenceImage))
-    : [];
-
-  const batchId = randomId();
-  const timeoutMs = params.timeoutMs ?? 60_000;
-
-  const tasks = Array.from({ length: count }, async (): Promise<GenerateImageResult> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let gen: Awaited<ReturnType<typeof callGemini>>;
-    try {
-      gen = await callGemini(
-        prompt,
-        params.aspectRatio,
-        referenceImages,
-        controller.signal,
-      );
-    } finally {
-      clearTimeout(timer);
+  const referenceImages: ReferenceImage[] = [];
+  if (params.referenceImageUrl) {
+    referenceImages.push(await fetchReferenceImage(params.referenceImageUrl));
+  } else if (params.referenceImageBase64) {
+    const mime = (params.referenceImageMimeType ?? "image/png").toLowerCase();
+    if (!REFERENCE_ALLOWED_MIME.has(mime)) {
+      throw new Error(`Reference image mime not supported: ${mime}`);
     }
-
-    const ext = extFromMime(gen.mimeType);
-    const id = randomId();
-    const path = `${id}.${ext}`;
-    const imageUrl = await uploadBytesToStorage(
-      BUCKET,
-      path,
-      gen.bytes,
-      gen.mimeType,
-    );
-
-    const inserted = await insertRow({
-      prompt,
-      aspect_ratio: params.aspectRatio ?? null,
-      image_url: imageUrl,
-      gemini_model: MODEL,
-      source: params.source,
-      reference_urls: referenceUrls.length ? referenceUrls : null,
-      batch_id: batchId,
+    const bytes = Buffer.from(params.referenceImageBase64, "base64");
+    if (bytes.length > REFERENCE_MAX_BYTES) {
+      throw new Error(`Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`);
+    }
+    referenceImages.push({
+      bytes,
+      mimeType: mime === "image/jpg" ? "image/jpeg" : mime,
     });
+  }
 
-    const usage = gen.usage ?? {};
-    void logAiUsageEvent({
-      vendor: "google",
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    params.timeoutMs ?? 60_000,
+  );
+
+  let gen: Awaited<ReturnType<typeof callGemini>>;
+  try {
+    gen = await callGemini(
+      prompt,
+      params.aspectRatio,
+      referenceImages,
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const ext = extFromMime(gen.mimeType);
+  const id = randomId();
+  const path = `${id}.${ext}`;
+  const imageUrl = await uploadBytesToStorage(
+    BUCKET,
+    path,
+    gen.bytes,
+    gen.mimeType,
+  );
+
+  const refUrl = params.referenceImageUrl ?? null;
+  const inserted = await insertRow({
+    prompt,
+    aspect_ratio: params.aspectRatio ?? null,
+    image_url: imageUrl,
+    gemini_model: MODEL,
+    source: params.source,
+    reference_urls: refUrl ? [refUrl] : null,
+  });
+
+  const usage = gen.usage ?? {};
+  void logAiUsageEvent({
+    vendor: "google",
+    model: MODEL,
+    route: params.source === "mcp" ? "/api/mcp/image" : "/api/image-studio/generate",
+    inputTokens: usage.promptTokenCount ?? 0,
+    outputTokens: usage.candidatesTokenCount ?? 0,
+    imageCount: 1,
+    computedUsd: priceGeminiUsage({
       model: MODEL,
-      route: params.source === "mcp" ? "/api/mcp/image" : "/api/image-studio/generate",
       inputTokens: usage.promptTokenCount ?? 0,
       outputTokens: usage.candidatesTokenCount ?? 0,
       imageCount: 1,
-      computedUsd: priceGeminiUsage({
-        model: MODEL,
-        inputTokens: usage.promptTokenCount ?? 0,
-        outputTokens: usage.candidatesTokenCount ?? 0,
-        imageCount: 1,
-      }),
-      metadata: {
-        source: params.source,
-        batch_id: batchId,
-        reference_count: referenceUrls.length,
-      },
-    });
-
-    return {
-      id: inserted.id,
-      imageUrl,
-      prompt,
-      aspectRatio: params.aspectRatio ?? null,
-      geminiModel: MODEL,
-      createdAt: inserted.created_at,
-      referenceUrls,
-      batchId,
-    };
+    }),
+    metadata: {
+      source: params.source,
+      has_reference: referenceImages.length > 0,
+    },
   });
 
-  const images = await Promise.all(tasks);
-  return { batchId, images };
+  return {
+    id: inserted.id,
+    imageUrl,
+    prompt,
+    aspectRatio: params.aspectRatio ?? null,
+    geminiModel: MODEL,
+    createdAt: inserted.created_at,
+    referenceImageUrl: refUrl,
+  };
 }
 
 export interface ImageGenerationRow {
@@ -443,7 +433,6 @@ export interface ImageGenerationRow {
   source: string | null;
   created_at: string;
   reference_urls: string[] | null;
-  batch_id: string | null;
 }
 
 export async function listImageGenerations(params: {
@@ -452,7 +441,7 @@ export async function listImageGenerations(params: {
 }): Promise<ImageGenerationRow[]> {
   const limit = Math.min(Math.max(params.limit ?? 24, 1), 100);
   const offset = Math.max(params.offset ?? 0, 0);
-  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at,reference_urls,batch_id&order=created_at.desc&limit=${limit}&offset=${offset}`;
+  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at,reference_urls&order=created_at.desc&limit=${limit}&offset=${offset}`;
   const res = await fetch(url, {
     headers: {
       apikey: SERVICE_ROLE || SUPABASE_ANON,
