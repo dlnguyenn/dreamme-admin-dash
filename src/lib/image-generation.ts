@@ -16,8 +16,7 @@ import { logAiUsageEvent } from "./vendors/ai-usage-logger";
 import { priceGeminiUsage } from "./vendors/gemini-pricing";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
-const MODEL =
-  process.env.MCP_IMAGE_GEMINI_MODEL ?? "gemini-2.5-flash-image";
+const MODEL = "gemini-3.1-flash-image";
 const ENDPOINT = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
