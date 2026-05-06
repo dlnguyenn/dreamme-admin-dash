@@ -21,6 +21,11 @@ export const maxDuration = 300;
 const Body = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  referenceImageUrl: z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "must be http(s)")
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -46,6 +51,7 @@ export async function POST(req: Request) {
     const result = await generateImage({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
+      referenceImageUrl: parsed.referenceImageUrl,
       source: "dashboard",
     });
     return NextResponse.json({ ok: true, result });

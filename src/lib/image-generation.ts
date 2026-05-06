@@ -16,8 +16,7 @@ import { logAiUsageEvent } from "./vendors/ai-usage-logger";
 import { priceGeminiUsage } from "./vendors/gemini-pricing";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
-const MODEL =
-  process.env.MCP_IMAGE_GEMINI_MODEL ?? "gemini-2.5-flash-image";
+const MODEL = "gemini-3.1-flash-image-preview";
 const ENDPOINT = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
@@ -77,7 +76,7 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-async function checkRateLimit(): Promise<void> {
+async function checkRateLimit(count: number): Promise<void> {
   // Use the service-role REST endpoint with a HEAD-style count query.
   const headers = {
     apikey: SERVICE_ROLE || SUPABASE_ANON,
@@ -106,14 +105,14 @@ async function checkRateLimit(): Promise<void> {
     countSince(hourAgo),
     countSince(dayAgo),
   ]);
-  if (hourCount >= HOURLY_LIMIT) {
+  if (hourCount + count > HOURLY_LIMIT) {
     throw new RateLimitError(
       `Hourly limit reached (${HOURLY_LIMIT}/hour). Try again later.`,
       "hour",
       HOURLY_LIMIT,
     );
   }
-  if (dayCount >= DAILY_LIMIT) {
+  if (dayCount + count > DAILY_LIMIT) {
     throw new RateLimitError(
       `Daily limit reached (${DAILY_LIMIT}/day). Try again tomorrow.`,
       "day",
@@ -122,13 +121,84 @@ async function checkRateLimit(): Promise<void> {
   }
 }
 
+const REFERENCE_FETCH_TIMEOUT_MS = 10_000;
+const REFERENCE_MAX_BYTES = 8 * 1024 * 1024;
+const REFERENCE_ALLOWED_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+]);
+
+interface ReferenceImage {
+  bytes: Buffer;
+  mimeType: string;
+}
+
+async function fetchReferenceImage(url: string): Promise<ReferenceImage> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid reference image URL: ${url}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `Reference image URL must be http(s); got ${parsed.protocol}`,
+    );
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REFERENCE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(
+        `Reference image fetch failed (${res.status}) for ${url}`,
+      );
+    }
+    const contentType = (res.headers.get("content-type") ?? "image/jpeg")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!REFERENCE_ALLOWED_MIME.has(contentType)) {
+      throw new Error(
+        `Reference image has unsupported content-type: ${contentType}`,
+      );
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    if (arrayBuffer.byteLength > REFERENCE_MAX_BYTES) {
+      throw new Error(
+        `Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`,
+      );
+    }
+    return {
+      bytes: Buffer.from(arrayBuffer),
+      mimeType: contentType === "image/jpg" ? "image/jpeg" : contentType,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callGemini(
   prompt: string,
   aspectRatio: AspectRatio | undefined,
+  referenceImages: ReferenceImage[],
   signal: AbortSignal,
 ): Promise<{ bytes: Buffer; mimeType: string; usage: GeminiResponse["usageMetadata"] }> {
+  const parts: Part[] = [];
+  for (const ref of referenceImages) {
+    parts.push({
+      inline_data: {
+        mime_type: ref.mimeType,
+        data: ref.bytes.toString("base64"),
+      },
+    });
+  }
+  parts.push({ text: prompt });
   const body: Record<string, unknown> = {
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts }],
     generationConfig: {
       responseModalities: ["IMAGE"],
       ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}),
@@ -212,6 +282,7 @@ async function insertRow(row: {
   image_url: string;
   gemini_model: string;
   source: "mcp" | "dashboard";
+  reference_urls: string[] | null;
 }): Promise<{ id: string; created_at: string }> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/image_generations`, {
     method: "POST",
@@ -240,11 +311,18 @@ export interface GenerateImageResult {
   aspectRatio: AspectRatio | null;
   geminiModel: string;
   createdAt: string;
+  referenceImageUrl: string | null;
 }
 
 export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Optional public http(s) URL of a reference image (image-to-image mode). */
+  referenceImageUrl?: string;
+  /** Optional inline base64-encoded reference image (alternative to referenceImageUrl). */
+  referenceImageBase64?: string;
+  /** mimeType for referenceImageBase64. Defaults to "image/png". */
+  referenceImageMimeType?: string;
   source: "mcp" | "dashboard";
   /** Per-attempt timeout in ms. Default 60s — Gemini image gen is usually 5-25s. */
   timeoutMs?: number;
@@ -257,7 +335,25 @@ export async function generateImage(params: {
   const prompt = params.prompt.trim();
   if (!prompt) throw new Error("prompt is required");
 
-  await checkRateLimit();
+  await checkRateLimit(1);
+
+  const referenceImages: ReferenceImage[] = [];
+  if (params.referenceImageUrl) {
+    referenceImages.push(await fetchReferenceImage(params.referenceImageUrl));
+  } else if (params.referenceImageBase64) {
+    const mime = (params.referenceImageMimeType ?? "image/png").toLowerCase();
+    if (!REFERENCE_ALLOWED_MIME.has(mime)) {
+      throw new Error(`Reference image mime not supported: ${mime}`);
+    }
+    const bytes = Buffer.from(params.referenceImageBase64, "base64");
+    if (bytes.length > REFERENCE_MAX_BYTES) {
+      throw new Error(`Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`);
+    }
+    referenceImages.push({
+      bytes,
+      mimeType: mime === "image/jpg" ? "image/jpeg" : mime,
+    });
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(
@@ -267,7 +363,12 @@ export async function generateImage(params: {
 
   let gen: Awaited<ReturnType<typeof callGemini>>;
   try {
-    gen = await callGemini(prompt, params.aspectRatio, controller.signal);
+    gen = await callGemini(
+      prompt,
+      params.aspectRatio,
+      referenceImages,
+      controller.signal,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -282,12 +383,14 @@ export async function generateImage(params: {
     gen.mimeType,
   );
 
+  const refUrl = params.referenceImageUrl ?? null;
   const inserted = await insertRow({
     prompt,
     aspect_ratio: params.aspectRatio ?? null,
     image_url: imageUrl,
     gemini_model: MODEL,
     source: params.source,
+    reference_urls: refUrl ? [refUrl] : null,
   });
 
   const usage = gen.usage ?? {};
@@ -304,7 +407,10 @@ export async function generateImage(params: {
       outputTokens: usage.candidatesTokenCount ?? 0,
       imageCount: 1,
     }),
-    metadata: { source: params.source },
+    metadata: {
+      source: params.source,
+      has_reference: referenceImages.length > 0,
+    },
   });
 
   return {
@@ -314,6 +420,7 @@ export async function generateImage(params: {
     aspectRatio: params.aspectRatio ?? null,
     geminiModel: MODEL,
     createdAt: inserted.created_at,
+    referenceImageUrl: refUrl,
   };
 }
 
@@ -325,6 +432,7 @@ export interface ImageGenerationRow {
   gemini_model: string | null;
   source: string | null;
   created_at: string;
+  reference_urls: string[] | null;
 }
 
 export async function listImageGenerations(params: {
@@ -333,7 +441,7 @@ export async function listImageGenerations(params: {
 }): Promise<ImageGenerationRow[]> {
   const limit = Math.min(Math.max(params.limit ?? 24, 1), 100);
   const offset = Math.max(params.offset ?? 0, 0);
-  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at&order=created_at.desc&limit=${limit}&offset=${offset}`;
+  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at,reference_urls&order=created_at.desc&limit=${limit}&offset=${offset}`;
   const res = await fetch(url, {
     headers: {
       apikey: SERVICE_ROLE || SUPABASE_ANON,

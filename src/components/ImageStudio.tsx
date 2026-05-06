@@ -16,6 +16,7 @@ interface ImageGenerationRow {
   gemini_model: string | null;
   source: string | null;
   created_at: string;
+  reference_urls: string[] | null;
 }
 
 interface ConnectorConfig {
@@ -33,6 +34,7 @@ export function ImageStudio() {
 
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("1:1");
+  const [refUrl, setRefUrl] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
   const [latest, setLatest] = React.useState<ImageGenerationRow | null>(null);
 
@@ -91,12 +93,21 @@ export function ImageStudio() {
 
   const generate = async () => {
     if (!prompt.trim() || generating) return;
+    const trimmedRef = refUrl.trim();
+    if (trimmedRef && !/^https?:\/\//i.test(trimmedRef)) {
+      toast("Reference URL must start with http(s)://");
+      return;
+    }
     setGenerating(true);
     try {
       const res = await fetch("/api/image-studio/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), aspectRatio }),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          aspectRatio,
+          referenceImageUrl: trimmedRef || undefined,
+        }),
       });
       const json = await res.json();
       if (!json.ok) {
@@ -107,17 +118,26 @@ export function ImageStudio() {
         }
         return;
       }
+      const r = json.result as {
+        id: string;
+        imageUrl: string;
+        prompt: string;
+        aspectRatio: string | null;
+        geminiModel: string;
+        createdAt: string;
+        referenceImageUrl: string | null;
+      };
       const row: ImageGenerationRow = {
-        id: json.result.id,
-        prompt: json.result.prompt,
-        aspect_ratio: json.result.aspectRatio,
-        image_url: json.result.imageUrl,
-        gemini_model: json.result.geminiModel,
+        id: r.id,
+        prompt: r.prompt,
+        aspect_ratio: r.aspectRatio,
+        image_url: r.imageUrl,
+        gemini_model: r.geminiModel,
         source: "dashboard",
-        created_at: json.result.createdAt,
+        created_at: r.createdAt,
+        reference_urls: r.referenceImageUrl ? [r.referenceImageUrl] : null,
       };
       setLatest(row);
-      // Refresh gallery from page 0 so the new image shows up.
       loadGallery(0);
     } catch (e) {
       toast(`Failed: ${(e as Error).message}`);
@@ -194,6 +214,24 @@ export function ImageStudio() {
                 {generating ? "Generating…" : "Generate"}
               </Button>
             </div>
+            <div style={{ marginTop: 12 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginBottom: 6,
+                }}
+              >
+                Reference image URL (optional — image-to-image)
+              </div>
+              <input
+                type="url"
+                placeholder="https://example.com/image.jpg"
+                value={refUrl}
+                onChange={(e) => setRefUrl(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
           </Section>
 
           <Section title="2. Latest">
@@ -244,6 +282,14 @@ export function ImageStudio() {
                   onClick={() => window.open(latest.image_url, "_blank", "noopener")}
                 >
                   Open full-res
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRefUrl(latest.image_url)}
+                  title="Use this image as the reference for the next generation"
+                >
+                  Edit this image
                 </Button>
               </div>
             )}
@@ -383,6 +429,7 @@ export function ImageStudio() {
                 cursor: "pointer",
                 aspectRatio: "1 / 1",
                 display: "flex",
+                position: "relative",
               }}
               title={row.prompt}
             >
@@ -397,6 +444,24 @@ export function ImageStudio() {
                   display: "block",
                 }}
               />
+              {row.reference_urls && row.reference_urls.length > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    padding: "2px 6px",
+                    fontSize: 10,
+                    fontFamily: "var(--font-geist-mono), monospace",
+                    background: "color-mix(in oklab, black 65%, transparent)",
+                    color: "white",
+                    borderRadius: 6,
+                  }}
+                  title="Generated from a reference image"
+                >
+                  edit
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -455,6 +520,19 @@ export function ImageStudio() {
           >
             {active.prompt}
           </div>
+          {active.reference_urls && active.reference_urls.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
+              Reference:{" "}
+              <a
+                href={active.reference_urls[0]}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--ink-2)" }}
+              >
+                {active.reference_urls[0]}
+              </a>
+            </div>
+          )}
           <div
             style={{
               fontSize: 11,
@@ -490,6 +568,16 @@ export function ImageStudio() {
               onClick={() => copy(active.prompt, "Prompt copied")}
             >
               Copy prompt
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setRefUrl(active.image_url);
+                setActive(null);
+              }}
+            >
+              Edit this image
             </Button>
           </div>
         </Modal>

@@ -51,18 +51,35 @@ type JsonRpcResponse = {
 const TOOL_DEFINITION = {
   name: "generate_image",
   description:
-    "Generate an image from a text prompt using Google Gemini. Returns a public URL pointing to the stored PNG/JPEG. Useful for creating illustrations, mockups, marketing assets, or visual ideas on demand.",
+    "Generate an image from a text prompt using Google Gemini. Returns a public URL pointing to the stored PNG/JPEG. Optionally accepts a reference image_url (or base64) for image-to-image edits — pass the URL of a previous output plus a prompt like \"make it green\" to iterate.",
   inputSchema: {
     type: "object",
     properties: {
       prompt: {
         type: "string",
-        description: "Text description of the image to generate.",
+        description: "Text description of the image to generate (or the edit instruction when a reference image is supplied).",
       },
       aspect_ratio: {
         type: "string",
         enum: [...ASPECT_RATIOS],
         description: "Optional aspect ratio. Defaults to 1:1.",
+      },
+      image_url: {
+        type: "string",
+        format: "uri",
+        description:
+          "Optional public http(s) URL of a reference image. When provided, the model edits / re-renders that image guided by the prompt (image-to-image). Useful for iterative tweaks (e.g. \"make it green\" with the previous output URL).",
+      },
+      image_base64: {
+        type: "string",
+        description:
+          "Optional base64-encoded reference image bytes (alternative to image_url). Pair with image_mime_type when set.",
+      },
+      image_mime_type: {
+        type: "string",
+        enum: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+        description:
+          "MIME type for image_base64. Defaults to image/png.",
       },
     },
     required: ["prompt"],
@@ -133,7 +150,13 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
   if (method === "tools/call") {
     const params = (req.params ?? {}) as {
       name?: string;
-      arguments?: { prompt?: unknown; aspect_ratio?: unknown };
+      arguments?: {
+        prompt?: unknown;
+        aspect_ratio?: unknown;
+        image_url?: unknown;
+        image_base64?: unknown;
+        image_mime_type?: unknown;
+      };
     };
     if (params.name !== "generate_image") {
       return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
@@ -150,6 +173,41 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
         ? (aspectRaw as AspectRatio)
         : undefined;
 
+    let referenceImageUrl: string | undefined;
+    if (args.image_url !== undefined) {
+      if (typeof args.image_url !== "string") {
+        return rpcError(id, -32602, "image_url must be a string");
+      }
+      try {
+        const parsed = new URL(args.image_url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return rpcError(id, -32602, `image_url must be http(s); got ${parsed.protocol}`);
+        }
+      } catch {
+        return rpcError(id, -32602, `Invalid image_url: ${args.image_url}`);
+      }
+      referenceImageUrl = args.image_url;
+    }
+
+    let referenceImageBase64: string | undefined;
+    let referenceImageMimeType: string | undefined;
+    if (args.image_base64 !== undefined) {
+      if (typeof args.image_base64 !== "string") {
+        return rpcError(id, -32602, "image_base64 must be a base64-encoded string");
+      }
+      referenceImageBase64 = args.image_base64;
+      if (args.image_mime_type !== undefined) {
+        if (typeof args.image_mime_type !== "string") {
+          return rpcError(id, -32602, "image_mime_type must be a string");
+        }
+        referenceImageMimeType = args.image_mime_type;
+      }
+    }
+
+    if (referenceImageUrl && referenceImageBase64) {
+      return rpcError(id, -32602, "Provide either image_url or image_base64, not both");
+    }
+
     if (!imageGenerationConfigured()) {
       return rpcError(id, -32002, "Image generation not configured on the server");
     }
@@ -158,12 +216,11 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
       const result = await generateImage({
         prompt,
         aspectRatio,
+        referenceImageUrl,
+        referenceImageBase64,
+        referenceImageMimeType,
         source: "mcp",
       });
-      // MCP tool result: content array with text + (optionally) image refs.
-      // Returning the URL as text is the most portable shape; clients that
-      // can render images can also pass image content blocks, but text+URL
-      // works everywhere.
       return rpcResult(id, {
         content: [
           {
@@ -177,6 +234,7 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
           aspect_ratio: result.aspectRatio,
           gemini_model: result.geminiModel,
           created_at: result.createdAt,
+          reference_image_url: result.referenceImageUrl,
         },
       });
     } catch (err) {
