@@ -11,6 +11,7 @@ import {
   ASPECT_RATIOS,
   RateLimitError,
   generateImage,
+  generateImageBatch,
   imageGenerationConfigured,
 } from "@/lib/image-generation";
 
@@ -26,6 +27,7 @@ const Body = z.object({
     .url()
     .refine((u) => /^https?:\/\//i.test(u), "must be http(s)")
     .optional(),
+  count: z.number().int().min(1).max(4).optional(),
 });
 
 export async function POST(req: Request) {
@@ -48,13 +50,26 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const result = await generateImage({
+    const count = parsed.count ?? 1;
+    if (count === 1) {
+      const result = await generateImage({
+        prompt: parsed.prompt,
+        aspectRatio: parsed.aspectRatio,
+        referenceImageUrl: parsed.referenceImageUrl,
+        source: "dashboard",
+      });
+      // Single-image response keeps `result` for back-compat; also expose
+      // `results` so the UI can use one shape.
+      return NextResponse.json({ ok: true, result, results: [result] });
+    }
+    const results = await generateImageBatch({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
       referenceImageUrl: parsed.referenceImageUrl,
       source: "dashboard",
+      count,
     });
-    return NextResponse.json({ ok: true, result });
+    return NextResponse.json({ ok: true, result: results[0], results });
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(
