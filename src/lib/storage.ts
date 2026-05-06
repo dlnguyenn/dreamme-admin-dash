@@ -25,6 +25,41 @@ export function storageBucket(): string {
 }
 
 /**
+ * Upload raw bytes to a Supabase Storage bucket. Returns the public URL.
+ * Used by `fetchToStorage` and by other callers (e.g. image generation)
+ * that already hold the bytes in memory.
+ */
+export async function uploadBytesToStorage(
+  bucket: string,
+  path: string,
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+): Promise<string> {
+  if (!storageConfigured()) {
+    throw new Error("Supabase storage not configured");
+  }
+  const upload = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        "Content-Type": contentType,
+        "x-upsert": "true",
+      },
+      body: bytes as BodyInit,
+    },
+  );
+  if (!upload.ok) {
+    throw new Error(
+      `storage upload failed: ${upload.status} ${await upload.text()}`,
+    );
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
+}
+
+/**
  * Fetch a remote URL and upload the bytes to Supabase Storage under the
  * given bucket path. Returns the public URL.
  *
@@ -35,9 +70,6 @@ export async function fetchToStorage(
   remoteUrl: string,
   path: string,
 ): Promise<string> {
-  if (!storageConfigured()) {
-    throw new Error("Supabase storage not configured");
-  }
   if (!/^https?:\/\//i.test(remoteUrl)) {
     throw new Error("Only http(s) URLs are supported for remote fetch");
   }
@@ -55,26 +87,7 @@ export async function fetchToStorage(
   const contentType =
     remote.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
   const arrayBuf = await remote.arrayBuffer();
-
-  const upload = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`,
-    {
-      method: "POST",
-      headers: {
-        apikey: SERVICE_ROLE,
-        Authorization: `Bearer ${SERVICE_ROLE}`,
-        "Content-Type": contentType,
-        "x-upsert": "true",
-      },
-      body: arrayBuf,
-    },
-  );
-  if (!upload.ok) {
-    throw new Error(
-      `storage upload failed: ${upload.status} ${await upload.text()}`,
-    );
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+  return uploadBytesToStorage(BUCKET, path, arrayBuf, contentType);
 }
 
 /**
