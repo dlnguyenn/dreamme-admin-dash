@@ -21,6 +21,11 @@ export const maxDuration = 300;
 const Body = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  referenceImageUrls: z
+    .array(z.string().url().refine((u) => /^https?:\/\//i.test(u), "must be http(s)"))
+    .max(3)
+    .optional(),
+  count: z.number().int().min(1).max(4).optional(),
 });
 
 export async function POST(req: Request) {
@@ -43,12 +48,14 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const result = await generateImage({
+    const { batchId, images } = await generateImage({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
+      referenceImageUrls: parsed.referenceImageUrls,
+      count: parsed.count,
       source: "dashboard",
     });
-    return NextResponse.json({ ok: true, result });
+    return NextResponse.json({ ok: true, batchId, images });
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(

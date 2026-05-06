@@ -60,6 +60,20 @@ const TOOL_DEFINITION = {
         enum: [...ASPECT_RATIOS],
         description: "Optional aspect ratio. Defaults to 1:1.",
       },
+      reference_image_urls: {
+        type: "array",
+        items: { type: "string", format: "uri" },
+        maxItems: 3,
+        description:
+          "Optional public http(s) URLs (max 3) to reference images that condition the generation (style, subject, composition).",
+      },
+      count: {
+        type: "integer",
+        minimum: 1,
+        maximum: 4,
+        default: 1,
+        description: "Number of variations to generate (1-4). Defaults to 1.",
+      },
     },
     required: ["prompt"],
   },
@@ -130,7 +144,12 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
   if (method === "tools/call") {
     const params = (req.params ?? {}) as {
       name?: string;
-      arguments?: { prompt?: unknown; aspect_ratio?: unknown };
+      arguments?: {
+        prompt?: unknown;
+        aspect_ratio?: unknown;
+        reference_image_urls?: unknown;
+        count?: unknown;
+      };
     };
     if (params.name !== "generate_image") {
       return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
@@ -147,33 +166,72 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
         ? (aspectRaw as AspectRatio)
         : undefined;
 
+    let referenceImageUrls: string[] | undefined;
+    if (args.reference_image_urls !== undefined) {
+      if (!Array.isArray(args.reference_image_urls)) {
+        return rpcError(id, -32602, "reference_image_urls must be an array of strings");
+      }
+      if (args.reference_image_urls.length > 3) {
+        return rpcError(id, -32602, "reference_image_urls accepts at most 3 URLs");
+      }
+      const urls: string[] = [];
+      for (const u of args.reference_image_urls) {
+        if (typeof u !== "string") {
+          return rpcError(id, -32602, "reference_image_urls entries must be strings");
+        }
+        try {
+          const parsed = new URL(u);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return rpcError(id, -32602, `reference_image_urls must be http(s); got ${parsed.protocol}`);
+          }
+        } catch {
+          return rpcError(id, -32602, `Invalid reference_image_urls entry: ${u}`);
+        }
+        urls.push(u);
+      }
+      referenceImageUrls = urls;
+    }
+
+    let count: number | undefined;
+    if (args.count !== undefined) {
+      if (typeof args.count !== "number" || !Number.isInteger(args.count)) {
+        return rpcError(id, -32602, "count must be an integer");
+      }
+      if (args.count < 1 || args.count > 4) {
+        return rpcError(id, -32602, "count must be between 1 and 4");
+      }
+      count = args.count;
+    }
+
     if (!imageGenerationConfigured()) {
       return rpcError(id, -32002, "Image generation not configured on the server");
     }
 
     try {
-      const result = await generateImage({
+      const { batchId, images } = await generateImage({
         prompt,
         aspectRatio,
+        referenceImageUrls,
+        count,
         source: "mcp",
       });
-      // MCP tool result: content array with text + (optionally) image refs.
-      // Returning the URL as text is the most portable shape; clients that
-      // can render images can also pass image content blocks, but text+URL
-      // works everywhere.
+      // One text content block per generated image (URL on its own line)
+      // is the most portable shape across MCP clients.
       return rpcResult(id, {
-        content: [
-          {
-            type: "text",
-            text: result.imageUrl,
-          },
-        ],
+        content: images.map((img) => ({
+          type: "text",
+          text: img.imageUrl,
+        })),
         structuredContent: {
-          image_url: result.imageUrl,
-          id: result.id,
-          aspect_ratio: result.aspectRatio,
-          gemini_model: result.geminiModel,
-          created_at: result.createdAt,
+          batch_id: batchId,
+          images: images.map((img) => ({
+            image_url: img.imageUrl,
+            id: img.id,
+            aspect_ratio: img.aspectRatio,
+            gemini_model: img.geminiModel,
+            created_at: img.createdAt,
+            reference_urls: img.referenceUrls,
+          })),
         },
       });
     } catch (err) {

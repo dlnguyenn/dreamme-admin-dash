@@ -16,6 +16,19 @@ interface ImageGenerationRow {
   gemini_model: string | null;
   source: string | null;
   created_at: string;
+  reference_urls: string[] | null;
+  batch_id: string | null;
+}
+
+interface GeneratedImage {
+  id: string;
+  imageUrl: string;
+  prompt: string;
+  aspectRatio: string | null;
+  geminiModel: string;
+  createdAt: string;
+  referenceUrls: string[];
+  batchId: string;
 }
 
 interface ConnectorConfig {
@@ -33,8 +46,11 @@ export function ImageStudio() {
 
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("1:1");
+  const [count, setCount] = React.useState<number>(1);
+  const [refUrls, setRefUrls] = React.useState<string[]>([]);
+  const [refDraft, setRefDraft] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
-  const [latest, setLatest] = React.useState<ImageGenerationRow | null>(null);
+  const [latest, setLatest] = React.useState<GeneratedImage[]>([]);
 
   const [rows, setRows] = React.useState<ImageGenerationRow[]>([]);
   const [page, setPage] = React.useState(0);
@@ -89,6 +105,29 @@ export function ImageStudio() {
     loadGallery(0);
   }, [loadGallery]);
 
+  const addRefUrl = () => {
+    const v = refDraft.trim();
+    if (!v) return;
+    if (!/^https?:\/\//i.test(v)) {
+      toast("Reference URL must start with http(s)://");
+      return;
+    }
+    if (refUrls.length >= 3) {
+      toast("Maximum 3 reference images");
+      return;
+    }
+    if (refUrls.includes(v)) {
+      setRefDraft("");
+      return;
+    }
+    setRefUrls([...refUrls, v]);
+    setRefDraft("");
+  };
+
+  const removeRefUrl = (url: string) => {
+    setRefUrls(refUrls.filter((u) => u !== url));
+  };
+
   const generate = async () => {
     if (!prompt.trim() || generating) return;
     setGenerating(true);
@@ -96,7 +135,12 @@ export function ImageStudio() {
       const res = await fetch("/api/image-studio/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), aspectRatio }),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          aspectRatio,
+          count,
+          referenceImageUrls: refUrls.length ? refUrls : undefined,
+        }),
       });
       const json = await res.json();
       if (!json.ok) {
@@ -107,17 +151,29 @@ export function ImageStudio() {
         }
         return;
       }
-      const row: ImageGenerationRow = {
-        id: json.result.id,
-        prompt: json.result.prompt,
-        aspect_ratio: json.result.aspectRatio,
-        image_url: json.result.imageUrl,
-        gemini_model: json.result.geminiModel,
-        source: "dashboard",
-        created_at: json.result.createdAt,
-      };
-      setLatest(row);
-      // Refresh gallery from page 0 so the new image shows up.
+      const images: GeneratedImage[] = (json.images ?? []).map(
+        (img: {
+          id: string;
+          imageUrl: string;
+          prompt: string;
+          aspectRatio: string | null;
+          geminiModel: string;
+          createdAt: string;
+          referenceUrls: string[];
+          batchId: string;
+        }) => ({
+          id: img.id,
+          imageUrl: img.imageUrl,
+          prompt: img.prompt,
+          aspectRatio: img.aspectRatio,
+          geminiModel: img.geminiModel,
+          createdAt: img.createdAt,
+          referenceUrls: img.referenceUrls ?? [],
+          batchId: img.batchId,
+        }),
+      );
+      setLatest(images);
+      // Refresh gallery from page 0 so new images show up.
       loadGallery(0);
     } catch (e) {
       toast(`Failed: ${(e as Error).message}`);
@@ -186,6 +242,18 @@ export function ImageStudio() {
                   </option>
                 ))}
               </select>
+              <select
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+                style={{ ...inputStyle, width: "auto" }}
+                title="Number of variations"
+              >
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n}× {n === 1 ? "image" : "images"}
+                  </option>
+                ))}
+              </select>
               <Button
                 variant="primary"
                 onClick={generate}
@@ -194,57 +262,175 @@ export function ImageStudio() {
                 {generating ? "Generating…" : "Generate"}
               </Button>
             </div>
-          </Section>
-
-          <Section title="2. Latest">
-            <div
-              style={{
-                aspectRatio: aspectRatioToCss(latest?.aspect_ratio ?? aspectRatio),
-                background: "var(--surface-2)",
-                border: "1px solid var(--line)",
-                borderRadius: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                maxHeight: 520,
-              }}
-            >
-              {latest ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={latest.image_url}
-                  alt={latest.prompt}
-                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                />
-              ) : (
-                <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>
-              )}
-            </div>
-            {latest && (
+            <div style={{ marginTop: 12 }}>
               <div
                 style={{
-                  display: "flex",
-                  gap: 8,
-                  marginTop: 10,
-                  flexWrap: "wrap",
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginBottom: 6,
                 }}
               >
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={<Icons.Copy />}
-                  onClick={() => copy(latest.image_url, "Image URL copied")}
-                >
-                  Copy URL
-                </Button>
+                Reference images (optional, max 3)
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="url"
+                  placeholder="https://example.com/image.jpg"
+                  value={refDraft}
+                  onChange={(e) => setRefDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addRefUrl();
+                    }
+                  }}
+                  style={inputStyle}
+                  disabled={refUrls.length >= 3}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.open(latest.image_url, "_blank", "noopener")}
+                  onClick={addRefUrl}
+                  disabled={!refDraft.trim() || refUrls.length >= 3}
                 >
-                  Open full-res
+                  Add
                 </Button>
+              </div>
+              {refUrls.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginTop: 8,
+                  }}
+                >
+                  {refUrls.map((u) => (
+                    <span
+                      key={u}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "4px 8px",
+                        fontSize: 11,
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--line)",
+                        borderRadius: 14,
+                        maxWidth: 280,
+                      }}
+                      title={u}
+                    >
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {u}
+                      </span>
+                      <button
+                        onClick={() => removeRefUrl(u)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "var(--ink-3)",
+                          padding: 0,
+                          fontSize: 14,
+                          lineHeight: 1,
+                        }}
+                        aria-label={`Remove ${u}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Section>
+
+          <Section title="2. Latest">
+            {latest.length === 0 ? (
+              <div
+                style={{
+                  aspectRatio: aspectRatioToCss(aspectRatio),
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  maxHeight: 520,
+                }}
+              >
+                <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    latest.length === 1
+                      ? "1fr"
+                      : `repeat(${Math.min(latest.length, 2)}, minmax(0, 1fr))`,
+                  gap: 10,
+                }}
+              >
+                {latest.map((img) => (
+                  <div key={img.id}>
+                    <div
+                      style={{
+                        aspectRatio: aspectRatioToCss(img.aspectRatio),
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        overflow: "hidden",
+                        maxHeight: 520,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.imageUrl}
+                        alt={img.prompt}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
+                      />
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        marginTop: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Icons.Copy />}
+                        onClick={() => copy(img.imageUrl, "Image URL copied")}
+                      >
+                        Copy URL
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          window.open(img.imageUrl, "_blank", "noopener")
+                        }
+                      >
+                        Open
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </Section>
@@ -370,35 +556,58 @@ export function ImageStudio() {
             gap: 12,
           }}
         >
-          {rows.map((row) => (
-            <button
-              key={row.id}
-              onClick={() => setActive(row)}
-              style={{
-                padding: 0,
-                background: "var(--surface-2)",
-                border: "1px solid var(--line)",
-                borderRadius: 10,
-                overflow: "hidden",
-                cursor: "pointer",
-                aspectRatio: "1 / 1",
-                display: "flex",
-              }}
-              title={row.prompt}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={row.image_url}
-                alt={row.prompt}
+          {rows.map((row) => {
+            const batchSize = row.batch_id
+              ? rows.filter((r) => r.batch_id === row.batch_id).length
+              : 1;
+            return (
+              <button
+                key={row.id}
+                onClick={() => setActive(row)}
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
+                  padding: 0,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  aspectRatio: "1 / 1",
+                  display: "flex",
+                  position: "relative",
                 }}
-              />
-            </button>
-          ))}
+                title={row.prompt}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={row.image_url}
+                  alt={row.prompt}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+                {batchSize > 1 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      padding: "2px 6px",
+                      fontSize: 10,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      background: "color-mix(in oklab, black 65%, transparent)",
+                      color: "white",
+                      borderRadius: 6,
+                    }}
+                  >
+                    of {batchSize}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
         <div
           style={{
@@ -430,20 +639,44 @@ export function ImageStudio() {
         </div>
       </Section>
 
-      {active && (
+      {active && (() => {
+        const siblings = active.batch_id
+          ? rows.filter((r) => r.batch_id === active.batch_id)
+          : [active];
+        return (
         <Modal onClose={() => setActive(null)}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={active.image_url}
-            alt={active.prompt}
+          <div
             style={{
-              maxWidth: "100%",
-              maxHeight: "70vh",
-              objectFit: "contain",
-              borderRadius: 8,
-              background: "var(--surface-2)",
+              display: "grid",
+              gridTemplateColumns:
+                siblings.length === 1
+                  ? "1fr"
+                  : `repeat(${Math.min(siblings.length, 2)}, minmax(0, 1fr))`,
+              gap: 10,
             }}
-          />
+          >
+            {siblings.map((s) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={s.id}
+                src={s.image_url}
+                alt={s.prompt}
+                style={{
+                  width: "100%",
+                  maxHeight: "60vh",
+                  objectFit: "contain",
+                  borderRadius: 8,
+                  background: "var(--surface-2)",
+                  cursor: s.id !== active.id ? "pointer" : "default",
+                  outline:
+                    s.id === active.id
+                      ? "2px solid var(--accent)"
+                      : "none",
+                }}
+                onClick={() => s.id !== active.id && setActive(s)}
+              />
+            ))}
+          </div>
           <div
             style={{
               fontSize: 13,
@@ -455,6 +688,24 @@ export function ImageStudio() {
           >
             {active.prompt}
           </div>
+          {active.reference_urls && active.reference_urls.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
+              References:{" "}
+              {active.reference_urls.map((u, i) => (
+                <React.Fragment key={u}>
+                  {i > 0 && ", "}
+                  <a
+                    href={u}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "var(--ink-2)" }}
+                  >
+                    [{i + 1}]
+                  </a>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
           <div
             style={{
               fontSize: 11,
@@ -467,6 +718,7 @@ export function ImageStudio() {
             {active.gemini_model ?? "?"} ·{" "}
             {new Date(active.created_at).toLocaleString()} ·{" "}
             {active.source ?? "?"}
+            {siblings.length > 1 && ` · batch of ${siblings.length}`}
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             <Button
@@ -493,7 +745,8 @@ export function ImageStudio() {
             </Button>
           </div>
         </Modal>
-      )}
+        );
+      })()}
     </div>
   );
 }
