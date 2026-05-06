@@ -120,6 +120,180 @@ function rpcResult(id: string | number | null, result: unknown): JsonRpcResponse
   return { jsonrpc: "2.0", id, result };
 }
 
+async function handleGenerateImageStreaming(
+  reqId: string | number | null,
+  args: {
+    prompt?: unknown;
+    aspect_ratio?: unknown;
+    image_url?: unknown;
+    image_base64?: unknown;
+    image_mime_type?: unknown;
+  },
+  progressToken: string | number | undefined,
+): Promise<Response> {
+  // Validate args up-front so we can short-circuit with a non-streaming
+  // error response when something's wrong with the input.
+  const prompt = typeof args.prompt === "string" ? args.prompt : "";
+  if (!prompt.trim()) {
+    return formatResponse(
+      rpcError(reqId, -32602, "prompt is required and must be a non-empty string"),
+      true,
+    );
+  }
+  const aspectRaw =
+    typeof args.aspect_ratio === "string" ? args.aspect_ratio : undefined;
+  const aspectRatio =
+    aspectRaw && (ASPECT_RATIOS as readonly string[]).includes(aspectRaw)
+      ? (aspectRaw as AspectRatio)
+      : undefined;
+
+  let referenceImageUrl: string | undefined;
+  if (args.image_url !== undefined) {
+    if (typeof args.image_url !== "string") {
+      return formatResponse(rpcError(reqId, -32602, "image_url must be a string"), true);
+    }
+    try {
+      const parsed = new URL(args.image_url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return formatResponse(
+          rpcError(reqId, -32602, `image_url must be http(s); got ${parsed.protocol}`),
+          true,
+        );
+      }
+    } catch {
+      return formatResponse(
+        rpcError(reqId, -32602, `Invalid image_url: ${args.image_url}`),
+        true,
+      );
+    }
+    referenceImageUrl = args.image_url;
+  }
+
+  let referenceImageBase64: string | undefined;
+  let referenceImageMimeType: string | undefined;
+  if (args.image_base64 !== undefined) {
+    if (typeof args.image_base64 !== "string") {
+      return formatResponse(
+        rpcError(reqId, -32602, "image_base64 must be a base64-encoded string"),
+        true,
+      );
+    }
+    referenceImageBase64 = args.image_base64;
+    if (args.image_mime_type !== undefined) {
+      if (typeof args.image_mime_type !== "string") {
+        return formatResponse(
+          rpcError(reqId, -32602, "image_mime_type must be a string"),
+          true,
+        );
+      }
+      referenceImageMimeType = args.image_mime_type;
+    }
+  }
+
+  if (referenceImageUrl && referenceImageBase64) {
+    return formatResponse(
+      rpcError(reqId, -32602, "Provide either image_url or image_base64, not both"),
+      true,
+    );
+  }
+
+  if (!imageGenerationConfigured()) {
+    return formatResponse(
+      rpcError(reqId, -32002, "Image generation not configured on the server"),
+      true,
+    );
+  }
+
+  // Stream the response. While the Gemini call is running we send
+  // `notifications/progress` every 10s. MCP clients that honor
+  // `resetTimeoutOnProgress` (Claude Code, claude.ai connectors) will
+  // hold the connection open instead of giving up at their default
+  // 60s tool-call ceiling.
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (obj: unknown) => {
+        controller.enqueue(
+          encoder.encode(`event: message\ndata: ${JSON.stringify(obj)}\n\n`),
+        );
+      };
+
+      let progress = 0;
+      const startedAt = Date.now();
+      // Only emit progress notifications when the client provided a
+      // progressToken (per MCP spec). Without one, clients are not
+      // expected to extend their timeout on progress.
+      const ticker = progressToken !== undefined
+        ? setInterval(() => {
+            progress += 1;
+            const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+            send({
+              jsonrpc: "2.0",
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress,
+                message: `Generating image (${elapsedSec}s elapsed)…`,
+              },
+            });
+          }, 10_000)
+        : null;
+
+      try {
+        const result = await generateImage({
+          prompt,
+          aspectRatio,
+          referenceImageUrl,
+          referenceImageBase64,
+          referenceImageMimeType,
+          source: "mcp",
+          // Generous server-side budget. Gemini 3.1 image preview can
+          // take 60-120s; we hold the connection open via progress
+          // notifications.
+          timeoutMs: 240_000,
+        });
+        send(
+          rpcResult(reqId, {
+            content: [{ type: "text", text: result.imageUrl }],
+            structuredContent: {
+              image_url: result.imageUrl,
+              id: result.id,
+              aspect_ratio: result.aspectRatio,
+              gemini_model: result.geminiModel,
+              created_at: result.createdAt,
+              reference_image_url: result.referenceImageUrl,
+            },
+          }),
+        );
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          send(
+            rpcError(reqId, -32003, err.message, {
+              window: err.window,
+              limit: err.limit,
+            }),
+          );
+        } else {
+          const message = (err as Error).message ?? "image generation failed";
+          send(rpcError(reqId, -32000, message));
+        }
+      } finally {
+        if (ticker) clearInterval(ticker);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
   const id = req.id ?? null;
   const method = req.method;
@@ -148,105 +322,10 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
   }
 
   if (method === "tools/call") {
-    const params = (req.params ?? {}) as {
-      name?: string;
-      arguments?: {
-        prompt?: unknown;
-        aspect_ratio?: unknown;
-        image_url?: unknown;
-        image_base64?: unknown;
-        image_mime_type?: unknown;
-      };
-    };
-    if (params.name !== "generate_image") {
-      return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
-    }
-    const args = params.arguments ?? {};
-    const prompt = typeof args.prompt === "string" ? args.prompt : "";
-    if (!prompt.trim()) {
-      return rpcError(id, -32602, "prompt is required and must be a non-empty string");
-    }
-    const aspectRaw =
-      typeof args.aspect_ratio === "string" ? args.aspect_ratio : undefined;
-    const aspectRatio =
-      aspectRaw && (ASPECT_RATIOS as readonly string[]).includes(aspectRaw)
-        ? (aspectRaw as AspectRatio)
-        : undefined;
-
-    let referenceImageUrl: string | undefined;
-    if (args.image_url !== undefined) {
-      if (typeof args.image_url !== "string") {
-        return rpcError(id, -32602, "image_url must be a string");
-      }
-      try {
-        const parsed = new URL(args.image_url);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          return rpcError(id, -32602, `image_url must be http(s); got ${parsed.protocol}`);
-        }
-      } catch {
-        return rpcError(id, -32602, `Invalid image_url: ${args.image_url}`);
-      }
-      referenceImageUrl = args.image_url;
-    }
-
-    let referenceImageBase64: string | undefined;
-    let referenceImageMimeType: string | undefined;
-    if (args.image_base64 !== undefined) {
-      if (typeof args.image_base64 !== "string") {
-        return rpcError(id, -32602, "image_base64 must be a base64-encoded string");
-      }
-      referenceImageBase64 = args.image_base64;
-      if (args.image_mime_type !== undefined) {
-        if (typeof args.image_mime_type !== "string") {
-          return rpcError(id, -32602, "image_mime_type must be a string");
-        }
-        referenceImageMimeType = args.image_mime_type;
-      }
-    }
-
-    if (referenceImageUrl && referenceImageBase64) {
-      return rpcError(id, -32602, "Provide either image_url or image_base64, not both");
-    }
-
-    if (!imageGenerationConfigured()) {
-      return rpcError(id, -32002, "Image generation not configured on the server");
-    }
-
-    try {
-      const result = await generateImage({
-        prompt,
-        aspectRatio,
-        referenceImageUrl,
-        referenceImageBase64,
-        referenceImageMimeType,
-        source: "mcp",
-      });
-      return rpcResult(id, {
-        content: [
-          {
-            type: "text",
-            text: result.imageUrl,
-          },
-        ],
-        structuredContent: {
-          image_url: result.imageUrl,
-          id: result.id,
-          aspect_ratio: result.aspectRatio,
-          gemini_model: result.geminiModel,
-          created_at: result.createdAt,
-          reference_image_url: result.referenceImageUrl,
-        },
-      });
-    } catch (err) {
-      if (err instanceof RateLimitError) {
-        return rpcError(id, -32003, err.message, {
-          window: err.window,
-          limit: err.limit,
-        });
-      }
-      const message = (err as Error).message ?? "image generation failed";
-      return rpcError(id, -32000, message);
-    }
+    // Reachable for unknown tool names only — `generate_image` is
+    // diverted to the streaming path in POST().
+    const params = (req.params ?? {}) as { name?: string };
+    return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
   }
 
   if (isNotification) return null;
@@ -294,11 +373,75 @@ export async function POST(req: Request): Promise<Response> {
 
   // Batch (array) requests. Per JSON-RPC 2.0, respond with an array of
   // responses for the non-notification entries; if all are notifications,
-  // respond with 202.
+  // respond with 202. Note: batched `generate_image` calls fall back to a
+  // single-shot, non-streaming response (no progress notifications). MCP
+  // clients we care about don't batch tool calls.
   if (Array.isArray(payload)) {
     const responses: JsonRpcResponse[] = [];
     for (const entry of payload) {
-      const res = await handleRequest(entry as JsonRpcRequest);
+      const e = entry as JsonRpcRequest;
+      if (
+        e.method === "tools/call" &&
+        ((e.params as { name?: string } | undefined)?.name === "generate_image")
+      ) {
+        // Synchronous fallback: invoke generateImage directly, no streaming.
+        const callParams = e.params as {
+          arguments?: {
+            prompt?: unknown;
+            aspect_ratio?: unknown;
+            image_url?: unknown;
+            image_base64?: unknown;
+            image_mime_type?: unknown;
+          };
+        };
+        const id = e.id ?? null;
+        try {
+          const args = callParams.arguments ?? {};
+          const prompt = typeof args.prompt === "string" ? args.prompt : "";
+          if (!prompt.trim()) {
+            responses.push(rpcError(id, -32602, "prompt is required"));
+            continue;
+          }
+          const aspectRaw =
+            typeof args.aspect_ratio === "string" ? args.aspect_ratio : undefined;
+          const aspectRatio =
+            aspectRaw && (ASPECT_RATIOS as readonly string[]).includes(aspectRaw)
+              ? (aspectRaw as AspectRatio)
+              : undefined;
+          const result = await generateImage({
+            prompt,
+            aspectRatio,
+            source: "mcp",
+            timeoutMs: 240_000,
+          });
+          responses.push(
+            rpcResult(id, {
+              content: [{ type: "text", text: result.imageUrl }],
+              structuredContent: {
+                image_url: result.imageUrl,
+                id: result.id,
+                aspect_ratio: result.aspectRatio,
+                gemini_model: result.geminiModel,
+                created_at: result.createdAt,
+                reference_image_url: result.referenceImageUrl,
+              },
+            }),
+          );
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            responses.push(
+              rpcError(id, -32003, err.message, {
+                window: err.window,
+                limit: err.limit,
+              }),
+            );
+          } else {
+            responses.push(rpcError(id, -32000, (err as Error).message));
+          }
+        }
+        continue;
+      }
+      const res = await handleRequest(e);
       if (res) responses.push(res);
     }
     if (responses.length === 0) {
@@ -318,6 +461,37 @@ export async function POST(req: Request): Promise<Response> {
       });
     }
     return NextResponse.json(responses, { status: 200 });
+  }
+
+  // Special case: tools/call generate_image runs as a streaming response
+  // so we can emit notifications/progress during the Gemini call. This
+  // keeps MCP clients (claude.ai connectors, Claude Code) from giving
+  // up at their default 60s tool-call ceiling.
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    !Array.isArray(payload) &&
+    (payload as JsonRpcRequest).method === "tools/call"
+  ) {
+    const rpc = payload as JsonRpcRequest;
+    const callParams = (rpc.params ?? {}) as {
+      name?: string;
+      arguments?: {
+        prompt?: unknown;
+        aspect_ratio?: unknown;
+        image_url?: unknown;
+        image_base64?: unknown;
+        image_mime_type?: unknown;
+      };
+      _meta?: { progressToken?: string | number };
+    };
+    if (callParams.name === "generate_image") {
+      return handleGenerateImageStreaming(
+        rpc.id ?? null,
+        callParams.arguments ?? {},
+        callParams._meta?.progressToken,
+      );
+    }
   }
 
   const single = await handleRequest(payload as JsonRpcRequest);
