@@ -35,8 +35,9 @@ export function ImageStudio() {
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("1:1");
   const [refUrl, setRefUrl] = React.useState("");
+  const [count, setCount] = React.useState<number>(1);
   const [generating, setGenerating] = React.useState(false);
-  const [latest, setLatest] = React.useState<ImageGenerationRow | null>(null);
+  const [latest, setLatest] = React.useState<ImageGenerationRow[]>([]);
 
   const [rows, setRows] = React.useState<ImageGenerationRow[]>([]);
   const [page, setPage] = React.useState(0);
@@ -107,6 +108,7 @@ export function ImageStudio() {
           prompt: prompt.trim(),
           aspectRatio,
           referenceImageUrl: trimmedRef || undefined,
+          count: count > 1 ? count : undefined,
         }),
       });
       const json = await res.json();
@@ -118,7 +120,7 @@ export function ImageStudio() {
         }
         return;
       }
-      const r = json.result as {
+      const results = (json.results ?? [json.result]) as Array<{
         id: string;
         imageUrl: string;
         prompt: string;
@@ -126,8 +128,8 @@ export function ImageStudio() {
         geminiModel: string;
         createdAt: string;
         referenceImageUrl: string | null;
-      };
-      const row: ImageGenerationRow = {
+      }>;
+      const rows: ImageGenerationRow[] = results.map((r) => ({
         id: r.id,
         prompt: r.prompt,
         aspect_ratio: r.aspectRatio,
@@ -136,8 +138,8 @@ export function ImageStudio() {
         source: "dashboard",
         created_at: r.createdAt,
         reference_urls: r.referenceImageUrl ? [r.referenceImageUrl] : null,
-      };
-      setLatest(row);
+      }));
+      setLatest(rows);
       loadGallery(0);
     } catch (e) {
       toast(`Failed: ${(e as Error).message}`);
@@ -206,6 +208,18 @@ export function ImageStudio() {
                   </option>
                 ))}
               </select>
+              <select
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+                style={{ ...inputStyle, width: "auto" }}
+                title="Number of variations (parallel generations sharing the same prompt + reference)"
+              >
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n}× {n === 1 ? "image" : "images"}
+                  </option>
+                ))}
+              </select>
               <Button
                 variant="primary"
                 onClick={generate}
@@ -235,62 +249,92 @@ export function ImageStudio() {
           </Section>
 
           <Section title="2. Latest">
-            <div
-              style={{
-                aspectRatio: aspectRatioToCss(latest?.aspect_ratio ?? aspectRatio),
-                background: "var(--surface-2)",
-                border: "1px solid var(--line)",
-                borderRadius: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                maxHeight: 520,
-              }}
-            >
-              {latest ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={latest.image_url}
-                  alt={latest.prompt}
-                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                />
-              ) : (
-                <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>
-              )}
-            </div>
-            {latest && (
+            {latest.length === 0 ? (
               <div
                 style={{
+                  aspectRatio: aspectRatioToCss(aspectRatio),
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
                   display: "flex",
-                  gap: 8,
-                  marginTop: 10,
-                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  maxHeight: 520,
                 }}
               >
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={<Icons.Copy />}
-                  onClick={() => copy(latest.image_url, "Image URL copied")}
-                >
-                  Copy URL
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => window.open(latest.image_url, "_blank", "noopener")}
-                >
-                  Open full-res
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setRefUrl(latest.image_url)}
-                  title="Use this image as the reference for the next generation"
-                >
-                  Edit this image
-                </Button>
+                <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    latest.length === 1
+                      ? "1fr"
+                      : `repeat(${Math.min(latest.length, 2)}, minmax(0, 1fr))`,
+                  gap: 10,
+                }}
+              >
+                {latest.map((row) => (
+                  <div key={row.id}>
+                    <div
+                      style={{
+                        aspectRatio: aspectRatioToCss(row.aspect_ratio),
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        overflow: "hidden",
+                        maxHeight: 520,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={row.image_url}
+                        alt={row.prompt}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
+                      />
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        marginTop: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Icons.Copy />}
+                        onClick={() => copy(row.image_url, "Image URL copied")}
+                      >
+                        Copy URL
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          window.open(row.image_url, "_blank", "noopener")
+                        }
+                      >
+                        Open
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRefUrl(row.image_url)}
+                        title="Use this image as the reference for the next generation"
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </Section>

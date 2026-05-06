@@ -20,6 +20,7 @@ import {
   ASPECT_RATIOS,
   RateLimitError,
   generateImage,
+  generateImageBatch,
   imageGenerationConfigured,
   type AspectRatio,
 } from "@/lib/image-generation";
@@ -81,6 +82,14 @@ const TOOL_DEFINITION = {
         description:
           "MIME type for image_base64. Defaults to image/png.",
       },
+      count: {
+        type: "integer",
+        minimum: 1,
+        maximum: 4,
+        default: 1,
+        description:
+          "Number of variations to generate in parallel (1-4). When >1, the response carries N text content blocks (one URL per line) and structuredContent.images is an array. Each variation uses the same prompt and reference image.",
+      },
     },
     required: ["prompt"],
   },
@@ -128,6 +137,7 @@ async function handleGenerateImageStreaming(
     image_url?: unknown;
     image_base64?: unknown;
     image_mime_type?: unknown;
+    count?: unknown;
   },
   progressToken: string | number | undefined,
 ): Promise<Response> {
@@ -197,6 +207,17 @@ async function handleGenerateImageStreaming(
     );
   }
 
+  let count = 1;
+  if (args.count !== undefined) {
+    if (typeof args.count !== "number" || !Number.isInteger(args.count)) {
+      return formatResponse(rpcError(reqId, -32602, "count must be an integer"), true);
+    }
+    if (args.count < 1 || args.count > 4) {
+      return formatResponse(rpcError(reqId, -32602, "count must be between 1 and 4"), true);
+    }
+    count = args.count;
+  }
+
   if (!imageGenerationConfigured()) {
     return formatResponse(
       rpcError(reqId, -32002, "Image generation not configured on the server"),
@@ -240,29 +261,72 @@ async function handleGenerateImageStreaming(
         : null;
 
       try {
-        const result = await generateImage({
+        const results = await generateImageBatch({
           prompt,
           aspectRatio,
           referenceImageUrl,
           referenceImageBase64,
           referenceImageMimeType,
           source: "mcp",
+          count,
           // Generous server-side budget. Gemini 3.1 image preview can
           // take 60-120s; we hold the connection open via progress
           // notifications.
           timeoutMs: 240_000,
+          onProgress:
+            progressToken !== undefined
+              ? (completed, total) => {
+                  send({
+                    jsonrpc: "2.0",
+                    method: "notifications/progress",
+                    params: {
+                      progressToken,
+                      progress: completed,
+                      total,
+                      message: `Generated ${completed}/${total} image${total > 1 ? "s" : ""}`,
+                    },
+                  });
+                }
+              : undefined,
         });
+
+        // Maintain back-compat: when count === 1, surface image_url at
+        // the top of structuredContent (existing consumers read it).
+        // For count > 1, also include `images: [...]`.
+        const single = results[0];
+        const structuredContent =
+          results.length === 1
+            ? {
+                image_url: single.imageUrl,
+                id: single.id,
+                aspect_ratio: single.aspectRatio,
+                gemini_model: single.geminiModel,
+                created_at: single.createdAt,
+                reference_image_url: single.referenceImageUrl,
+              }
+            : {
+                image_url: single.imageUrl,
+                id: single.id,
+                aspect_ratio: single.aspectRatio,
+                gemini_model: single.geminiModel,
+                created_at: single.createdAt,
+                reference_image_url: single.referenceImageUrl,
+                images: results.map((r) => ({
+                  image_url: r.imageUrl,
+                  id: r.id,
+                  aspect_ratio: r.aspectRatio,
+                  gemini_model: r.geminiModel,
+                  created_at: r.createdAt,
+                  reference_image_url: r.referenceImageUrl,
+                })),
+              };
         send(
           rpcResult(reqId, {
-            content: [{ type: "text", text: result.imageUrl }],
-            structuredContent: {
-              image_url: result.imageUrl,
-              id: result.id,
-              aspect_ratio: result.aspectRatio,
-              gemini_model: result.geminiModel,
-              created_at: result.createdAt,
-              reference_image_url: result.referenceImageUrl,
-            },
+            content: results.map((r) => ({
+              type: "text",
+              text: r.imageUrl,
+            })),
+            structuredContent,
           }),
         );
       } catch (err) {

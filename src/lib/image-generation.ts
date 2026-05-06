@@ -326,6 +326,9 @@ export async function generateImage(params: {
   source: "mcp" | "dashboard";
   /** Per-attempt timeout in ms. Default 60s — Gemini image gen is usually 5-25s. */
   timeoutMs?: number;
+  /** Internal: skip the rate-limit check (used by batch mode where the
+   *  caller already reserved budget for the whole batch). */
+  _skipRateLimit?: boolean;
 }): Promise<GenerateImageResult> {
   if (!imageGenerationConfigured()) {
     throw new Error(
@@ -335,7 +338,9 @@ export async function generateImage(params: {
   const prompt = params.prompt.trim();
   if (!prompt) throw new Error("prompt is required");
 
-  await checkRateLimit(1);
+  if (!params._skipRateLimit) {
+    await checkRateLimit(1);
+  }
 
   const referenceImages: ReferenceImage[] = [];
   if (params.referenceImageUrl) {
@@ -422,6 +427,53 @@ export async function generateImage(params: {
     createdAt: inserted.created_at,
     referenceImageUrl: refUrl,
   };
+}
+
+export const MAX_BATCH_COUNT = 4;
+
+/**
+ * Run `count` parallel `generateImage` calls with a shared rate-limit
+ * budget. Yields completed results to `onProgress` as they land so the
+ * caller can stream incremental updates over MCP notifications/progress.
+ */
+export async function generateImageBatch(params: {
+  prompt: string;
+  aspectRatio?: AspectRatio;
+  referenceImageUrl?: string;
+  referenceImageBase64?: string;
+  referenceImageMimeType?: string;
+  source: "mcp" | "dashboard";
+  count: number;
+  timeoutMs?: number;
+  onProgress?: (completed: number, total: number) => void;
+}): Promise<GenerateImageResult[]> {
+  const { count } = params;
+  if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH_COUNT) {
+    throw new Error(`count must be an integer between 1 and ${MAX_BATCH_COUNT}`);
+  }
+  await checkRateLimit(count);
+
+  let completed = 0;
+  const results = new Array<GenerateImageResult>(count);
+  await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      generateImage({
+        prompt: params.prompt,
+        aspectRatio: params.aspectRatio,
+        referenceImageUrl: params.referenceImageUrl,
+        referenceImageBase64: params.referenceImageBase64,
+        referenceImageMimeType: params.referenceImageMimeType,
+        source: params.source,
+        timeoutMs: params.timeoutMs,
+        _skipRateLimit: true,
+      }).then((r) => {
+        results[i] = r;
+        completed += 1;
+        params.onProgress?.(completed, count);
+      }),
+    ),
+  );
+  return results;
 }
 
 export interface ImageGenerationRow {
