@@ -19,6 +19,7 @@ import { SpendDashboard } from "./SpendDashboard";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
+import { ImageStudio } from "./ImageStudio";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -209,6 +210,10 @@ export function App() {
     // time and bounce non-admins back to a safe default.
     screen = role === "admin"
       ? <SynthIDResearch />
+      : <ComingSoon item={currentItem} />;
+  } else if (current === "image-studio") {
+    screen = role === "admin"
+      ? <ImageStudio />
       : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;
