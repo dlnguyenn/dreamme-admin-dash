@@ -1,16 +1,19 @@
 /**
- * Self-hosted Streamable-HTTP MCP server. claude.ai custom connectors and
- * Claude Code can both add this URL as an MCP server with bearer-token auth
- * and call the `generate_image` tool.
+ * Self-hosted Streamable-HTTP MCP server.
+ *
+ * Auth supports two modes:
+ *   1. Static bearer token via `MCP_IMAGE_BEARER_TOKEN` env var — simple
+ *      path for Claude Code, which lets you set custom headers in its
+ *      MCP client config.
+ *   2. OAuth 2.1 with dynamic client registration + PKCE — required by
+ *      claude.ai custom connectors, which don't accept static bearers.
+ *      Tokens issued by /api/oauth/token after the user authorizes via
+ *      /api/oauth/authorize. Discovery via /.well-known.
  *
  * We implement the JSON-RPC + Streamable-HTTP framing directly rather than
- * pulling in `@modelcontextprotocol/sdk` because the SDK's transports are
- * built around Node `IncomingMessage`/`ServerResponse` and don't fit
- * cleanly into the Next.js App Router's Web Request/Response model. The
- * surface we need (initialize, tools/list, tools/call) is small.
- *
- * Auth: every request must carry `Authorization: Bearer ${MCP_IMAGE_BEARER_TOKEN}`.
- * Stateless: no session IDs; each POST is self-contained.
+ * pulling in `@modelcontextprotocol/sdk` — the SDK's transports are built
+ * around Node `IncomingMessage`/`ServerResponse` and don't fit cleanly
+ * into Next.js App Router's Web Request/Response model.
  */
 import { NextResponse } from "next/server";
 import {
@@ -20,6 +23,7 @@ import {
   imageGenerationConfigured,
   type AspectRatio,
 } from "@/lib/image-generation";
+import { originFromRequest, validateBearer } from "@/lib/mcp-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,26 +69,25 @@ const TOOL_DEFINITION = {
   },
 } as const;
 
-function checkAuth(req: Request): boolean {
-  const expected = process.env.MCP_IMAGE_BEARER_TOKEN ?? "";
-  if (!expected) return false;
+async function extractAndValidateBearer(req: Request): Promise<boolean> {
   const header = req.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) return false;
-  return match[1] === expected;
+  return validateBearer(match[1]);
 }
 
-function unauthorized(): Response {
-  return new Response(
-    JSON.stringify({ error: "unauthorized" }),
-    {
-      status: 401,
-      headers: {
-        "Content-Type": "application/json",
-        "WWW-Authenticate": "Bearer",
-      },
+function unauthorized(req: Request): Response {
+  // Per RFC 9728 + the MCP auth spec, point clients at the protected-
+  // resource metadata so they can discover the OAuth authorization server.
+  const origin = originFromRequest(req);
+  const resourceMetadata = `${origin}/.well-known/oauth-protected-resource/api/mcp/image`;
+  return new Response(JSON.stringify({ error: "unauthorized" }), {
+    status: 401,
+    headers: {
+      "Content-Type": "application/json",
+      "WWW-Authenticate": `Bearer realm="mcp-image", resource_metadata="${resourceMetadata}"`,
     },
-  );
+  });
 }
 
 function rpcError(
@@ -216,7 +219,7 @@ function formatResponse(
 }
 
 export async function POST(req: Request): Promise<Response> {
-  if (!checkAuth(req)) return unauthorized();
+  if (!(await extractAndValidateBearer(req))) return unauthorized(req);
 
   let payload: unknown;
   try {
@@ -263,16 +266,16 @@ export async function POST(req: Request): Promise<Response> {
   return formatResponse(single, acceptsSse);
 }
 
-export function GET(req: Request): Response {
+export async function GET(req: Request): Promise<Response> {
   // We don't support server-initiated streams in stateless mode. Bearer
   // check still applies so unauthenticated probes can't fingerprint the
   // endpoint shape.
-  if (!checkAuth(req)) return unauthorized();
+  if (!(await extractAndValidateBearer(req))) return unauthorized(req);
   return new Response(null, { status: 405, headers: { Allow: "POST" } });
 }
 
-export function DELETE(req: Request): Response {
+export async function DELETE(req: Request): Promise<Response> {
   // No session to terminate.
-  if (!checkAuth(req)) return unauthorized();
+  if (!(await extractAndValidateBearer(req))) return unauthorized(req);
   return new Response(null, { status: 405, headers: { Allow: "POST" } });
 }
