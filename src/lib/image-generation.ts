@@ -90,15 +90,30 @@ async function checkRateLimit(count: number): Promise<void> {
 
   async function countSince(iso: string): Promise<number> {
     const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id&created_at=gte.${encodeURIComponent(iso)}`;
-    const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) {
-      // Fail-open on infra error rather than blocking generations.
+    // Cap at 8s so a stuck Supabase fetch can't eat the client's
+    // tool-call budget. Fail-open on timeout (treat as "no rows").
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const res = await fetch(url, {
+        headers,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        // Fail-open on infra error rather than blocking generations.
+        return 0;
+      }
+      const range = res.headers.get("content-range") ?? "";
+      // Format: "0-0/<count>" or "*/0"
+      const match = /\/(\d+)$/.exec(range);
+      return match ? Number(match[1]) : 0;
+    } catch {
+      // Fail-open on timeout / network error.
       return 0;
+    } finally {
+      clearTimeout(timer);
     }
-    const range = res.headers.get("content-range") ?? "";
-    // Format: "0-0/<count>" or "*/0"
-    const match = /\/(\d+)$/.exec(range);
-    return match ? Number(match[1]) : 0;
   }
 
   const [hourCount, dayCount] = await Promise.all([
@@ -121,7 +136,8 @@ async function checkRateLimit(count: number): Promise<void> {
   }
 }
 
-const REFERENCE_FETCH_TIMEOUT_MS = 10_000;
+const REFERENCE_FETCH_TIMEOUT_MS = 20_000;
+const REFERENCE_FETCH_MAX_RETRIES = 1;
 const REFERENCE_MAX_BYTES = 8 * 1024 * 1024;
 const REFERENCE_ALLOWED_MIME = new Set([
   "image/png",
@@ -148,37 +164,61 @@ async function fetchReferenceImage(url: string): Promise<ReferenceImage> {
       `Reference image URL must be http(s); got ${parsed.protocol}`,
     );
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REFERENCE_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) {
-      throw new Error(
-        `Reference image fetch failed (${res.status}) for ${url}`,
-      );
+
+  // Try once, retry once on transient network/timeout errors. 4xx/5xx
+  // and content-type / size errors are NOT retried — they're terminal.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= REFERENCE_FETCH_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      REFERENCE_FETCH_TIMEOUT_MS,
+    );
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(
+          `Reference image fetch failed (${res.status}) for ${url}`,
+        );
+      }
+      const contentType = (res.headers.get("content-type") ?? "image/jpeg")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      if (!REFERENCE_ALLOWED_MIME.has(contentType)) {
+        throw new Error(
+          `Reference image has unsupported content-type: ${contentType}`,
+        );
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      if (arrayBuffer.byteLength > REFERENCE_MAX_BYTES) {
+        throw new Error(
+          `Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`,
+        );
+      }
+      return {
+        bytes: Buffer.from(arrayBuffer),
+        mimeType: contentType === "image/jpg" ? "image/jpeg" : contentType,
+      };
+    } catch (err) {
+      lastErr = err;
+      // Only retry on AbortError (timeout) or generic network/fetch
+      // failures. Non-retryable errors above already threw with a
+      // specific message; identify them and break out.
+      const message = (err as Error).message ?? "";
+      const isTerminal =
+        message.startsWith("Reference image fetch failed (") ||
+        message.startsWith("Reference image has unsupported") ||
+        message.startsWith("Reference image exceeds");
+      if (isTerminal) throw err;
+      // else fall through and retry
+    } finally {
+      clearTimeout(timer);
     }
-    const contentType = (res.headers.get("content-type") ?? "image/jpeg")
-      .split(";")[0]
-      .trim()
-      .toLowerCase();
-    if (!REFERENCE_ALLOWED_MIME.has(contentType)) {
-      throw new Error(
-        `Reference image has unsupported content-type: ${contentType}`,
-      );
-    }
-    const arrayBuffer = await res.arrayBuffer();
-    if (arrayBuffer.byteLength > REFERENCE_MAX_BYTES) {
-      throw new Error(
-        `Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`,
-      );
-    }
-    return {
-      bytes: Buffer.from(arrayBuffer),
-      mimeType: contentType === "image/jpg" ? "image/jpeg" : contentType,
-    };
-  } finally {
-    clearTimeout(timer);
   }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("Reference image fetch failed");
 }
 
 async function callGemini(

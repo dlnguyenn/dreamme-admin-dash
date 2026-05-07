@@ -99,7 +99,15 @@ async function extractAndValidateBearer(req: Request): Promise<boolean> {
   const header = req.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) return false;
-  return validateBearer(match[1]);
+  // Cap auth at 8s so a hung Supabase fetch can't eat the client's
+  // tool-call budget. On timeout treat as unauthenticated and let the
+  // client retry.
+  return Promise.race<boolean>([
+    validateBearer(match[1]),
+    new Promise<boolean>((resolve) =>
+      setTimeout(() => resolve(false), 8_000),
+    ),
+  ]);
 }
 
 function unauthorized(req: Request): Response {
@@ -239,26 +247,42 @@ async function handleGenerateImageStreaming(
         );
       };
 
+      // Always emit progress notifications. If the client didn't supply
+      // a progressToken we synthesize one — technically off-spec, but
+      // most MCP client SDKs reset the connection's read timer on any
+      // inbound progress for the active JSON-RPC id. Worst case the
+      // notification is silently dropped (no regression vs. omitting
+      // entirely).
+      const effectiveProgressToken = progressToken ?? crypto.randomUUID();
+
       let progress = 0;
       const startedAt = Date.now();
-      // Only emit progress notifications when the client provided a
-      // progressToken (per MCP spec). Without one, clients are not
-      // expected to extend their timeout on progress.
-      const ticker = progressToken !== undefined
-        ? setInterval(() => {
-            progress += 1;
-            const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-            send({
-              jsonrpc: "2.0",
-              method: "notifications/progress",
-              params: {
-                progressToken,
-                progress,
-                message: `Generating image (${elapsedSec}s elapsed)…`,
-              },
-            });
-          }, 10_000)
-        : null;
+      const sendProgress = (message: string, total?: number) => {
+        progress += 1;
+        send({
+          jsonrpc: "2.0",
+          method: "notifications/progress",
+          params: {
+            progressToken: effectiveProgressToken,
+            progress,
+            ...(total !== undefined ? { total } : {}),
+            message,
+          },
+        });
+      };
+
+      // Immediate first-byte progress to defeat proxy buffering and
+      // make sure the client sees the stream is alive before any work
+      // starts.
+      sendProgress("Starting image generation…");
+
+      // 5s ticker (was 10s) — halves worst-case wait for keep-alive
+      // under any client-side tool timeout (e.g. Claude Code default
+      // 60s).
+      const ticker = setInterval(() => {
+        const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+        sendProgress(`Generating image (${elapsedSec}s elapsed)…`);
+      }, 5_000);
 
       try {
         const results = await generateImageBatch({
@@ -273,21 +297,11 @@ async function handleGenerateImageStreaming(
           // take 60-120s; we hold the connection open via progress
           // notifications.
           timeoutMs: 240_000,
-          onProgress:
-            progressToken !== undefined
-              ? (completed, total) => {
-                  send({
-                    jsonrpc: "2.0",
-                    method: "notifications/progress",
-                    params: {
-                      progressToken,
-                      progress: completed,
-                      total,
-                      message: `Generated ${completed}/${total} image${total > 1 ? "s" : ""}`,
-                    },
-                  });
-                }
-              : undefined,
+          onProgress: (completed, total) =>
+            sendProgress(
+              `Generated ${completed}/${total} image${total > 1 ? "s" : ""}`,
+              total,
+            ),
         });
 
         // Maintain back-compat: when count === 1, surface image_url at
@@ -342,7 +356,7 @@ async function handleGenerateImageStreaming(
           send(rpcError(reqId, -32000, message));
         }
       } finally {
-        if (ticker) clearInterval(ticker);
+        clearInterval(ticker);
         controller.close();
       }
     },
@@ -354,6 +368,8 @@ async function handleGenerateImageStreaming(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      // Tell Vercel/Nginx-style proxies not to buffer the SSE stream.
+      "X-Accel-Buffering": "no",
     },
   });
 }
@@ -413,6 +429,7 @@ function formatResponse(
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     });
   }
@@ -521,6 +538,7 @@ export async function POST(req: Request): Promise<Response> {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache, no-transform",
           Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
         },
       });
     }
