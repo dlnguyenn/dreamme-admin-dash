@@ -29,7 +29,7 @@ const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 const BUCKET = "mcp-image-generations";
 
-const HOURLY_LIMIT = Number(process.env.MCP_IMAGE_HOURLY_LIMIT ?? 20);
+const HOURLY_LIMIT = Number(process.env.MCP_IMAGE_HOURLY_LIMIT ?? 50);
 const DAILY_LIMIT = Number(process.env.MCP_IMAGE_DAILY_LIMIT ?? 100);
 
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 529]);
