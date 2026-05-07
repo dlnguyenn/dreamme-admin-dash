@@ -25,6 +25,7 @@ import {
   type AspectRatio,
 } from "@/lib/image-generation";
 import { originFromRequest, validateBearer } from "@/lib/mcp-oauth";
+import { parseProxyUploadArgs, proxyUpload } from "@/lib/proxy-upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,6 +95,43 @@ const TOOL_DEFINITION = {
     required: ["prompt"],
   },
 } as const;
+
+const PROXY_UPLOAD_TOOL = {
+  name: "proxy_upload",
+  description:
+    "Relay bytes from a public URL to an Azure Blob SAS upload URL. Mirrors POST /api/proxy/upload — useful when the caller's environment blocks direct egress to those hosts. source_url must be on *.supabase.co or *.blob.core.windows.net; upload_url must be on *.blob.core.windows.net. Returns { ok: true, bytes, status } on success.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      source_url: {
+        type: "string",
+        format: "uri",
+        description:
+          "Public URL to GET. Host must end in .supabase.co or .blob.core.windows.net.",
+      },
+      upload_url: {
+        type: "string",
+        format: "uri",
+        description:
+          "Azure Blob SAS URL to PUT to. Host must end in .blob.core.windows.net.",
+      },
+      source_headers: {
+        type: "object",
+        description: "Optional headers to send on the GET.",
+        additionalProperties: { type: "string" },
+      },
+      upload_headers: {
+        type: "object",
+        description:
+          "Optional headers to send on the PUT (e.g. x-ms-blob-type, content-type).",
+        additionalProperties: { type: "string" },
+      },
+    },
+    required: ["source_url", "upload_url"],
+  },
+} as const;
+
+const ALL_TOOLS = [TOOL_DEFINITION, PROXY_UPLOAD_TOOL];
 
 async function extractAndValidateBearer(req: Request): Promise<boolean> {
   const header = req.headers.get("authorization") ?? "";
@@ -398,13 +436,35 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
   }
 
   if (method === "tools/list") {
-    return rpcResult(id, { tools: [TOOL_DEFINITION] });
+    return rpcResult(id, { tools: ALL_TOOLS });
   }
 
   if (method === "tools/call") {
-    // Reachable for unknown tool names only — `generate_image` is
-    // diverted to the streaming path in POST().
-    const params = (req.params ?? {}) as { name?: string };
+    // `generate_image` is diverted to the streaming path in POST() before
+    // reaching here. `proxy_upload` runs synchronously — the GET+PUT
+    // round-trip is fast enough that progress notifications are
+    // unnecessary.
+    const params = (req.params ?? {}) as { name?: string; arguments?: unknown };
+    if (params.name === "proxy_upload") {
+      const parsed = parseProxyUploadArgs(params.arguments ?? {});
+      if (!parsed.ok) {
+        return rpcError(id, -32602, parsed.error);
+      }
+      const result = await proxyUpload(parsed.args);
+      // MCP convention: surface a one-line text summary plus full
+      // structuredContent. We don't reuse rpcError for upstream
+      // failures — the caller will inspect ok=false in the result body.
+      const summary = result.ok
+        ? `ok bytes=${result.bytes} status=${result.status}`
+        : `error ${result.error}${result.status !== undefined ? ` status=${result.status}` : ""}`;
+      return rpcResult(id, {
+        content: [{ type: "text", text: summary }],
+        structuredContent: result,
+        // Mirror MCP "tool error" convention so clients can render a
+        // failure state without us throwing JSON-RPC -32xxx codes.
+        isError: !result.ok,
+      });
+    }
     return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
   }
 
