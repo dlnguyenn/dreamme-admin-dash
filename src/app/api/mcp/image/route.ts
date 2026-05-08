@@ -26,6 +26,11 @@ import {
 } from "@/lib/image-generation";
 import { originFromRequest, validateBearer } from "@/lib/mcp-oauth";
 import { parseProxyUploadArgs, proxyUpload } from "@/lib/proxy-upload";
+import {
+  getImageBatch,
+  submitImageBatch,
+  type BatchItemInput,
+} from "@/lib/image-generation-batch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,7 +136,73 @@ const PROXY_UPLOAD_TOOL = {
   },
 } as const;
 
-const ALL_TOOLS = [TOOL_DEFINITION, PROXY_UPLOAD_TOOL];
+const SUBMIT_IMAGE_BATCH_TOOL = {
+  name: "submit_image_batch",
+  description:
+    "Submit a batch of image-generation requests to Gemini's async Batch API (50% off list price; 24h SLA, typically 2-6h). Returns a batch_id immediately. Poll with `get_image_batch` until status is SUCCEEDED. Use this for large jobs where you can wait hours for results; use `generate_image` for interactive single-call generations.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        minItems: 1,
+        maxItems: 100,
+        description:
+          "Up to 100 image requests. Each item carries the same fields as `generate_image`'s arguments (prompt + optional aspect_ratio + optional reference image).",
+        items: {
+          type: "object",
+          required: ["prompt"],
+          properties: {
+            prompt: { type: "string" },
+            aspect_ratio: {
+              type: "string",
+              enum: [...ASPECT_RATIOS],
+            },
+            image_url: { type: "string", format: "uri" },
+            image_base64: { type: "string" },
+            image_mime_type: {
+              type: "string",
+              enum: [
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+                "image/gif",
+              ],
+            },
+          },
+        },
+      },
+      display_name: {
+        type: "string",
+        description: "Optional human-readable label stored on Gemini's batch resource.",
+      },
+    },
+    required: ["items"],
+  },
+} as const;
+
+const GET_IMAGE_BATCH_TOOL = {
+  name: "get_image_batch",
+  description:
+    "Fetch the status + (when ready) results of a `submit_image_batch` job. Status progresses PENDING -> RUNNING -> SUCCEEDED/FAILED/CANCELLED. When SUCCEEDED, `items[i]` contains image_url for each successful item; per-item errors are surfaced inline.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      batch_id: {
+        type: "string",
+        description: "The batch_id returned from submit_image_batch.",
+      },
+    },
+    required: ["batch_id"],
+  },
+} as const;
+
+const ALL_TOOLS = [
+  TOOL_DEFINITION,
+  PROXY_UPLOAD_TOOL,
+  SUBMIT_IMAGE_BATCH_TOOL,
+  GET_IMAGE_BATCH_TOOL,
+];
 
 async function extractAndValidateBearer(req: Request): Promise<boolean> {
   const header = req.headers.get("authorization") ?? "";
@@ -464,6 +535,155 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
         // failure state without us throwing JSON-RPC -32xxx codes.
         isError: !result.ok,
       });
+    }
+    if (params.name === "submit_image_batch") {
+      const args = (params.arguments ?? {}) as {
+        items?: unknown;
+        display_name?: unknown;
+      };
+      if (!Array.isArray(args.items)) {
+        return rpcError(id, -32602, "items must be an array");
+      }
+      const items: BatchItemInput[] = [];
+      for (let i = 0; i < args.items.length; i++) {
+        const raw = args.items[i] as Record<string, unknown> | null;
+        if (!raw || typeof raw !== "object") {
+          return rpcError(id, -32602, `items[${i}] must be an object`);
+        }
+        if (typeof raw.prompt !== "string" || !raw.prompt.trim()) {
+          return rpcError(
+            id,
+            -32602,
+            `items[${i}].prompt is required and must be non-empty`,
+          );
+        }
+        const aspectRaw = raw.aspect_ratio;
+        let aspectRatio: AspectRatio | undefined;
+        if (aspectRaw !== undefined) {
+          if (
+            typeof aspectRaw !== "string" ||
+            !(ASPECT_RATIOS as readonly string[]).includes(aspectRaw)
+          ) {
+            return rpcError(
+              id,
+              -32602,
+              `items[${i}].aspect_ratio must be one of ${ASPECT_RATIOS.join(", ")}`,
+            );
+          }
+          aspectRatio = aspectRaw as AspectRatio;
+        }
+        if (raw.image_url !== undefined && typeof raw.image_url !== "string") {
+          return rpcError(id, -32602, `items[${i}].image_url must be a string`);
+        }
+        if (
+          raw.image_base64 !== undefined &&
+          typeof raw.image_base64 !== "string"
+        ) {
+          return rpcError(
+            id,
+            -32602,
+            `items[${i}].image_base64 must be a string`,
+          );
+        }
+        if (
+          raw.image_mime_type !== undefined &&
+          typeof raw.image_mime_type !== "string"
+        ) {
+          return rpcError(
+            id,
+            -32602,
+            `items[${i}].image_mime_type must be a string`,
+          );
+        }
+        if (raw.image_url && raw.image_base64) {
+          return rpcError(
+            id,
+            -32602,
+            `items[${i}] must use either image_url or image_base64, not both`,
+          );
+        }
+        items.push({
+          prompt: raw.prompt,
+          aspectRatio,
+          referenceImageUrl: raw.image_url as string | undefined,
+          referenceImageBase64: raw.image_base64 as string | undefined,
+          referenceImageMimeType: raw.image_mime_type as string | undefined,
+        });
+      }
+      try {
+        const summary = await submitImageBatch({
+          items,
+          source: "mcp",
+          displayName:
+            typeof args.display_name === "string" ? args.display_name : undefined,
+        });
+        return rpcResult(id, {
+          content: [
+            {
+              type: "text",
+              text: `submitted batch ${summary.batchId} (${summary.itemCount} items, status=${summary.status})`,
+            },
+          ],
+          structuredContent: {
+            batch_id: summary.batchId,
+            gemini_batch_name: summary.geminiBatchName,
+            status: summary.status,
+            item_count: summary.itemCount,
+            gemini_model: summary.geminiModel,
+            submitted_at: summary.submittedAt,
+          },
+        });
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          return rpcError(id, -32003, err.message, {
+            window: err.window,
+            limit: err.limit,
+          });
+        }
+        return rpcError(id, -32000, (err as Error).message ?? "submit failed");
+      }
+    }
+    if (params.name === "get_image_batch") {
+      const args = (params.arguments ?? {}) as { batch_id?: unknown };
+      if (typeof args.batch_id !== "string" || !args.batch_id) {
+        return rpcError(id, -32602, "batch_id is required");
+      }
+      try {
+        const summary = await getImageBatch({ batchId: args.batch_id });
+        const successCount =
+          summary.results?.filter((r) => r.imageUrl).length ?? 0;
+        return rpcResult(id, {
+          content: [
+            {
+              type: "text",
+              text: `batch ${summary.batchId} status=${summary.status}${
+                summary.results
+                  ? ` (${successCount}/${summary.itemCount} succeeded)`
+                  : ""
+              }`,
+            },
+          ],
+          structuredContent: {
+            batch_id: summary.batchId,
+            gemini_batch_name: summary.geminiBatchName,
+            status: summary.status,
+            item_count: summary.itemCount,
+            gemini_model: summary.geminiModel,
+            submitted_at: summary.submittedAt,
+            completed_at: summary.completedAt,
+            error: summary.error,
+            items: summary.items,
+            results: summary.results,
+          },
+          isError: summary.status === "FAILED" || summary.status === "CANCELLED",
+        });
+      } catch (err) {
+        return rpcError(
+          id,
+          -32000,
+          (err as Error).message ?? "get_image_batch failed",
+        );
+      }
     }
     return rpcError(id, -32602, `Unknown tool: ${params.name ?? "<missing>"}`);
   }

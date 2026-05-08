@@ -41,13 +41,17 @@ export interface GeminiUsage {
   inputTokens: number;
   outputTokens: number;
   imageCount: number;
+  /** When true, halves all per-token + per-image rates per Gemini's
+   *  Batch API pricing. */
+  isBatch?: boolean;
 }
 
 export function priceGeminiUsage(u: GeminiUsage): number {
+  const factor = u.isBatch ? 0.5 : 1;
   const usd =
-    u.imageCount * GEMINI_PRICING.perOutputImageUsd +
-    u.inputTokens * GEMINI_PRICING.perInputTokenUsd +
-    u.outputTokens * GEMINI_PRICING.perOutputTokenUsd;
+    u.imageCount * GEMINI_PRICING.perOutputImageUsd * factor +
+    u.inputTokens * GEMINI_PRICING.perInputTokenUsd * factor +
+    u.outputTokens * GEMINI_PRICING.perOutputTokenUsd * factor;
   // Round to 6 decimals — Gemini calls can be sub-cent and we don't want
   // sustained truncation drift over thousands of events.
   return Math.round(usd * 1_000_000) / 1_000_000;
