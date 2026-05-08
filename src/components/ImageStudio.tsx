@@ -19,6 +19,27 @@ interface ImageGenerationRow {
   reference_urls: string[] | null;
 }
 
+type BatchStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED";
+
+interface ImageBatchSummary {
+  batchId: string;
+  geminiBatchName: string;
+  status: BatchStatus;
+  itemCount: number;
+  geminiModel: string;
+  submittedAt: string;
+  completedAt: string | null;
+  results:
+    | Array<{ prompt: string; imageUrl?: string; error?: string }>
+    | null;
+  error: string | null;
+}
+
 interface ConnectorConfig {
   url: string;
   token: string | null;
@@ -35,6 +56,16 @@ export function ImageStudio() {
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("1:1");
   const [refUrl, setRefUrl] = React.useState("");
+  // Local file picker — alternative to refUrl. When set, sent as
+  // base64 to /api/image-studio/generate. UI uses an "either or" toggle:
+  // typing a URL clears the file; picking a file clears the URL.
+  const [refFile, setRefFile] = React.useState<{
+    name: string;
+    mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+    base64: string;
+    previewUrl: string;
+  } | null>(null);
+  const refFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [count, setCount] = React.useState<number>(1);
   const [generating, setGenerating] = React.useState(false);
   const [latest, setLatest] = React.useState<ImageGenerationRow[]>([]);
@@ -45,6 +76,9 @@ export function ImageStudio() {
   const [loadingGallery, setLoadingGallery] = React.useState(false);
   const [galleryError, setGalleryError] = React.useState<string | null>(null);
   const [active, setActive] = React.useState<ImageGenerationRow | null>(null);
+
+  const [batches, setBatches] = React.useState<ImageBatchSummary[]>([]);
+  const [batchesError, setBatchesError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -92,6 +126,85 @@ export function ImageStudio() {
     loadGallery(0);
   }, [loadGallery]);
 
+  const loadBatches = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/image-studio/batch/list?limit=20");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "failed");
+      setBatches(json.batches ?? []);
+      setBatchesError(null);
+    } catch (e) {
+      setBatchesError((e as Error).message);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadBatches();
+  }, [loadBatches]);
+
+  // Auto-poll non-terminal batches every 30s. For each pending/running
+  // batch we hit /api/image-studio/batch/[id], which calls
+  // getImageBatch() server-side — that lazily polls Gemini and inserts
+  // image_generations rows on completion. When any batch flips to
+  // SUCCEEDED we refresh the gallery so the new images appear.
+  //
+  // The effect must NOT re-run on every batch state change (it would
+  // restart the interval on every tick → effective 0s polling). Track
+  // pending IDs as a stable signature, and read the latest batches via
+  // a ref inside tick().
+  const batchesRef = React.useRef(batches);
+  React.useEffect(() => {
+    batchesRef.current = batches;
+  }, [batches]);
+
+  const pendingSignature = React.useMemo(
+    () =>
+      batches
+        .filter((b) => b.status === "PENDING" || b.status === "RUNNING")
+        .map((b) => b.batchId)
+        .sort()
+        .join(","),
+    [batches],
+  );
+
+  React.useEffect(() => {
+    if (!pendingSignature) return;
+
+    const tick = async () => {
+      const pendingNow = batchesRef.current.filter(
+        (b) => b.status === "PENDING" || b.status === "RUNNING",
+      );
+      if (pendingNow.length === 0) return;
+      const updated: ImageBatchSummary[] = [];
+      let anyCompleted = false;
+      for (const b of pendingNow) {
+        try {
+          const res = await fetch(
+            `/api/image-studio/batch/${encodeURIComponent(b.batchId)}`,
+          );
+          const json = await res.json();
+          if (!json.ok) continue;
+          const next = json.batch as ImageBatchSummary;
+          if (next.status === "SUCCEEDED") anyCompleted = true;
+          updated.push(next);
+        } catch {
+          // Transient — keep retrying on next tick.
+        }
+      }
+      if (updated.length > 0) {
+        setBatches((prev) => {
+          const byId = new Map(updated.map((u) => [u.batchId, u]));
+          return prev.map((b) => byId.get(b.batchId) ?? b);
+        });
+      }
+      if (anyCompleted) loadGallery(0);
+    };
+
+    const interval = window.setInterval(tick, 30_000);
+    void tick();
+    return () => window.clearInterval(interval);
+  }, [pendingSignature, loadGallery]);
+
   const generate = async () => {
     if (!prompt.trim() || generating) return;
     const trimmedRef = refUrl.trim();
@@ -107,7 +220,10 @@ export function ImageStudio() {
         body: JSON.stringify({
           prompt: prompt.trim(),
           aspectRatio,
-          referenceImageUrl: trimmedRef || undefined,
+          referenceImageUrl:
+            refFile == null && trimmedRef ? trimmedRef : undefined,
+          referenceImageBase64: refFile?.base64,
+          referenceImageMimeType: refFile?.mimeType,
           count: count > 1 ? count : undefined,
         }),
       });
@@ -236,15 +352,140 @@ export function ImageStudio() {
                   marginBottom: 6,
                 }}
               >
-                Reference image URL (optional — image-to-image)
+                Reference image (optional — image-to-image). Paste a URL or
+                upload a local file (max 8 MB, png/jpeg/webp/gif).
               </div>
-              <input
-                type="url"
-                placeholder="https://example.com/image.jpg"
-                value={refUrl}
-                onChange={(e) => setRefUrl(e.target.value)}
-                style={inputStyle}
-              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="url"
+                  placeholder="https://example.com/image.jpg"
+                  value={refUrl}
+                  onChange={(e) => {
+                    setRefUrl(e.target.value);
+                    if (e.target.value && refFile) {
+                      // Picking a URL clears the uploaded file (mutex).
+                      setRefFile(null);
+                      if (refFileInputRef.current) {
+                        refFileInputRef.current.value = "";
+                      }
+                    }
+                  }}
+                  style={inputStyle}
+                  disabled={refFile != null}
+                />
+                <input
+                  ref={refFileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 8 * 1024 * 1024) {
+                      toast("File exceeds 8 MB");
+                      e.target.value = "";
+                      return;
+                    }
+                    const allowed = new Set([
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp",
+                      "image/gif",
+                    ]);
+                    if (!allowed.has(file.type)) {
+                      toast(`Unsupported type: ${file.type || "unknown"}`);
+                      e.target.value = "";
+                      return;
+                    }
+                    const buf = await file.arrayBuffer();
+                    const bytes = new Uint8Array(buf);
+                    let binary = "";
+                    for (let i = 0; i < bytes.length; i++) {
+                      binary += String.fromCharCode(bytes[i]);
+                    }
+                    const base64 = btoa(binary);
+                    setRefFile({
+                      name: file.name,
+                      mimeType: file.type as
+                        | "image/png"
+                        | "image/jpeg"
+                        | "image/webp"
+                        | "image/gif",
+                      base64,
+                      previewUrl: URL.createObjectURL(file),
+                    });
+                    setRefUrl("");
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => refFileInputRef.current?.click()}
+                  disabled={refUrl.trim().length > 0}
+                >
+                  Upload
+                </Button>
+              </div>
+              {refFile && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 8,
+                    padding: "6px 8px",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 8,
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={refFile.previewUrl}
+                    alt="reference preview"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      objectFit: "cover",
+                      borderRadius: 4,
+                    }}
+                  />
+                  <div
+                    style={{
+                      flex: 1,
+                      fontSize: 11,
+                      color: "var(--ink-2)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={refFile.name}
+                  >
+                    {refFile.name}
+                  </div>
+                  <button
+                    onClick={() => {
+                      URL.revokeObjectURL(refFile.previewUrl);
+                      setRefFile(null);
+                      if (refFileInputRef.current) {
+                        refFileInputRef.current.value = "";
+                      }
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--ink-3)",
+                      padding: 0,
+                      fontSize: 16,
+                      lineHeight: 1,
+                    }}
+                    aria-label="Remove uploaded reference"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
             </div>
           </Section>
 
@@ -425,6 +666,101 @@ export function ImageStudio() {
           )}
         </aside>
       </div>
+
+      {batches.length > 0 && (
+        <Section title="Batches">
+          {batchesError && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--accent)",
+                marginBottom: 12,
+              }}
+            >
+              {batchesError}
+            </div>
+          )}
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--ink-3)",
+              marginBottom: 10,
+            }}
+          >
+            Async Gemini Batch jobs (50% off list price; SLA 24 h, typical
+            2-6 h). The dashboard auto-polls every 30 s and refreshes the
+            gallery when a batch completes.
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: 8,
+            }}
+          >
+            {batches.map((b) => {
+              const succeeded = b.results?.filter((r) => r.imageUrl).length ?? 0;
+              const failed = b.results?.filter((r) => r.error).length ?? 0;
+              return (
+                <div
+                  key={b.batchId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 10,
+                  }}
+                >
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 10,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      borderRadius: 6,
+                      color: "white",
+                      background:
+                        b.status === "SUCCEEDED"
+                          ? "var(--ok, #2c7)"
+                          : b.status === "FAILED" || b.status === "CANCELLED"
+                            ? "var(--accent)"
+                            : "var(--ink-3)",
+                    }}
+                  >
+                    {b.status}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--ink-2)",
+                      fontFamily: "var(--font-geist-mono), monospace",
+                    }}
+                    title={b.batchId}
+                  >
+                    {b.batchId.slice(0, 8)}…
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                    {b.itemCount} item{b.itemCount === 1 ? "" : "s"}
+                    {b.results &&
+                      ` · ${succeeded} ok${failed > 0 ? ` / ${failed} failed` : ""}`}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--ink-4)",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {new Date(b.submittedAt).toLocaleString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       <Section title="Gallery">
         {galleryError && (

@@ -27,6 +27,14 @@ const Body = z.object({
     .url()
     .refine((u) => /^https?:\/\//i.test(u), "must be http(s)")
     .optional(),
+  // Optional inline reference image as base64 — used by the file-picker
+  // in the dashboard UI so we don't have to host the upload separately.
+  // Capped at ~10 MB encoded (~7.5 MB decoded) to match the
+  // REFERENCE_MAX_BYTES guard inside generateImage.
+  referenceImageBase64: z.string().max(11_000_000).optional(),
+  referenceImageMimeType: z
+    .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
+    .optional(),
   count: z.number().int().min(1).max(4).optional(),
 });
 
@@ -56,6 +64,8 @@ export async function POST(req: Request) {
         prompt: parsed.prompt,
         aspectRatio: parsed.aspectRatio,
         referenceImageUrl: parsed.referenceImageUrl,
+        referenceImageBase64: parsed.referenceImageBase64,
+        referenceImageMimeType: parsed.referenceImageMimeType,
         source: "dashboard",
       });
       // Single-image response keeps `result` for back-compat; also expose
@@ -66,6 +76,8 @@ export async function POST(req: Request) {
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
       referenceImageUrl: parsed.referenceImageUrl,
+      referenceImageBase64: parsed.referenceImageBase64,
+      referenceImageMimeType: parsed.referenceImageMimeType,
       source: "dashboard",
       count,
     });

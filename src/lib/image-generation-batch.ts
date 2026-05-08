@@ -314,6 +314,26 @@ export async function submitImageBatch(params: {
   };
 }
 
+export async function listImageBatches(params: {
+  limit?: number;
+  offset?: number;
+}): Promise<ImageBatchSummary[]> {
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+  const offset = Math.max(params.offset ?? 0, 0);
+  const url = `${SUPABASE_URL}/rest/v1/image_generation_batches?select=*&order=submitted_at.desc&limit=${limit}&offset=${offset}`;
+  const res = await fetch(url, {
+    headers: supabaseHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `image_generation_batches list failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  const rows = (await res.json()) as BatchRow[];
+  return rows.map(rowToSummary);
+}
+
 interface BatchRow {
   id: string;
   gemini_batch_name: string;
