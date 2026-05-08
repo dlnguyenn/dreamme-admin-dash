@@ -15,19 +15,19 @@ import { uploadBytesToStorage } from "./storage";
 import { logAiUsageEvent } from "./vendors/ai-usage-logger";
 import { priceGeminiUsage } from "./vendors/gemini-pricing";
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
-const MODEL = "gemini-3.1-flash-image-preview";
+export const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
+export const MODEL = "gemini-3.1-flash-image-preview";
 const ENDPOINT = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SERVICE_ROLE =
+export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+export const SERVICE_ROLE =
   (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_SERVICE_ROLE_KEY) ??
   "";
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+export const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-const BUCKET = "mcp-image-generations";
+export const BUCKET = "mcp-image-generations";
 
 const HOURLY_LIMIT = Number(process.env.MCP_IMAGE_HOURLY_LIMIT ?? 50);
 const DAILY_LIMIT = Number(process.env.MCP_IMAGE_DAILY_LIMIT ?? 100);
@@ -76,7 +76,7 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-async function checkRateLimit(count: number): Promise<void> {
+export async function checkRateLimit(count: number): Promise<void> {
   // Use the service-role REST endpoint with a HEAD-style count query.
   const headers = {
     apikey: SERVICE_ROLE || SUPABASE_ANON,
@@ -138,8 +138,8 @@ async function checkRateLimit(count: number): Promise<void> {
 
 const REFERENCE_FETCH_TIMEOUT_MS = 20_000;
 const REFERENCE_FETCH_MAX_RETRIES = 1;
-const REFERENCE_MAX_BYTES = 8 * 1024 * 1024;
-const REFERENCE_ALLOWED_MIME = new Set([
+export const REFERENCE_MAX_BYTES = 8 * 1024 * 1024;
+export const REFERENCE_ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
   "image/jpg",
@@ -147,12 +147,12 @@ const REFERENCE_ALLOWED_MIME = new Set([
   "image/gif",
 ]);
 
-interface ReferenceImage {
+export interface ReferenceImage {
   bytes: Buffer;
   mimeType: string;
 }
 
-async function fetchReferenceImage(url: string): Promise<ReferenceImage> {
+export async function fetchReferenceImage(url: string): Promise<ReferenceImage> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -301,14 +301,14 @@ async function callGemini(
   }
 }
 
-function extFromMime(mime: string): string {
+export function extFromMime(mime: string): string {
   if (mime.includes("png")) return "png";
   if (mime.includes("webp")) return "webp";
   if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
   return "png";
 }
 
-function randomId(): string {
+export function randomId(): string {
   // Crypto.randomUUID is available in Node 20+. Fallback for safety.
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -316,7 +316,7 @@ function randomId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function insertRow(row: {
+export async function insertRow(row: {
   prompt: string;
   aspect_ratio: string | null;
   image_url: string;
