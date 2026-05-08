@@ -231,6 +231,109 @@ under `src/components/spy/`.
   `SPY_QUERIES`, drop scrape frequency, or raise the 10K floor in
   `scrape-spy.ts:MIN_VIEWS_FOR_LIBRARY` if it climbs.
 
+## Image Studio + self-hosted MCP server
+
+In-dash image generation panel + a Streamable-HTTP MCP server that
+claude.ai connectors and Claude Code can attach as a custom tool
+provider. Single endpoint, four tools.
+
+- **Endpoint**: `POST /api/mcp/image` (auth: `Authorization: Bearer
+  ${MCP_IMAGE_BEARER_TOKEN}` *or* OAuth-issued access token — both
+  validated by `validateBearer()` in `src/lib/mcp-oauth.ts`).
+  Implementation lives at `src/app/api/mcp/image/route.ts` — bare
+  JSON-RPC + Streamable-HTTP framing (no `@modelcontextprotocol/sdk`,
+  it doesn't fit Next.js App Router cleanly).
+- **OAuth 2.1 + PKCE** with dynamic client registration is wired up
+  via `/api/oauth/{authorize,token,register}` and discovery at
+  `/.well-known/{oauth-authorization-server,oauth-protected-resource}`.
+  Required because claude.ai connectors don't accept static bearers.
+  `MCP_IMAGE_BEARER_TOKEN` stays as the simple path for Claude Code.
+- **Default model**: `gemini-3.1-flash-image-preview` (4K output).
+  Pinned in `src/lib/image-generation.ts:MODEL`.
+- **Storage**: every generated image lands in the public
+  `mcp-image-generations` Supabase bucket with one
+  `image_generations` row.
+- **Rate limits**: `MCP_IMAGE_HOURLY_LIMIT` (default 50) and
+  `MCP_IMAGE_DAILY_LIMIT` (default 100), enforced in
+  `checkRateLimit()`. Counts apply globally (no per-caller identity)
+  and span both the dashboard and MCP paths. Batch submissions
+  reserve `items.length` against these caps at submission time.
+
+### Tools exposed
+
+| Tool                  | Sync? | Purpose                                                                                                          |
+| --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------- |
+| `generate_image`      | yes   | Text-to-image or image-to-image edit. Optional `count: 1-4` for parallel variations. Streams `notifications/progress` every 5 s so MCP client timeouts don't cut a slow Gemini call. |
+| `proxy_upload`        | yes   | Generic byte-relay (GET source → PUT upload). Lets sandboxed sibling sessions copy bytes between Supabase and Azure Blob SAS URLs they can't reach directly. Hostname allowlists enforced. |
+| `submit_image_batch`  | yes   | Submit ≤100 image-gen items to Gemini's async Batch API (50% off). Returns a `batch_id` immediately. Persists state in `image_generation_batches`.                                  |
+| `get_image_batch`     | yes   | Lazy poll. When Gemini reports `SUCCEEDED`, downloads outputs, uploads to bucket, inserts `image_generations` rows so they show up in the gallery, caches results.                  |
+
+### Streaming progress for `generate_image`
+
+Slow Gemini calls (40-120 s on `gemini-3.1-flash-image-preview`) used
+to time out at the client's 60 s tool-call ceiling. The route now:
+
+- Always emits `notifications/progress` (synthesizes a `progressToken`
+  if the client didn't supply one) on a 5 s ticker plus an immediate
+  first-byte progress event.
+- Sets `X-Accel-Buffering: no` on every SSE response so Vercel/Nginx
+  proxies don't buffer it.
+- Caps the auth fetch (`validateBearer`) and rate-limit Supabase reads
+  at 8 s each so a hung infra call can't eat the client's budget.
+- Bumps the reference-image fetch to 20 s with one retry on transient
+  errors (Drive `lh3.googleusercontent.com` URLs in particular benefit).
+
+`maxDuration` on the route is 300 s — Vercel has the budget; the 60 s
+wall is purely on the client side.
+
+### Async Batch (50% off)
+
+`submit_image_batch` posts inline-format requests to
+`generativelanguage.googleapis.com/v1beta/models/${MODEL}:batchGenerateContent`
+and stashes the resource name (`batches/abc…`) in the new
+`image_generation_batches` table (migration
+`0022_image_generation_batches.sql`). Status mirrors Gemini's
+`BatchState`: `PENDING` → `RUNNING` → `SUCCEEDED` / `FAILED` /
+`CANCELLED`. Turnaround is async — official SLA 24 h, typical 2-6 h.
+
+`get_image_batch` is lazy-on-read: it only hits Gemini when the local
+status is non-terminal. Once `SUCCEEDED`, it walks
+`response.inlinedResponses[]`, uploads each output to the bucket via
+`uploadBytesToStorage`, inserts an `image_generations` row per output
+(reusing `insertRow` from the synchronous path), and persists the
+results array. Per-item errors land in `results[i].error` — no
+whole-batch failure.
+
+`priceGeminiUsage({ isBatch: true })` halves all rates. Successful
+batch outputs log to `ai_usage_events` at the discounted price so the
+Spend dashboard reflects true cost.
+
+For interactive UX, keep using `generate_image`. For multi-account
+nightly batches where wall-clock latency doesn't matter, use Batch.
+
+### `proxy_upload` byte relay
+
+Sibling Claude Code sessions in hosted sandboxes can't egress to
+`*.supabase.co` or `*.blob.core.windows.net`. `proxy_upload` runs the
+GET+PUT here in unsandboxed Vercel:
+
+- `source_url` host must end in `.supabase.co` or `.blob.core.windows.net`.
+- `upload_url` host must end in `.blob.core.windows.net`.
+- No retries, no buffering tricks beyond `arrayBuffer()` (fine for
+  images <8 MB; revisit if we ever push huge files).
+- HTTP twin at `POST /api/proxy/upload` shares the same logic via
+  `src/lib/proxy-upload.ts:proxyUpload()`.
+
+### Things that have bitten us (image-studio specific)
+
+- **`generate_image` timeouts at exactly 60 s** are the MCP client's
+  tool-call ceiling, **not** Vercel's `maxDuration`. Don't waste time
+  bumping `maxDuration`; it's already 300 s. Look at the SSE stream
+  / progress notifications first.
+- **claude.ai connectors don't accept static bearers** — they require
+  full OAuth 2.1 with PKCE, which is why `src/lib/mcp-oauth.ts` exists.
+  Claude Code is fine with the env-var bearer.
+
 ## Things that have bitten us
 
 - **Shell cwd resets between Bash calls.** Wrap commands in
