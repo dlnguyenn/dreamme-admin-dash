@@ -264,6 +264,56 @@ export function ImageStudio() {
     }
   };
 
+  // Submit the same form as a Gemini Batch job (50% off list, 2-6h
+  // turnaround). Each requested variation becomes one batch item with
+  // the same prompt + reference. Result lands in the Batches panel and
+  // auto-polls until SUCCEEDED.
+  const submitAsBatch = async () => {
+    if (!prompt.trim() || generating) return;
+    const trimmedRef = refUrl.trim();
+    if (trimmedRef && !/^https?:\/\//i.test(trimmedRef)) {
+      toast("Reference URL must start with http(s)://");
+      return;
+    }
+    const itemBlueprint = {
+      prompt: prompt.trim(),
+      aspectRatio,
+      referenceImageUrl:
+        refFile == null && trimmedRef ? trimmedRef : undefined,
+      referenceImageBase64: refFile?.base64,
+      referenceImageMimeType: refFile?.mimeType,
+    };
+    const items = Array.from({ length: count }, () => itemBlueprint);
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/image-studio/batch/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        if (res.status === 429) {
+          toast(`Rate limited: ${json.error}`);
+        } else {
+          toast(`Batch submit failed: ${json.error ?? "unknown error"}`);
+        }
+        return;
+      }
+      const batch = json.batch as ImageBatchSummary;
+      // Optimistically prepend so the Batches panel shows it
+      // immediately; the auto-poller will pick up status updates.
+      setBatches((prev) => [batch, ...prev]);
+      toast(
+        `Batch submitted (${batch.itemCount} items). Results in ~2-6 h.`,
+      );
+    } catch (e) {
+      toast(`Batch submit failed: ${(e as Error).message}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const copy = async (text: string, label = "Copied") => {
     try {
       await navigator.clipboard.writeText(text);
@@ -342,6 +392,14 @@ export function ImageStudio() {
                 disabled={generating || !prompt.trim()}
               >
                 {generating ? "Generating…" : "Generate"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={submitAsBatch}
+                disabled={generating || !prompt.trim()}
+                title="Submit as a Gemini Batch job — 50% off list price, results arrive in 2-6 h. Tracked in the Batches panel below."
+              >
+                {generating ? "…" : "Submit as Batch (50% off)"}
               </Button>
             </div>
             <div style={{ marginTop: 12 }}>
