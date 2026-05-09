@@ -35,7 +35,7 @@ const Body = z.object({
   referenceImageMimeType: z
     .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
     .optional(),
-  count: z.number().int().min(1).max(4).optional(),
+  count: z.number().int().min(1).max(8).optional(),
 });
 
 export async function POST(req: Request) {
