@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button, useToast } from "./ui";
 import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
+import { downscaleImageToBase64 } from "@/lib/supabase";
 
 const ASPECT_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
@@ -275,23 +276,41 @@ export function ImageStudio() {
       toast("Reference URL must start with http(s)://");
       return;
     }
+    // Don't duplicate the base64 across items — that multiplies the
+    // payload by `count` and pushes us past Vercel's ~4.5 MB serverless
+    // body limit, which returns an HTML 413 the client can't JSON-parse.
+    // Send the shared reference once at the top level; the server fans
+    // it out into each item.
     const itemBlueprint = {
       prompt: prompt.trim(),
       aspectRatio,
       referenceImageUrl:
         refFile == null && trimmedRef ? trimmedRef : undefined,
-      referenceImageBase64: refFile?.base64,
-      referenceImageMimeType: refFile?.mimeType,
     };
     const items = Array.from({ length: count }, () => itemBlueprint);
+    const body = {
+      items,
+      sharedReferenceImageBase64: refFile?.base64,
+      sharedReferenceImageMimeType: refFile?.mimeType,
+    };
     setGenerating(true);
     try {
       const res = await fetch("/api/image-studio/batch/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; batch?: ImageBatchSummary };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `Batch submit failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
       if (!json.ok) {
         if (res.status === 429) {
           toast(`Rate limited: ${json.error}`);
@@ -455,16 +474,22 @@ export function ImageStudio() {
                       e.target.value = "";
                       return;
                     }
-                    const buf = await file.arrayBuffer();
-                    const bytes = new Uint8Array(buf);
-                    let binary = "";
-                    for (let i = 0; i < bytes.length; i++) {
-                      binary += String.fromCharCode(bytes[i]);
-                    }
-                    const base64 = btoa(binary);
+                    // Downscale before base64 — raw 8 MB phone photos
+                    // become ~10.7 MB base64 and overflow Vercel's
+                    // ~4.5 MB serverless body cap. The shared helper
+                    // resizes to 1536px / JPEG q=0.9, landing around
+                    // 300-600 KB. Reference quality is plenty for
+                    // image-to-image at that resolution.
+                    const { base64, mime } =
+                      await downscaleImageToBase64(file);
                     setRefFile({
                       name: file.name,
-                      mimeType: file.type as
+                      mimeType: (mime === "image/jpeg" ||
+                      mime === "image/png" ||
+                      mime === "image/webp" ||
+                      mime === "image/gif"
+                        ? mime
+                        : "image/jpeg") as
                         | "image/png"
                         | "image/jpeg"
                         | "image/webp"
