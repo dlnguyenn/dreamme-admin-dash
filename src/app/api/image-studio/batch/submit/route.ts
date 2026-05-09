@@ -35,6 +35,15 @@ const Item = z.object({
 const Body = z.object({
   items: z.array(Item).min(1).max(100),
   displayName: z.string().max(200).optional(),
+  // Shared reference image fan-out. The dashboard sends the heavy
+  // base64 once here instead of duplicating it per item, so the
+  // payload doesn't blow past the serverless body-size cap when
+  // count > 1. Server expands these into each item that doesn't
+  // already carry its own reference.
+  sharedReferenceImageBase64: z.string().max(11_000_000).optional(),
+  sharedReferenceImageMimeType: z
+    .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -54,13 +63,21 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const items: BatchItemInput[] = parsed.items.map((it) => ({
-      prompt: it.prompt,
-      aspectRatio: it.aspectRatio,
-      referenceImageUrl: it.referenceImageUrl,
-      referenceImageBase64: it.referenceImageBase64,
-      referenceImageMimeType: it.referenceImageMimeType,
-    }));
+    const sharedB64 = parsed.sharedReferenceImageBase64;
+    const sharedMime = parsed.sharedReferenceImageMimeType;
+    const items: BatchItemInput[] = parsed.items.map((it) => {
+      const hasOwnRef =
+        it.referenceImageUrl != null || it.referenceImageBase64 != null;
+      return {
+        prompt: it.prompt,
+        aspectRatio: it.aspectRatio,
+        referenceImageUrl: it.referenceImageUrl,
+        referenceImageBase64:
+          it.referenceImageBase64 ?? (hasOwnRef ? undefined : sharedB64),
+        referenceImageMimeType:
+          it.referenceImageMimeType ?? (hasOwnRef ? undefined : sharedMime),
+      };
+    });
     const summary = await submitImageBatch({
       items,
       source: "dashboard",

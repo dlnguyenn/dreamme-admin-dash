@@ -275,23 +275,41 @@ export function ImageStudio() {
       toast("Reference URL must start with http(s)://");
       return;
     }
+    // Don't duplicate the base64 across items — that multiplies the
+    // payload by `count` and pushes us past Vercel's ~4.5 MB serverless
+    // body limit, which returns an HTML 413 the client can't JSON-parse.
+    // Send the shared reference once at the top level; the server fans
+    // it out into each item.
     const itemBlueprint = {
       prompt: prompt.trim(),
       aspectRatio,
       referenceImageUrl:
         refFile == null && trimmedRef ? trimmedRef : undefined,
-      referenceImageBase64: refFile?.base64,
-      referenceImageMimeType: refFile?.mimeType,
     };
     const items = Array.from({ length: count }, () => itemBlueprint);
+    const body = {
+      items,
+      sharedReferenceImageBase64: refFile?.base64,
+      sharedReferenceImageMimeType: refFile?.mimeType,
+    };
     setGenerating(true);
     try {
       const res = await fetch("/api/image-studio/batch/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; batch?: ImageBatchSummary };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `Batch submit failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
       if (!json.ok) {
         if (res.status === 429) {
           toast(`Rate limited: ${json.error}`);
