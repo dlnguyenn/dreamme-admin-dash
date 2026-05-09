@@ -5,8 +5,10 @@ import { Button, useToast } from "./ui";
 import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
 import { downscaleImageToBase64 } from "@/lib/supabase";
+import { AVATAR_IDS, type AvatarId } from "@/lib/avatars";
+import type { Avatar } from "@/lib/types";
 
-const ASPECT_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
+const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
 
 interface ImageGenerationRow {
@@ -55,7 +57,7 @@ export function ImageStudio() {
   const [configError, setConfigError] = React.useState<string | null>(null);
 
   const [prompt, setPrompt] = React.useState("");
-  const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("1:1");
+  const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("9:16");
   const [refUrl, setRefUrl] = React.useState("");
   // Local file picker — alternative to refUrl. When set, sent as
   // base64 to /api/image-studio/generate. UI uses an "either or" toggle:
@@ -86,6 +88,14 @@ export function ImageStudio() {
     () => new Set(),
   );
   const [bulkBusy, setBulkBusy] = React.useState(false);
+
+  const [avatars, setAvatars] = React.useState<Avatar[]>([]);
+  const [selectedAvatar, setSelectedAvatarState] =
+    React.useState<AvatarId | null>(null);
+  const [avatarBusy, setAvatarBusy] = React.useState<AvatarId | null>(null);
+  const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [avatarUploadTarget, setAvatarUploadTarget] =
+    React.useState<AvatarId | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -148,6 +158,42 @@ export function ImageStudio() {
   React.useEffect(() => {
     loadBatches();
   }, [loadBatches]);
+
+  // Hydrate the persisted avatar choice from localStorage on first
+  // render so it survives page reloads. Mirror the dreamme.* prefix
+  // used by other dashboard prefs.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("dreamme.imageStudio.avatar");
+    if (raw && (AVATAR_IDS as readonly string[]).includes(raw)) {
+      setSelectedAvatarState(raw as AvatarId);
+    }
+  }, []);
+
+  const loadAvatars = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/avatars");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "failed");
+      setAvatars(json.avatars ?? []);
+    } catch {
+      // Non-fatal — avatar picker just renders empty if it fails.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadAvatars();
+  }, [loadAvatars]);
+
+  const setSelectedAvatar = React.useCallback((id: AvatarId | null) => {
+    setSelectedAvatarState(id);
+    if (typeof window === "undefined") return;
+    if (id) {
+      window.localStorage.setItem("dreamme.imageStudio.avatar", id);
+    } else {
+      window.localStorage.removeItem("dreamme.imageStudio.avatar");
+    }
+  }, []);
 
   // Auto-poll non-terminal batches every 30s. For each pending/running
   // batch we hit /api/image-studio/batch/[id], which calls
@@ -212,10 +258,18 @@ export function ImageStudio() {
     return () => window.clearInterval(interval);
   }, [pendingSignature, loadGallery]);
 
+  // Resolve the active reference image URL when an avatar is highlighted.
+  // Avatar takes precedence over the URL field and any uploaded file —
+  // the picker UI keeps these mutex so only one is "active" at a time.
+  const avatarRefUrl =
+    (selectedAvatar &&
+      avatars.find((a) => a.name === selectedAvatar)?.imageUrl) ||
+    null;
+
   const generate = async () => {
     if (!prompt.trim() || generating) return;
     const trimmedRef = refUrl.trim();
-    if (trimmedRef && !/^https?:\/\//i.test(trimmedRef)) {
+    if (trimmedRef && !avatarRefUrl && !/^https?:\/\//i.test(trimmedRef)) {
       toast("Reference URL must start with http(s)://");
       return;
     }
@@ -228,9 +282,12 @@ export function ImageStudio() {
           prompt: prompt.trim(),
           aspectRatio,
           referenceImageUrl:
-            refFile == null && trimmedRef ? trimmedRef : undefined,
-          referenceImageBase64: refFile?.base64,
-          referenceImageMimeType: refFile?.mimeType,
+            avatarRefUrl ??
+            (refFile == null && trimmedRef ? trimmedRef : undefined),
+          referenceImageBase64: avatarRefUrl ? undefined : refFile?.base64,
+          referenceImageMimeType: avatarRefUrl
+            ? undefined
+            : refFile?.mimeType,
           count: count > 1 ? count : undefined,
         }),
       });
@@ -278,7 +335,7 @@ export function ImageStudio() {
   const submitAsBatch = async () => {
     if (!prompt.trim() || generating) return;
     const trimmedRef = refUrl.trim();
-    if (trimmedRef && !/^https?:\/\//i.test(trimmedRef)) {
+    if (trimmedRef && !avatarRefUrl && !/^https?:\/\//i.test(trimmedRef)) {
       toast("Reference URL must start with http(s)://");
       return;
     }
@@ -291,13 +348,16 @@ export function ImageStudio() {
       prompt: prompt.trim(),
       aspectRatio,
       referenceImageUrl:
-        refFile == null && trimmedRef ? trimmedRef : undefined,
+        avatarRefUrl ??
+        (refFile == null && trimmedRef ? trimmedRef : undefined),
     };
     const items = Array.from({ length: count }, () => itemBlueprint);
     const body = {
       items,
-      sharedReferenceImageBase64: refFile?.base64,
-      sharedReferenceImageMimeType: refFile?.mimeType,
+      sharedReferenceImageBase64: avatarRefUrl ? undefined : refFile?.base64,
+      sharedReferenceImageMimeType: avatarRefUrl
+        ? undefined
+        : refFile?.mimeType,
     };
     setGenerating(true);
     try {
@@ -470,6 +530,123 @@ export function ImageStudio() {
     deleteIds([row.id], "Deleted");
   };
 
+  // Click an avatar tile: highlight as the active reference, or toggle
+  // off if it was already selected. Selecting an avatar is mutex with
+  // the URL field and any uploaded file — the latter two get cleared.
+  const toggleAvatar = (id: AvatarId) => {
+    const avatar = avatars.find((a) => a.name === id);
+    if (!avatar?.imageUrl) {
+      // Empty slot — picking the file kicks off the upload flow.
+      pickAvatarUpload(id);
+      return;
+    }
+    if (selectedAvatar === id) {
+      setSelectedAvatar(null);
+      return;
+    }
+    setSelectedAvatar(id);
+    // Clear competing reference inputs.
+    if (refUrl) setRefUrl("");
+    if (refFile) {
+      URL.revokeObjectURL(refFile.previewUrl);
+      setRefFile(null);
+      if (refFileInputRef.current) refFileInputRef.current.value = "";
+    }
+  };
+
+  const pickAvatarUpload = (id: AvatarId) => {
+    setAvatarUploadTarget(id);
+    avatarFileInputRef.current?.click();
+  };
+
+  const onAvatarFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    const target = avatarUploadTarget;
+    e.target.value = "";
+    setAvatarUploadTarget(null);
+    if (!file || !target) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast("File exceeds 8 MB");
+      return;
+    }
+    const allowed: ReadonlyArray<string> = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif",
+    ];
+    if (!allowed.includes(file.type)) {
+      toast(`Unsupported type: ${file.type || "unknown"}`);
+      return;
+    }
+    setAvatarBusy(target);
+    try {
+      const { base64, mime } = await downscaleImageToBase64(file);
+      const res = await fetch(
+        `/api/avatars/${encodeURIComponent(target)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: base64, image_mime: mime }),
+        },
+      );
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; avatar?: Avatar };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `Avatar upload failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
+      if (!json.ok || !json.avatar) {
+        toast(`Avatar upload failed: ${json.error ?? "unknown error"}`);
+        return;
+      }
+      const updated = json.avatar;
+      setAvatars((prev) => {
+        const next = prev.filter((a) => a.name !== updated.name);
+        next.push(updated);
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+      toast(`${target} updated`);
+    } catch (err) {
+      toast(`Avatar upload failed: ${(err as Error).message}`);
+    } finally {
+      setAvatarBusy(null);
+    }
+  };
+
+  const clearAvatar = async (id: AvatarId) => {
+    if (!window.confirm(`Remove the reference image for ${id}?`)) return;
+    setAvatarBusy(id);
+    try {
+      const res = await fetch(`/api/avatars/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        toast(`Clear failed: ${json?.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      const updated = json.avatar as Avatar;
+      setAvatars((prev) =>
+        prev.map((a) => (a.name === updated.name ? updated : a)),
+      );
+      if (selectedAvatar === id) setSelectedAvatar(null);
+      toast(`${id} cleared`);
+    } catch (err) {
+      toast(`Clear failed: ${(err as Error).message}`);
+    } finally {
+      setAvatarBusy(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -527,7 +704,7 @@ export function ImageStudio() {
                 style={{ ...inputStyle, width: "auto" }}
                 title="Number of variations (parallel generations sharing the same prompt + reference)"
               >
-                {[1, 2, 3, 4].map((n) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <option key={n} value={n}>
                     {n}× {n === 1 ? "image" : "images"}
                   </option>
@@ -548,6 +725,170 @@ export function ImageStudio() {
               >
                 {generating ? "…" : "Submit as Batch (50% off)"}
               </Button>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginBottom: 8,
+                }}
+              >
+                Avatar (optional). Click a saved avatar to use it as the
+                reference image. Click an empty slot to upload one.
+                Selecting an avatar overrides any URL or uploaded file
+                below.
+              </div>
+              <input
+                ref={avatarFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                style={{ display: "none" }}
+                onChange={onAvatarFileChange}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {AVATAR_IDS.map((id) => {
+                  const avatar = avatars.find((a) => a.name === id);
+                  const hasImage = !!avatar?.imageUrl;
+                  const isSelected = selectedAvatar === id;
+                  const busy = avatarBusy === id;
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => !busy && toggleAvatar(id)}
+                        disabled={busy}
+                        title={
+                          hasImage
+                            ? isSelected
+                              ? `${id} — selected (click to deselect)`
+                              : `${id} — click to use as reference`
+                            : `${id} — click to upload a reference image`
+                        }
+                        style={{
+                          width: 56,
+                          height: 56,
+                          padding: 0,
+                          borderRadius: 12,
+                          background: hasImage
+                            ? "var(--surface-2)"
+                            : "transparent",
+                          border: isSelected
+                            ? "2px solid var(--ink)"
+                            : hasImage
+                              ? "1px solid var(--line)"
+                              : "1px dashed var(--line)",
+                          cursor: busy ? "wait" : "pointer",
+                          overflow: "hidden",
+                          position: "relative",
+                          transform: isSelected ? "scale(1.04)" : "scale(1)",
+                          transition: "transform 120ms ease",
+                          opacity: busy ? 0.5 : 1,
+                        }}
+                      >
+                        {hasImage ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={avatar!.imageUrl!}
+                            alt={id}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 18,
+                              color: "var(--ink-3)",
+                            }}
+                          >
+                            +
+                          </span>
+                        )}
+                      </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: isSelected ? "var(--ink)" : "var(--ink-3)",
+                            fontWeight: isSelected ? 600 : 400,
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {id}
+                        </span>
+                        {hasImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!busy) pickAvatarUpload(id);
+                            }}
+                            disabled={busy}
+                            title="Replace this avatar's image"
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ink-3)",
+                              cursor: busy ? "wait" : "pointer",
+                              fontSize: 10,
+                              textDecoration: "underline",
+                            }}
+                          >
+                            edit
+                          </button>
+                        )}
+                        {hasImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!busy) clearAvatar(id);
+                            }}
+                            disabled={busy}
+                            title="Clear this avatar"
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ink-3)",
+                              cursor: busy ? "wait" : "pointer",
+                              fontSize: 10,
+                              textDecoration: "underline",
+                            }}
+                          >
+                            clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div style={{ marginTop: 12 }}>
               <div
@@ -574,9 +915,17 @@ export function ImageStudio() {
                         refFileInputRef.current.value = "";
                       }
                     }
+                    if (e.target.value && selectedAvatar) {
+                      setSelectedAvatar(null);
+                    }
                   }}
                   style={inputStyle}
-                  disabled={refFile != null}
+                  disabled={refFile != null || selectedAvatar != null}
+                  title={
+                    selectedAvatar
+                      ? `An avatar (${selectedAvatar}) is the active reference — deselect it to type a URL.`
+                      : undefined
+                  }
                 />
                 <input
                   ref={refFileInputRef}
@@ -626,6 +975,7 @@ export function ImageStudio() {
                       previewUrl: URL.createObjectURL(file),
                     });
                     setRefUrl("");
+                    if (selectedAvatar) setSelectedAvatar(null);
                   }}
                 />
                 <Button

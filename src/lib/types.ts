@@ -1,4 +1,5 @@
 import type { PersonaId } from "./personas";
+import type { AvatarId } from "./avatars";
 
 export interface Delivery {
   id: string;
@@ -273,5 +274,17 @@ export interface FeatureRequest {
   epic: string | null;
   submitterEmail: string | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface AvatarRow {
+  name: string;
+  image_url: string | null;
+  updated_at: string;
+}
+
+export interface Avatar {
+  name: AvatarId;
+  imageUrl: string | null;
   updatedAt: string;
 }

@@ -469,7 +469,7 @@ export async function generateImage(params: {
   };
 }
 
-export const MAX_BATCH_COUNT = 4;
+export const MAX_BATCH_COUNT = 8;
 
 /**
  * Run `count` parallel `generateImage` calls with a shared rate-limit
