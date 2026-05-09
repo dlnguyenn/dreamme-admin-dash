@@ -324,6 +324,30 @@ GET+PUT here in unsandboxed Vercel:
 - HTTP twin at `POST /api/proxy/upload` shares the same logic via
   `src/lib/proxy-upload.ts:proxyUpload()`.
 
+### Auto-refresh on redeploy
+
+Tool list changes propagate to active Claude Code sessions automatically
+— no manual reconnect. Mechanics:
+
+- `initialize` advertises `capabilities.tools.listChanged: true`, so
+  the SDK opens a long-lived `GET /api/mcp/image` SSE stream.
+- The GET handler tags every event with the running deploy's
+  `TOOLS_VERSION` (derived from `VERCEL_GIT_COMMIT_SHA` at module
+  load) as the SSE `id:` field.
+- On reconnect, the SDK echoes its last seen id back as the
+  `Last-Event-ID` header. When that mismatches `TOOLS_VERSION`
+  (i.e. a redeploy happened mid-session), the server immediately
+  pushes `notifications/tools/list_changed` and the SDK refetches
+  `tools/list`. Within a single deploy the version never changes,
+  so reconnects fire heartbeats only.
+- Stateless: no `Mcp-Session-Id`, no Supabase/Redis pub/sub. The
+  redeploy itself is the trigger — every running function dies and
+  every SSE stream reconnects against a fresh instance.
+- Heartbeat is a 25s SSE comment (`: ping\n\n`) to defeat proxy idle
+  timeouts.
+- claude.ai connectors may not honor this; behavior degrades to the
+  pre-fix manual reload.
+
 ### Things that have bitten us (image-studio specific)
 
 - **`generate_image` timeouts at exactly 60 s** are the MCP client's
