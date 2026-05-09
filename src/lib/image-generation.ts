@@ -11,7 +11,7 @@
  * queries on `image_generations.created_at`. Counts are global (no per-user
  * identity in this dash) and apply to both the dash and the MCP endpoint.
  */
-import { uploadBytesToStorage } from "./storage";
+import { extractStoragePath, storageDelete, uploadBytesToStorage } from "./storage";
 import { logAiUsageEvent } from "./vendors/ai-usage-logger";
 import { priceGeminiUsage } from "./vendors/gemini-pricing";
 
@@ -547,4 +547,56 @@ export async function listImageGenerations(params: {
     );
   }
   return res.json();
+}
+
+/**
+ * Delete one or more image_generations rows along with their storage
+ * blobs in the `mcp-image-generations` bucket. Storage delete is
+ * best-effort — orphaned blobs are tolerated. The DB delete is the
+ * source of truth for what shows up in the gallery, so we surface
+ * errors from that step but swallow storage failures.
+ */
+export async function deleteImageGenerations(
+  ids: string[],
+): Promise<{ deleted: number }> {
+  if (ids.length === 0) return { deleted: 0 };
+  const idList = ids.map((id) => encodeURIComponent(id)).join(",");
+  const readUrl = `${SUPABASE_URL}/rest/v1/image_generations?select=id,image_url&id=in.(${idList})`;
+  const readRes = await fetch(readUrl, {
+    headers: {
+      apikey: SERVICE_ROLE || SUPABASE_ANON,
+      Authorization: `Bearer ${SERVICE_ROLE || SUPABASE_ANON}`,
+    },
+    cache: "no-store",
+  });
+  if (!readRes.ok) {
+    throw new Error(
+      `image_generations read failed: ${readRes.status} ${await readRes.text()}`,
+    );
+  }
+  const rows = (await readRes.json()) as Array<{ id: string; image_url: string }>;
+
+  await Promise.all(
+    rows.map(async (r) => {
+      const path = extractStoragePath(r.image_url, BUCKET);
+      if (path) await storageDelete(path, BUCKET);
+    }),
+  );
+
+  const deleteUrl = `${SUPABASE_URL}/rest/v1/image_generations?id=in.(${idList})`;
+  const delRes = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      apikey: SERVICE_ROLE || SUPABASE_ANON,
+      Authorization: `Bearer ${SERVICE_ROLE || SUPABASE_ANON}`,
+      Prefer: "return=representation",
+    },
+  });
+  if (!delRes.ok) {
+    throw new Error(
+      `image_generations delete failed: ${delRes.status} ${await delRes.text()}`,
+    );
+  }
+  const deleted = (await delRes.json()) as Array<{ id: string }>;
+  return { deleted: deleted.length };
 }

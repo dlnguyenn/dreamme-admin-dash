@@ -81,6 +81,12 @@ export function ImageStudio() {
   const [batches, setBatches] = React.useState<ImageBatchSummary[]>([]);
   const [batchesError, setBatchesError] = React.useState<string | null>(null);
 
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -340,6 +346,128 @@ export function ImageStudio() {
     } catch {
       toast("Copy failed");
     }
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const downloadOne = async (row: ImageGenerationRow) => {
+    // Fetch as blob and trigger an anchor download. Going through a
+    // blob URL means cross-origin Supabase Storage URLs respect the
+    // `download` attribute even though the storage CDN sits on a
+    // different origin.
+    const res = await fetch(row.image_url);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} fetching ${row.image_url}`);
+    }
+    const blob = await res.blob();
+    const ext = (row.image_url.split(".").pop() || "png").split("?")[0];
+    const safeStem = row.id.slice(0, 8);
+    const filename = `dreamme-${safeStem}.${ext}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const downloadSelected = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const targets = rows.filter((r) => selected.has(r.id));
+    setBulkBusy(true);
+    try {
+      let ok = 0;
+      for (const row of targets) {
+        try {
+          await downloadOne(row);
+          ok++;
+          // Tiny gap so the browser's "allow multiple downloads"
+          // dialog only fires once and doesn't merge requests.
+          await new Promise((r) => setTimeout(r, 250));
+        } catch (e) {
+          console.warn("download failed", row.id, e);
+        }
+      }
+      toast(
+        ok === targets.length
+          ? `Downloaded ${ok} image${ok === 1 ? "" : "s"}`
+          : `Downloaded ${ok} of ${targets.length}`,
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const deleteIds = async (ids: string[], label: string) => {
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        ids.length === 1
+          ? "Delete this image? This cannot be undone."
+          : `Delete ${ids.length} images? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/image-studio/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; deleted?: number };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `${label} failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
+      if (!json.ok) {
+        toast(`${label} failed: ${json.error ?? "unknown error"}`);
+        return;
+      }
+      const idSet = new Set(ids);
+      setRows((prev) => prev.filter((r) => !idSet.has(r.id)));
+      setLatest((prev) => prev.filter((r) => !idSet.has(r.id)));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      toast(`${label}: ${json.deleted ?? ids.length}`);
+    } catch (e) {
+      toast(`${label} failed: ${(e as Error).message}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const deleteSelected = () => {
+    deleteIds(Array.from(selected), "Deleted");
+  };
+
+  const deleteOne = (row: ImageGenerationRow) => {
+    deleteIds([row.id], "Deleted");
   };
 
   return (
@@ -857,6 +985,76 @@ export function ImageStudio() {
             {galleryError}
           </div>
         )}
+        {rows.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 12,
+            }}
+          >
+            {!selectMode ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectMode(true)}
+              >
+                Select
+              </Button>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {selected.size} selected
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setSelected(new Set(rows.map((r) => r.id)))
+                  }
+                  disabled={bulkBusy || selected.size === rows.length}
+                >
+                  Select all
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelected(new Set())}
+                  disabled={bulkBusy || selected.size === 0}
+                >
+                  Clear
+                </Button>
+                <div style={{ flex: 1 }} />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={downloadSelected}
+                  disabled={bulkBusy || selected.size === 0}
+                >
+                  Download {selected.size > 0 ? `(${selected.size})` : ""}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={deleteSelected}
+                  disabled={bulkBusy || selected.size === 0}
+                >
+                  Delete {selected.size > 0 ? `(${selected.size})` : ""}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={exitSelectMode}
+                  disabled={bulkBusy}
+                >
+                  Done
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         {rows.length === 0 && !loadingGallery && (
           <div
             style={{
@@ -879,54 +1077,85 @@ export function ImageStudio() {
             gap: 12,
           }}
         >
-          {rows.map((row) => (
-            <button
-              key={row.id}
-              onClick={() => setActive(row)}
-              style={{
-                padding: 0,
-                background: "var(--surface-2)",
-                border: "1px solid var(--line)",
-                borderRadius: 10,
-                overflow: "hidden",
-                cursor: "pointer",
-                aspectRatio: "1 / 1",
-                display: "flex",
-                position: "relative",
-              }}
-              title={row.prompt}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={row.image_url}
-                alt={row.prompt}
+          {rows.map((row) => {
+            const isSelected = selected.has(row.id);
+            return (
+              <button
+                key={row.id}
+                onClick={() =>
+                  selectMode ? toggleSelected(row.id) : setActive(row)
+                }
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
+                  padding: 0,
+                  background: "var(--surface-2)",
+                  border: `2px solid ${isSelected ? "var(--ink)" : "var(--line)"}`,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  aspectRatio: "1 / 1",
+                  display: "flex",
+                  position: "relative",
                 }}
-              />
-              {row.reference_urls && row.reference_urls.length > 0 && (
-                <span
+                title={row.prompt}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={row.image_url}
+                  alt={row.prompt}
                   style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    padding: "2px 6px",
-                    fontSize: 10,
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    background: "color-mix(in oklab, black 65%, transparent)",
-                    color: "white",
-                    borderRadius: 6,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                    opacity: selectMode && !isSelected ? 0.7 : 1,
                   }}
-                  title="Generated from a reference image"
-                >
-                  edit
-                </span>
-              )}
-            </button>
-          ))}
+                />
+                {row.reference_urls && row.reference_urls.length > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      padding: "2px 6px",
+                      fontSize: 10,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      background: "color-mix(in oklab, black 65%, transparent)",
+                      color: "white",
+                      borderRadius: 6,
+                    }}
+                    title="Generated from a reference image"
+                  >
+                    edit
+                  </span>
+                )}
+                {selectMode && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      left: 6,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      background: isSelected
+                        ? "var(--ink)"
+                        : "color-mix(in oklab, white 70%, transparent)",
+                      color: isSelected ? "white" : "var(--ink-3)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      border: "1px solid var(--line)",
+                    }}
+                  >
+                    {isSelected ? "✓" : ""}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
         <div
           style={{
@@ -1041,6 +1270,33 @@ export function ImageStudio() {
               }}
             >
               Edit this image
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await downloadOne(active);
+                  toast("Downloaded");
+                } catch (e) {
+                  toast(`Download failed: ${(e as Error).message}`);
+                }
+              }}
+            >
+              Download
+            </Button>
+            <div style={{ flex: 1 }} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const target = active;
+                setActive(null);
+                deleteOne(target);
+              }}
+              disabled={bulkBusy}
+            >
+              Delete
             </Button>
           </div>
         </Modal>

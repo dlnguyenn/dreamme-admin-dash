@@ -92,11 +92,16 @@ export async function fetchToStorage(
 
 /**
  * Extract the bucket-relative path from a public Supabase Storage URL.
- * Returns null if the URL doesn't match the public-object shape.
+ * Returns null if the URL doesn't match the public-object shape for the
+ * given bucket. Defaults to the admin bucket so existing callers
+ * (resources, references) keep working without changes.
  */
-export function extractStoragePath(url: string | null): string | null {
+export function extractStoragePath(
+  url: string | null,
+  bucket: string = BUCKET,
+): string | null {
   if (!url) return null;
-  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const marker = `/storage/v1/object/public/${bucket}/`;
   const i = url.indexOf(marker);
   if (i < 0) return null;
   return url.slice(i + marker.length);
@@ -106,11 +111,14 @@ export function extractStoragePath(url: string | null): string | null {
  * Best-effort delete a blob from Storage. Returns true on success, false
  * on any failure — callers swallow errors and fall back to DB cleanup.
  */
-export async function storageDelete(path: string): Promise<boolean> {
+export async function storageDelete(
+  path: string,
+  bucket: string = BUCKET,
+): Promise<boolean> {
   if (!storageConfigured()) return false;
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`,
+      `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`,
       {
         method: "DELETE",
         headers: {
