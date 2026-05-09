@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button, useToast } from "./ui";
 import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
+import { downscaleImageToBase64 } from "@/lib/supabase";
 
 const ASPECT_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
@@ -473,16 +474,22 @@ export function ImageStudio() {
                       e.target.value = "";
                       return;
                     }
-                    const buf = await file.arrayBuffer();
-                    const bytes = new Uint8Array(buf);
-                    let binary = "";
-                    for (let i = 0; i < bytes.length; i++) {
-                      binary += String.fromCharCode(bytes[i]);
-                    }
-                    const base64 = btoa(binary);
+                    // Downscale before base64 — raw 8 MB phone photos
+                    // become ~10.7 MB base64 and overflow Vercel's
+                    // ~4.5 MB serverless body cap. The shared helper
+                    // resizes to 1536px / JPEG q=0.9, landing around
+                    // 300-600 KB. Reference quality is plenty for
+                    // image-to-image at that resolution.
+                    const { base64, mime } =
+                      await downscaleImageToBase64(file);
                     setRefFile({
                       name: file.name,
-                      mimeType: file.type as
+                      mimeType: (mime === "image/jpeg" ||
+                      mime === "image/png" ||
+                      mime === "image/webp" ||
+                      mime === "image/gif"
+                        ? mime
+                        : "image/jpeg") as
                         | "image/png"
                         | "image/jpeg"
                         | "image/webp"
