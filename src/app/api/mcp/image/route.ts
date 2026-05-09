@@ -42,6 +42,15 @@ const SERVER_INFO = {
   version: "1.0.0",
 };
 
+// Identifies the running deploy. Used as the SSE event id on the
+// standalone GET stream so reconnecting clients can detect when their
+// cached tools/list is stale (i.e. a redeploy happened) and we need to
+// push notifications/tools/list_changed. See GET handler below.
+const TOOLS_VERSION =
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.GIT_COMMIT ??
+  `dev-${Date.now()}`;
+
 type JsonRpcRequest = {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -493,7 +502,11 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
   if (method === "initialize") {
     return rpcResult(id, {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: {} },
+      // tools.listChanged: true tells the SDK to open the standalone
+      // GET SSE stream and listen for notifications/tools/list_changed.
+      // We push that notification on a redeploy so cached tool lists
+      // refresh without manual reconnect.
+      capabilities: { tools: { listChanged: true } },
       serverInfo: SERVER_INFO,
     });
   }
@@ -861,11 +874,77 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(req: Request): Promise<Response> {
-  // We don't support server-initiated streams in stateless mode. Bearer
-  // check still applies so unauthenticated probes can't fingerprint the
-  // endpoint shape.
+  // Standalone server→client SSE stream. The SDK opens this after
+  // `initialize` because we advertise tools.listChanged: true.
+  //
+  // Stateless: no Mcp-Session-Id. Each connection is independent.
+  // We use the SSE `id:` field to carry the running deploy's
+  // TOOLS_VERSION. On reconnect, the SDK echoes its last seen id back
+  // as the `Last-Event-ID` header (per the SSE spec). When that
+  // doesn't match the current TOOLS_VERSION, we know a redeploy
+  // happened while the client was disconnected, and we push
+  // notifications/tools/list_changed so the client refetches tools.
+  //
+  // Within a single deploy TOOLS_VERSION never changes, so subsequent
+  // reconnects on the same deploy fire heartbeats only.
   if (!(await extractAndValidateBearer(req))) return unauthorized(req);
-  return new Response(null, { status: 405, headers: { Allow: "POST" } });
+
+  const lastEventId = req.headers.get("last-event-id") ?? "";
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+
+      // Notify on first connect (no Last-Event-ID) AND on reconnect
+      // when version differs (i.e. we're a fresher deploy than the
+      // client last spoke to). Idempotent — extra `tools/list` calls
+      // are cheap.
+      if (lastEventId !== TOOLS_VERSION) {
+        controller.enqueue(
+          encoder.encode(
+            `id: ${TOOLS_VERSION}\n` +
+              `event: message\n` +
+              `data: ${JSON.stringify({
+                jsonrpc: "2.0",
+                method: "notifications/tools/list_changed",
+              })}\n\n`,
+          ),
+        );
+      }
+
+      // SSE comment heartbeats keep proxy/edge idle timers happy
+      // without polluting the message stream. 25s is comfortably
+      // under typical 30-60s idle ceilings.
+      const ticker = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          clearInterval(ticker);
+        }
+      }, 25_000);
+
+      // Vercel terminates the function at maxDuration regardless;
+      // also bail when the request is aborted by the client.
+      req.signal.addEventListener("abort", () => {
+        clearInterval(ticker);
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      });
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 export async function DELETE(req: Request): Promise<Response> {
