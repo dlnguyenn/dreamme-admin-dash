@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       // `results` so the UI can use one shape.
       return NextResponse.json({ ok: true, result, results: [result] });
     }
-    const results = await generateImageBatch({
+    const { results, errors } = await generateImageBatch({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
       referenceImageUrl: parsed.referenceImageUrl,
@@ -81,7 +81,21 @@ export async function POST(req: Request) {
       source: "dashboard",
       count,
     });
-    return NextResponse.json({ ok: true, result: results[0], results });
+    // All-or-nothing failure preserves today's 500-on-failure contract.
+    // Otherwise return 200 with whatever succeeded plus a per-index
+    // errors array so the UI can render a partial-failure banner.
+    if (results.length === 0 && errors.length > 0) {
+      return NextResponse.json(
+        { ok: false, error: errors[0].error, errors },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      result: results[0],
+      results,
+      errors,
+    });
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(

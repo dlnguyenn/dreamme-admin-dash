@@ -82,6 +82,17 @@ export function ImageStudio() {
 
   const [batches, setBatches] = React.useState<ImageBatchSummary[]>([]);
   const [batchesError, setBatchesError] = React.useState<string | null>(null);
+  const [expandedBatchId, setExpandedBatchId] = React.useState<string | null>(
+    null,
+  );
+
+  // Per-item failures from the most recent sync Generate. Cleared
+  // when the next call starts. Banner above "Latest" surfaces them
+  // so partial successes aren't silent like before.
+  const [genErrors, setGenErrors] = React.useState<
+    Array<{ index: number; error: string }>
+  >([]);
+  const [genTotal, setGenTotal] = React.useState(0);
 
   const [selectMode, setSelectMode] = React.useState(false);
   const [selected, setSelected] = React.useState<Set<string>>(
@@ -274,6 +285,8 @@ export function ImageStudio() {
       return;
     }
     setGenerating(true);
+    setGenErrors([]);
+    setGenTotal(count);
     try {
       const res = await fetch("/api/image-studio/generate", {
         method: "POST",
@@ -292,7 +305,14 @@ export function ImageStudio() {
         }),
       });
       const json = await res.json();
+      const errors = Array.isArray(json.errors)
+        ? (json.errors as Array<{ index: number; error: string }>)
+        : [];
       if (!json.ok) {
+        // All-or-nothing failure (no successes). Surface the first
+        // error in the toast and keep any per-item details around
+        // for the banner.
+        if (errors.length > 0) setGenErrors(errors);
         if (res.status === 429) {
           toast(`Rate limited: ${json.error}`);
         } else {
@@ -320,6 +340,12 @@ export function ImageStudio() {
         reference_urls: r.referenceImageUrl ? [r.referenceImageUrl] : null,
       }));
       setLatest(rows);
+      if (errors.length > 0) {
+        setGenErrors(errors);
+        toast(
+          `Generated ${rows.length} of ${count}; ${errors.length} failed`,
+        );
+      }
       loadGallery(0);
     } catch (e) {
       toast(`Failed: ${(e as Error).message}`);
@@ -1051,6 +1077,71 @@ export function ImageStudio() {
           </Section>
 
           <Section title="2. Latest">
+            {genErrors.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "10px 12px",
+                  border: "1px solid var(--accent)",
+                  background:
+                    "color-mix(in oklab, var(--accent) 8%, transparent)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <strong style={{ color: "var(--accent)" }}>
+                    {genErrors.length} of {genTotal} failed
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => setGenErrors([])}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--ink-3)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    dismiss
+                  </button>
+                </div>
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingLeft: 18,
+                    color: "var(--ink-2)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {genErrors.map((e) => (
+                    <li key={e.index}>
+                      <span
+                        style={{
+                          fontFamily:
+                            "var(--font-geist-mono), monospace",
+                          color: "var(--ink-3)",
+                          marginRight: 6,
+                        }}
+                      >
+                        #{e.index + 1}
+                      </span>
+                      {e.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {latest.length === 0 ? (
               <div
                 style={{
@@ -1262,60 +1353,230 @@ export function ImageStudio() {
             {batches.map((b) => {
               const succeeded = b.results?.filter((r) => r.imageUrl).length ?? 0;
               const failed = b.results?.filter((r) => r.error).length ?? 0;
+              const expandable = !!b.results && b.results.length > 0;
+              const isExpanded = expandedBatchId === b.batchId;
               return (
                 <div
                   key={b.batchId}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "10px 12px",
                     background: "var(--surface-2)",
                     border: "1px solid var(--line)",
                     borderRadius: 10,
+                    overflow: "hidden",
                   }}
                 >
-                  <span
+                  <button
+                    type="button"
+                    onClick={() =>
+                      expandable &&
+                      setExpandedBatchId(isExpanded ? null : b.batchId)
+                    }
+                    disabled={!expandable}
                     style={{
-                      padding: "2px 8px",
-                      fontSize: 10,
-                      fontFamily: "var(--font-geist-mono), monospace",
-                      borderRadius: 6,
-                      color: "white",
-                      background:
-                        b.status === "SUCCEEDED"
-                          ? "var(--ok, #2c7)"
-                          : b.status === "FAILED" || b.status === "CANCELLED"
-                            ? "var(--accent)"
-                            : "var(--ink-3)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      width: "100%",
+                      padding: "10px 12px",
+                      background: "transparent",
+                      border: "none",
+                      cursor: expandable ? "pointer" : "default",
+                      textAlign: "left",
                     }}
+                    title={
+                      expandable
+                        ? isExpanded
+                          ? "Hide per-item detail"
+                          : "Show per-item detail"
+                        : undefined
+                    }
                   >
-                    {b.status}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "var(--ink-2)",
-                      fontFamily: "var(--font-geist-mono), monospace",
-                    }}
-                    title={b.batchId}
-                  >
-                    {b.batchId.slice(0, 8)}…
-                  </span>
-                  <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                    {b.itemCount} item{b.itemCount === 1 ? "" : "s"}
-                    {b.results &&
-                      ` · ${succeeded} ok${failed > 0 ? ` / ${failed} failed` : ""}`}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--ink-4)",
-                      marginLeft: "auto",
-                    }}
-                  >
-                    {new Date(b.submittedAt).toLocaleString()}
-                  </span>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        fontSize: 10,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        borderRadius: 6,
+                        color: "white",
+                        background:
+                          b.status === "SUCCEEDED"
+                            ? "var(--ok, #2c7)"
+                            : b.status === "FAILED" ||
+                                b.status === "CANCELLED"
+                              ? "var(--accent)"
+                              : "var(--ink-3)",
+                      }}
+                    >
+                      {b.status}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-2)",
+                        fontFamily: "var(--font-geist-mono), monospace",
+                      }}
+                      title={b.batchId}
+                    >
+                      {b.batchId.slice(0, 8)}…
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                      {b.itemCount} item{b.itemCount === 1 ? "" : "s"}
+                      {b.results &&
+                        ` · ${succeeded} ok${failed > 0 ? ` / ${failed} failed` : ""}`}
+                    </span>
+                    {expandable && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "var(--ink-4)",
+                          fontFamily: "var(--font-geist-mono), monospace",
+                        }}
+                      >
+                        {isExpanded ? "▼" : "▶"}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--ink-4)",
+                        marginLeft: "auto",
+                      }}
+                    >
+                      {new Date(b.submittedAt).toLocaleString()}
+                    </span>
+                  </button>
+                  {isExpanded && b.results && (
+                    <div
+                      style={{
+                        borderTop: "1px solid var(--line)",
+                        padding: "8px 12px 10px",
+                        background:
+                          "color-mix(in oklab, var(--surface) 60%, transparent)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        {b.results.map((r, idx) => {
+                          const ok = !!r.imageUrl;
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "auto auto 1fr",
+                                gap: 8,
+                                alignItems: "baseline",
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontFamily:
+                                    "var(--font-geist-mono), monospace",
+                                  color: "var(--ink-4)",
+                                  fontSize: 11,
+                                }}
+                              >
+                                #{idx + 1}
+                              </span>
+                              <span
+                                style={{
+                                  padding: "1px 6px",
+                                  fontSize: 10,
+                                  fontFamily:
+                                    "var(--font-geist-mono), monospace",
+                                  borderRadius: 4,
+                                  color: "white",
+                                  background: ok
+                                    ? "var(--ok, #2c7)"
+                                    : "var(--accent)",
+                                }}
+                              >
+                                {ok ? "ok" : "fail"}
+                              </span>
+                              <span
+                                style={{
+                                  color: ok
+                                    ? "var(--ink-3)"
+                                    : "var(--ink-2)",
+                                }}
+                                title={r.prompt}
+                              >
+                                {ok ? (
+                                  <span style={{ color: "var(--ink-3)" }}>
+                                    {r.prompt.length > 80
+                                      ? `${r.prompt.slice(0, 80)}…`
+                                      : r.prompt}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span
+                                      style={{
+                                        color: "var(--ink-3)",
+                                        marginRight: 6,
+                                      }}
+                                    >
+                                      {r.prompt.length > 60
+                                        ? `${r.prompt.slice(0, 60)}…`
+                                        : r.prompt}
+                                    </span>
+                                    <span
+                                      style={{ color: "var(--accent)" }}
+                                    >
+                                      {r.error}
+                                    </span>
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {failed > 0 && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            display: "flex",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lines = (b.results ?? [])
+                                .filter((r) => r.error)
+                                .map(
+                                  (r, i) =>
+                                    `#${i + 1} | ${r.prompt} | ${r.error}`,
+                                );
+                              copy(
+                                lines.join("\n"),
+                                "Errors copied",
+                              );
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: 11,
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                              background: "var(--surface)",
+                              color: "var(--ink-2)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Copy errors
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

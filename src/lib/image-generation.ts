@@ -471,10 +471,22 @@ export async function generateImage(params: {
 
 export const MAX_BATCH_COUNT = 8;
 
+export interface BatchItemError {
+  index: number;
+  error: string;
+}
+
 /**
  * Run `count` parallel `generateImage` calls with a shared rate-limit
  * budget. Yields completed results to `onProgress` as they land so the
  * caller can stream incremental updates over MCP notifications/progress.
+ *
+ * Failures don't abort siblings — `Promise.allSettled` collects every
+ * outcome, fulfilled results land in `results[]`, rejected ones land
+ * in `errors[]` along with the slot index. Each failure also gets a
+ * `console.error` so Vercel function logs capture it. Callers decide
+ * whether `results.length === 0 && errors.length > 0` is fatal (e.g.
+ * the dashboard route returns 500 only when nothing succeeded).
  */
 export async function generateImageBatch(params: {
   prompt: string;
@@ -486,7 +498,10 @@ export async function generateImageBatch(params: {
   count: number;
   timeoutMs?: number;
   onProgress?: (completed: number, total: number) => void;
-}): Promise<GenerateImageResult[]> {
+}): Promise<{
+  results: GenerateImageResult[];
+  errors: BatchItemError[];
+}> {
   const { count } = params;
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH_COUNT) {
     throw new Error(`count must be an integer between 1 and ${MAX_BATCH_COUNT}`);
@@ -494,9 +509,8 @@ export async function generateImageBatch(params: {
   await checkRateLimit(count);
 
   let completed = 0;
-  const results = new Array<GenerateImageResult>(count);
-  await Promise.all(
-    Array.from({ length: count }, (_, i) =>
+  const settled = await Promise.allSettled(
+    Array.from({ length: count }, () =>
       generateImage({
         prompt: params.prompt,
         aspectRatio: params.aspectRatio,
@@ -506,14 +520,34 @@ export async function generateImageBatch(params: {
         source: params.source,
         timeoutMs: params.timeoutMs,
         _skipRateLimit: true,
-      }).then((r) => {
-        results[i] = r;
-        completed += 1;
-        params.onProgress?.(completed, count);
       }),
     ),
   );
-  return results;
+
+  const results: GenerateImageResult[] = [];
+  const errors: BatchItemError[] = [];
+  const promptSnippet = params.prompt.slice(0, 80);
+  for (let i = 0; i < settled.length; i++) {
+    const s = settled[i];
+    if (s.status === "fulfilled") {
+      results.push(s.value);
+      completed += 1;
+      params.onProgress?.(completed, count);
+    } else {
+      const message =
+        (s.reason instanceof Error
+          ? s.reason.message
+          : typeof s.reason === "string"
+            ? s.reason
+            : null) ?? "unknown error";
+      console.error(
+        `[image-gen] sync item ${i + 1}/${count} failed: ${message}`,
+        { promptSnippet, source: params.source },
+      );
+      errors.push({ index: i, error: message });
+    }
+  }
+  return { results, errors };
 }
 
 export interface ImageGenerationRow {
