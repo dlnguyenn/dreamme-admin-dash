@@ -403,7 +403,7 @@ async function handleGenerateImageStreaming(
       }, 5_000);
 
       try {
-        const results = await generateImageBatch({
+        const { results, errors } = await generateImageBatch({
           prompt,
           aspectRatio,
           referenceImageUrl,
@@ -422,9 +422,17 @@ async function handleGenerateImageStreaming(
             ),
         });
 
-        // Maintain back-compat: when count === 1, surface image_url at
-        // the top of structuredContent (existing consumers read it).
-        // For count > 1, also include `images: [...]`.
+        if (results.length === 0) {
+          const message = errors[0]?.error ?? "image generation failed";
+          send(rpcError(reqId, -32000, message, errors.length ? { errors } : undefined));
+          return;
+        }
+
+        // Maintain back-compat: when only one image was successfully
+        // produced, surface image_url at the top of structuredContent
+        // (existing consumers read it). When more landed, also include
+        // `images: [...]`. Per-item errors[] tags any slots that
+        // failed so the caller can see partial failures.
         const single = results[0];
         const structuredContent =
           results.length === 1
@@ -435,6 +443,7 @@ async function handleGenerateImageStreaming(
                 gemini_model: single.geminiModel,
                 created_at: single.createdAt,
                 reference_image_url: single.referenceImageUrl,
+                errors: errors.length > 0 ? errors : undefined,
               }
             : {
                 image_url: single.imageUrl,
@@ -451,6 +460,7 @@ async function handleGenerateImageStreaming(
                   created_at: r.createdAt,
                   reference_image_url: r.referenceImageUrl,
                 })),
+                errors: errors.length > 0 ? errors : undefined,
               };
         send(
           rpcResult(reqId, {

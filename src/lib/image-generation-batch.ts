@@ -439,23 +439,32 @@ export async function getImageBatch(params: {
   for (let i = 0; i < row.items.length; i++) {
     const item = row.items[i];
     const entry = inlined[i];
+    const promptSnippet = item.prompt.slice(0, 80);
+    const logFailure = (error: string) => {
+      console.error(
+        `[image-gen] batch ${params.batchId} item ${i + 1}/${row.items.length} failed: ${error}`,
+        { promptSnippet, source: row.source },
+      );
+    };
     if (!entry) {
-      results.push({ prompt: item.prompt, error: "no response from Gemini" });
+      const error = "no response from Gemini";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     if (entry.error) {
-      results.push({
-        prompt: item.prompt,
-        error: entry.error.message ?? `Gemini item error code ${entry.error.code ?? "?"}`,
-      });
+      const error =
+        entry.error.message ??
+        `Gemini item error code ${entry.error.code ?? "?"}`;
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     const block = entry.response?.promptFeedback?.blockReason;
     if (block) {
-      results.push({
-        prompt: item.prompt,
-        error: `Gemini blocked: ${block}`,
-      });
+      const error = `Gemini blocked: ${block}`;
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     const parts = entry.response?.candidates?.[0]?.content?.parts ?? [];
@@ -468,10 +477,9 @@ export async function getImageBatch(params: {
       }
     }
     if (!inline?.data) {
-      results.push({
-        prompt: item.prompt,
-        error: "Gemini returned no image",
-      });
+      const error = "Gemini returned no image";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     try {
@@ -496,10 +504,9 @@ export async function getImageBatch(params: {
       });
       totalImagesUploaded += 1;
     } catch (err) {
-      results.push({
-        prompt: item.prompt,
-        error: (err as Error).message ?? "upload/insert failed",
-      });
+      const error = (err as Error).message ?? "upload/insert failed";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
     }
   }
 
