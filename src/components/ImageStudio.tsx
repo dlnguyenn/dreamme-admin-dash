@@ -29,6 +29,14 @@ type BatchStatus =
   | "FAILED"
   | "CANCELLED";
 
+interface BatchItemInputClient {
+  prompt: string;
+  aspectRatio?: string;
+  referenceImageUrl?: string;
+  referenceImageBase64?: string;
+  referenceImageMimeType?: string;
+}
+
 interface ImageBatchSummary {
   batchId: string;
   geminiBatchName: string;
@@ -37,6 +45,11 @@ interface ImageBatchSummary {
   geminiModel: string;
   submittedAt: string;
   completedAt: string | null;
+  // The original input items, preserved by the server so the gallery
+  // can rebuild a payload for "Retry failed" without a separate fetch.
+  // Indices line up 1:1 with `results` (the server pushes one result
+  // per item in order).
+  items?: BatchItemInputClient[];
   results:
     | Array<{ prompt: string; imageUrl?: string; error?: string }>
     | null;
@@ -85,6 +98,7 @@ export function ImageStudio() {
   const [expandedBatchId, setExpandedBatchId] = React.useState<string | null>(
     null,
   );
+  const [retryBusyId, setRetryBusyId] = React.useState<string | null>(null);
 
   // Per-item failures from the most recent sync Generate. Cleared
   // when the next call starts. Banner above "Latest" surfaces them
@@ -554,6 +568,59 @@ export function ImageStudio() {
 
   const deleteOne = (row: ImageGenerationRow) => {
     deleteIds([row.id], "Deleted");
+  };
+
+  // "Deadline expired" and similar Gemini errors are usually
+  // transient — the same prompt + reference often succeeds on a
+  // second pass. Retry pulls the failed slots' original input from
+  // the batch row and submits a new batch containing only those
+  // items, so the admin doesn't have to re-pay for the slots that
+  // already succeeded.
+  const retryFailedBatch = async (batch: ImageBatchSummary) => {
+    if (!batch.results || !batch.items) {
+      toast("Retry needs the original batch items — try refreshing.");
+      return;
+    }
+    const failedItems = batch.results
+      .map((r, i) => ({ result: r, item: batch.items?.[i] }))
+      .filter((p) => p.result.error && p.item)
+      .map((p) => p.item as BatchItemInputClient);
+    if (failedItems.length === 0) return;
+    setRetryBusyId(batch.batchId);
+    try {
+      const res = await fetch("/api/image-studio/batch/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: failedItems,
+          displayName: `Retry of ${batch.batchId.slice(0, 8)}`,
+        }),
+      });
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; batch?: ImageBatchSummary };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `Retry failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
+      if (!json.ok || !json.batch) {
+        toast(`Retry failed: ${json.error ?? "unknown error"}`);
+        return;
+      }
+      const newBatch = json.batch;
+      setBatches((prev) => [newBatch, ...prev]);
+      toast(
+        `Retrying ${failedItems.length} failed item${failedItems.length === 1 ? "" : "s"} as a new batch.`,
+      );
+    } catch (e) {
+      toast(`Retry failed: ${(e as Error).message}`);
+    } finally {
+      setRetryBusyId(null);
+    }
   };
 
   // Click an avatar tile: highlight as the active reference, or toggle
@@ -1545,8 +1612,41 @@ export function ImageStudio() {
                             marginTop: 8,
                             display: "flex",
                             justifyContent: "flex-end",
+                            gap: 6,
                           }}
                         >
+                          <button
+                            type="button"
+                            onClick={() => retryFailedBatch(b)}
+                            disabled={
+                              !b.items || retryBusyId === b.batchId
+                            }
+                            title={
+                              !b.items
+                                ? "Original items unavailable for this batch"
+                                : `Re-submit the ${failed} failed item${failed === 1 ? "" : "s"} as a new batch`
+                            }
+                            style={{
+                              padding: "4px 10px",
+                              fontSize: 11,
+                              border: "1px solid var(--ink)",
+                              borderRadius: 6,
+                              background: "var(--ink)",
+                              color: "white",
+                              cursor:
+                                !b.items || retryBusyId === b.batchId
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity:
+                                !b.items || retryBusyId === b.batchId
+                                  ? 0.6
+                                  : 1,
+                            }}
+                          >
+                            {retryBusyId === b.batchId
+                              ? "Retrying…"
+                              : `Retry ${failed} failed`}
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
