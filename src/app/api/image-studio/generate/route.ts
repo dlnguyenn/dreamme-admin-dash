@@ -59,6 +59,12 @@ export async function POST(req: Request) {
   }
   try {
     const count = parsed.count ?? 1;
+    // gemini-3.1-flash-image-preview routinely takes 40-120 s on
+    // image-edit calls with detailed prompts; the default 60 s
+    // timeout in `generateImage` was aborting legitimate slow
+    // responses. Vercel `maxDuration` on this route is 300 s, the
+    // MCP path already uses 240 s — match it here for consistency.
+    const PER_ITEM_TIMEOUT_MS = 240_000;
     if (count === 1) {
       const result = await generateImage({
         prompt: parsed.prompt,
@@ -67,6 +73,7 @@ export async function POST(req: Request) {
         referenceImageBase64: parsed.referenceImageBase64,
         referenceImageMimeType: parsed.referenceImageMimeType,
         source: "dashboard",
+        timeoutMs: PER_ITEM_TIMEOUT_MS,
       });
       // Single-image response keeps `result` for back-compat; also expose
       // `results` so the UI can use one shape.
@@ -80,6 +87,7 @@ export async function POST(req: Request) {
       referenceImageMimeType: parsed.referenceImageMimeType,
       source: "dashboard",
       count,
+      timeoutMs: PER_ITEM_TIMEOUT_MS,
     });
     // All-or-nothing failure preserves today's 500-on-failure contract.
     // Otherwise return 200 with whatever succeeded plus a per-index
