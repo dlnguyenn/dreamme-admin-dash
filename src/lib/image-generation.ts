@@ -354,6 +354,55 @@ export interface GenerateImageResult {
   referenceImageUrl: string | null;
 }
 
+/**
+ * Decide whether a Gemini call failure is worth retrying once. We
+ * retry on the noise — timeouts, abort, 5xx, network hiccups — and
+ * skip permanent classes (safety blocks, validation, auth) that
+ * will fail the same way on a second pass.
+ */
+function isTransientGeminiError(err: unknown): boolean {
+  if (!err) return false;
+  const name = (err as Error)?.name?.toLowerCase() ?? "";
+  const message = (err as Error)?.message?.toLowerCase() ?? "";
+  if (!message && !name) return false;
+  if (name === "aborterror") return true;
+  // Skip known-permanent classifications even if they happen to
+  // contain a transient-looking word.
+  const permanentMarkers = [
+    "blocked",
+    "safety",
+    "policy",
+    "invalid_argument",
+    "permission_denied",
+    "unauthenticated",
+    "not found",
+  ];
+  if (permanentMarkers.some((m) => message.includes(m))) return false;
+  const transientMarkers = [
+    "abort",
+    "timeout",
+    "timed out",
+    "deadline",
+    "fetch failed",
+    "network",
+    "econnreset",
+    "econnrefused",
+    "enotfound",
+    "etimedout",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "internal server error",
+    "internal error",
+    "unavailable",
+    " 500",
+    " 502",
+    " 503",
+    " 504",
+  ];
+  return transientMarkers.some((m) => message.includes(m));
+}
+
 export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
@@ -400,22 +449,52 @@ export async function generateImage(params: {
     });
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    params.timeoutMs ?? 60_000,
-  );
+  // Auto-retry once on transient errors (timeouts, 5xx, network
+  // hiccups, abort). n8n's image-gen workflows retry silently — we
+  // bring Image Studio closer to that "always works" feel by giving
+  // the obvious-noise failures a second pass before surfacing them.
+  // Permanent failures (safety blocks, validation, auth) skip the
+  // retry. Each attempt gets its own AbortController so the second
+  // call isn't cancelled by the first attempt's already-fired timer.
+  const totalTimeoutMs = params.timeoutMs ?? 60_000;
+  const startedAt = Date.now();
+  const runOnce = async (budgetMs: number) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), budgetMs);
+    try {
+      return await callGemini(
+        prompt,
+        params.aspectRatio,
+        referenceImages,
+        controller.signal,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   let gen: Awaited<ReturnType<typeof callGemini>>;
   try {
-    gen = await callGemini(
-      prompt,
-      params.aspectRatio,
-      referenceImages,
-      controller.signal,
-    );
-  } finally {
-    clearTimeout(timer);
+    gen = await runOnce(totalTimeoutMs);
+  } catch (firstErr) {
+    const elapsed = Date.now() - startedAt;
+    const remainingMs = totalTimeoutMs - elapsed;
+    const transient = isTransientGeminiError(firstErr);
+    // Need at least 30 s of budget for a meaningful retry. Fast
+    // fails (network errors that came back in 1-2 s) leave plenty;
+    // a slow timeout that ate the whole budget skips retry and
+    // surfaces the original error.
+    if (transient && remainingMs >= 30_000) {
+      const message =
+        firstErr instanceof Error ? firstErr.message : String(firstErr);
+      console.warn(
+        `[image-gen] retrying after transient error (${message}); ${remainingMs} ms budget remaining`,
+        { source: params.source },
+      );
+      gen = await runOnce(remainingMs);
+    } else {
+      throw firstErr;
+    }
   }
 
   const ext = extFromMime(gen.mimeType);
