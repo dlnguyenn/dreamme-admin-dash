@@ -293,9 +293,16 @@ export function ImageStudio() {
         : [];
       if (!json.ok) {
         // All-or-nothing failure (no successes). Surface the first
-        // error in the toast and keep any per-item details around
-        // for the banner.
-        if (errors.length > 0) setGenErrors(errors);
+        // error in the toast and keep details in the persistent
+        // banner so the user can still read the message after the
+        // toast fades.
+        if (errors.length > 0) {
+          setGenErrors(errors);
+        } else {
+          setGenErrors([
+            { index: 0, error: json.error ?? "unknown error" },
+          ]);
+        }
         if (res.status === 429) {
           toast(`Rate limited: ${json.error}`);
         } else {
@@ -331,7 +338,9 @@ export function ImageStudio() {
       }
       loadGallery(0);
     } catch (e) {
-      toast(`Failed: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      setGenErrors([{ index: 0, error: msg }]);
+      toast(`Failed: ${msg}`);
     } finally {
       setGenerating(false);
     }
