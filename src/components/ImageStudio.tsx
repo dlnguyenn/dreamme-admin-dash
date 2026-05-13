@@ -56,18 +56,10 @@ interface ImageBatchSummary {
   error: string | null;
 }
 
-interface ConnectorConfig {
-  url: string;
-  token: string | null;
-  configured: boolean;
-}
-
 const PAGE_SIZE = 24;
 
 export function ImageStudio() {
   const toast = useToast();
-  const [config, setConfig] = React.useState<ConnectorConfig | null>(null);
-  const [configError, setConfigError] = React.useState<string | null>(null);
 
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("9:16");
@@ -121,29 +113,6 @@ export function ImageStudio() {
   const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [avatarUploadTarget, setAvatarUploadTarget] =
     React.useState<AvatarId | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/admin/mcp-image-token");
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error ?? "failed");
-        if (!cancelled) {
-          setConfig({
-            url: json.url,
-            token: json.token,
-            configured: !!json.configured,
-          });
-        }
-      } catch (e) {
-        if (!cancelled) setConfigError((e as Error).message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const loadGallery = React.useCallback(async (nextPage: number) => {
     setLoadingGallery(true);
@@ -748,17 +717,8 @@ export function ImageStudio() {
         subtitle="Generate images with Gemini, plus a self-hosted MCP endpoint that Claude (claude.ai connectors and Claude Code) can call as a tool. All generations are recorded in the gallery below."
       />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) 320px",
-          gap: 24,
-          alignItems: "start",
-          marginBottom: 32,
-        }}
-      >
-        <div>
-          <Section title="1. Generate">
+      <div style={{ marginBottom: 24 }}>
+        <Section title="1. Generate">
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -1142,8 +1102,21 @@ export function ImageStudio() {
               )}
             </div>
           </Section>
+      </div>
 
-          <Section title="2. Latest">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            batches.length > 0
+              ? "minmax(0,1fr) minmax(0,1fr)"
+              : "minmax(0,1fr)",
+          gap: 24,
+          alignItems: "start",
+          marginBottom: 32,
+        }}
+      >
+        <Section title="2. Latest">
             {genErrors.length > 0 && (
               <div
                 style={{
@@ -1298,95 +1271,8 @@ export function ImageStudio() {
               </div>
             )}
           </Section>
-        </div>
 
-        <aside
-          style={{
-            padding: 18,
-            background: "var(--surface-2)",
-            border: "1px solid var(--line)",
-            borderRadius: 12,
-            position: "sticky",
-            top: 16,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>
-            MCP connector config
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--ink-3)",
-              lineHeight: 1.5,
-              marginBottom: 14,
-            }}
-          >
-            Paste these into claude.ai → Settings → Connectors → Add custom
-            connector. The connector then shows up as an MCP tool across all
-            Claude projects (web + Claude Code).
-          </div>
-
-          <Field label="URL">
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                readOnly
-                value={config?.url ?? "loading…"}
-                style={{ ...inputStyle, fontSize: 12 }}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Icons.Copy />}
-                onClick={() => config?.url && copy(config.url, "URL copied")}
-                disabled={!config?.url}
-              >
-                {""}
-              </Button>
-            </div>
-          </Field>
-
-          <Field label="Bearer token">
-            {!config ? (
-              <div style={{ fontSize: 12, color: "var(--ink-4)" }}>loading…</div>
-            ) : config.configured && config.token ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Icons.Copy />}
-                onClick={() => copy(config.token!, "Token copied")}
-                style={{ width: "100%", justifyContent: "center" }}
-              >
-                Copy bearer token
-              </Button>
-            ) : (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--accent)",
-                  lineHeight: 1.5,
-                }}
-              >
-                MCP_IMAGE_BEARER_TOKEN not set on the server. Configure it in
-                Vercel project env vars before adding the connector.
-              </div>
-            )}
-          </Field>
-
-          {configError && (
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 11,
-                color: "var(--accent)",
-              }}
-            >
-              {configError}
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {batches.length > 0 && (
+        {batches.length > 0 && (
         <Section title="Batches">
           {batchesError && (
             <div
@@ -1682,7 +1568,8 @@ export function ImageStudio() {
             })}
           </div>
         </Section>
-      )}
+        )}
+      </div>
 
       <Section title="Gallery">
         {galleryError && (
@@ -2037,17 +1924,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         }}
       >
         {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-        {label}
       </div>
       {children}
     </div>
