@@ -16,6 +16,7 @@ import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
 import { SpyTool } from "./SpyTool";
 import { SpendDashboard } from "./SpendDashboard";
+import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
@@ -200,6 +201,8 @@ export function App() {
     screen = <SpyTool />;
   } else if (current === "spend") {
     screen = <SpendDashboard />;
+  } else if (current === "creatives") {
+    screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "resources") {

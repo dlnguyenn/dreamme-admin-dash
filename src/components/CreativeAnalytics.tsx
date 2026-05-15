@@ -1,14 +1,14 @@
-import Link from "next/link";
+"use client";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+import * as React from "react";
+import { PageHeader } from "./Shell";
+import { SUPABASE_URL, SUPABASE_ANON } from "@/lib/supabase";
 
 const RANGES = ["1d", "7d", "14d", "30d"] as const;
 type Range = (typeof RANGES)[number];
 
-const ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID ?? "act_1575502753719515";
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const ACCOUNT_ID =
+  process.env.NEXT_PUBLIC_META_AD_ACCOUNT_ID ?? "act_1575502753719515";
 
 interface InsightRow {
   ad_id: string;
@@ -83,7 +83,6 @@ function fmtPct(n: number): string {
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : NaN;
 }
-
 function utcDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -113,7 +112,7 @@ async function sbSelect<T>(path: string): Promise<T[]> {
 
 function aggregate(
   rows: InsightRow[],
-  campaignFilter: string | undefined,
+  campaignFilter: string | null,
 ): AdAgg[] {
   const map = new Map<string, AdAgg>();
   for (const r of rows) {
@@ -161,109 +160,95 @@ function aggregate(
   return [...map.values()].sort((a, b) => b.spend - a.spend);
 }
 
-interface PageProps {
-  searchParams: Promise<{ range?: string; campaign?: string }>;
-}
+export function CreativeAnalytics() {
+  const [range, setRange] = React.useState<Range>("7d");
+  const [campaignFilter, setCampaignFilter] = React.useState<string | null>(
+    null,
+  );
+  const [insights, setInsights] = React.useState<InsightRow[]>([]);
+  const [qualifiedRows, setQualifiedRows] = React.useState<QualifiedRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-export default async function CreativesPage({ searchParams }: PageProps) {
-  const sp = await searchParams;
-  const range: Range = (RANGES as readonly string[]).includes(sp.range ?? "")
-    ? (sp.range as Range)
-    : "7d";
-  const campaignFilter = sp.campaign?.trim() || undefined;
-  const { since, until } = dateWindow(range);
+  const { since, until } = React.useMemo(() => dateWindow(range), [range]);
 
-  let insights: InsightRow[] = [];
-  let qualifiedRows: QualifiedRow[] = [];
-  let fetchError: string | null = null;
-  try {
-    [insights, qualifiedRows] = await Promise.all([
-      sbSelect<InsightRow>(
-        `ad_insights_daily?select=*&date=gte.${since}&date=lte.${until}`,
-      ),
-      sbSelect<QualifiedRow>(
-        `qualified_trials_daily?select=date,count&date=gte.${since}&date=lte.${until}`,
-      ),
-    ]);
-  } catch (e) {
-    fetchError = (e as Error).message;
-  }
+  const refresh = React.useCallback(async () => {
+    setError(null);
+    try {
+      const [ins, q] = await Promise.all([
+        sbSelect<InsightRow>(
+          `ad_insights_daily?select=*&date=gte.${since}&date=lte.${until}`,
+        ),
+        sbSelect<QualifiedRow>(
+          `qualified_trials_daily?select=date,count&date=gte.${since}&date=lte.${until}`,
+        ),
+      ]);
+      setInsights(ins);
+      setQualifiedRows(q);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [since, until]);
 
-  const ads = aggregate(insights, campaignFilter);
+  React.useEffect(() => {
+    setLoading(true);
+    refresh();
+  }, [refresh]);
+
+  const ads = React.useMemo(
+    () => aggregate(insights, campaignFilter),
+    [insights, campaignFilter],
+  );
 
   const totalSpend = ads.reduce((s, a) => s + a.spend, 0);
   const totalImpressions = ads.reduce((s, a) => s + a.impressions, 0);
   const totalClicks = ads.reduce((s, a) => s + a.clicks, 0);
   const totalInstalls = ads.reduce((s, a) => s + a.installs, 0);
   const totalTrialStarts = ads.reduce((s, a) => s + a.trial_starts, 0);
-  const totalPurchases = ads.reduce((s, a) => s + a.purchases, 0);
-  const qualifiedCount = qualifiedRows.reduce((s, r) => s + (r.count || 0), 0);
+  const qualifiedCount = qualifiedRows.reduce(
+    (s, r) => s + (r.count || 0),
+    0,
+  );
   const qualifiedRate = safeDiv(qualifiedCount, totalTrialStarts);
   const trueQualifiedCpa = safeDiv(totalSpend, qualifiedCount);
   const reportedCpa = safeDiv(totalSpend, totalTrialStarts);
   const accountCtr = safeDiv(totalClicks, totalImpressions);
 
-  const campaigns = Array.from(
-    new Set(insights.map((r) => r.campaign_id).filter(Boolean) as string[]),
-  ).sort();
+  const campaigns = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of insights) {
+      if (r.campaign_id) m.set(r.campaign_id, r.campaign_name ?? r.campaign_id);
+    }
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [insights]);
 
-  const buildHref = (next: { range?: Range; campaign?: string | null }) => {
-    const params = new URLSearchParams();
-    const r = next.range ?? range;
-    if (r !== "7d") params.set("range", r);
-    const c =
-      next.campaign === undefined ? campaignFilter : next.campaign ?? undefined;
-    if (c) params.set("campaign", c);
-    const qs = params.toString();
-    return qs ? `/creatives?${qs}` : "/creatives";
-  };
-
-  return (
-    <div
-      style={{
-        maxWidth: 1400,
-        margin: "0 auto",
-        padding: "40px 32px 80px",
-        fontFamily: "var(--font-geist), -apple-system, sans-serif",
-        color: "var(--ink)",
-      }}
-    >
-      <header style={{ marginBottom: 28 }}>
+  if (loading) {
+    return (
+      <div style={{ padding: 80, textAlign: "center", color: "var(--ink-3)" }}>
         <div
-          style={{
-            fontSize: 11,
-            fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.14em",
-            color: "var(--ink-3)",
-            marginBottom: 8,
-          }}
-        >
-          Admin · Paid Media
-        </div>
-        <h1
+          className="serif"
           style={{
             fontFamily: "var(--font-newsreader), serif",
-            fontSize: 40,
-            fontWeight: 400,
-            margin: 0,
-            color: "var(--ink)",
+            fontSize: 24,
+            fontStyle: "italic",
           }}
         >
-          <em>Creatives</em>
-        </h1>
-        <p
-          style={{
-            color: "var(--ink-3)",
-            fontSize: 14,
-            marginTop: 6,
-            marginBottom: 0,
-          }}
-        >
-          Live ads from {ACCOUNT_ID}. Joined with n8n trial-qualified bridge.
-          Window: {since} → {until} (UTC).
-        </p>
-      </header>
+          Loading creatives…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Admin · Paid Media"
+        title={<em>Creatives</em>}
+        subtitle={`Live ads from ${ACCOUNT_ID}. Joined with the n8n trial-qualified bridge. Window: ${since} → ${until} (UTC).`}
+        tint="color-mix(in oklab, var(--p-andrea) 45%, transparent)"
+      />
 
       <div
         style={{
@@ -276,28 +261,32 @@ export default async function CreativesPage({ searchParams }: PageProps) {
       >
         <div style={{ display: "flex", gap: 6 }}>
           {RANGES.map((r) => (
-            <Link
+            <button
               key={r}
-              href={buildHref({ range: r })}
-              prefetch={false}
+              onClick={() => setRange(r)}
               style={{
                 padding: "6px 14px",
                 fontSize: 13,
                 fontWeight: 500,
                 borderRadius: 999,
                 border: "1px solid var(--line)",
-                background:
-                  r === range ? "var(--ink)" : "var(--surface)",
+                background: r === range ? "var(--ink)" : "var(--surface)",
                 color: r === range ? "var(--surface)" : "var(--ink-2)",
-                textDecoration: "none",
               }}
             >
               {r}
-            </Link>
+            </button>
           ))}
         </div>
         {campaigns.length > 1 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
             <span
               style={{
                 fontSize: 11,
@@ -309,57 +298,47 @@ export default async function CreativesPage({ searchParams }: PageProps) {
             >
               Campaign
             </span>
-            <Link
-              href={buildHref({ campaign: null })}
-              prefetch={false}
+            <button
+              onClick={() => setCampaignFilter(null)}
               style={{
                 padding: "4px 10px",
                 fontSize: 12,
                 borderRadius: 999,
                 border: "1px solid var(--line)",
-                background: !campaignFilter
-                  ? "var(--ink)"
-                  : "var(--surface)",
+                background: !campaignFilter ? "var(--ink)" : "var(--surface)",
                 color: !campaignFilter ? "var(--surface)" : "var(--ink-2)",
-                textDecoration: "none",
               }}
             >
               All
-            </Link>
-            {campaigns.map((c) => {
-              const label =
-                insights.find((r) => r.campaign_id === c)?.campaign_name ?? c;
-              return (
-                <Link
-                  key={c}
-                  href={buildHref({ campaign: c })}
-                  prefetch={false}
-                  title={c}
-                  style={{
-                    padding: "4px 10px",
-                    fontSize: 12,
-                    borderRadius: 999,
-                    border: "1px solid var(--line)",
-                    background:
-                      campaignFilter === c ? "var(--ink)" : "var(--surface)",
-                    color:
-                      campaignFilter === c ? "var(--surface)" : "var(--ink-2)",
-                    textDecoration: "none",
-                    maxWidth: 220,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {label}
-                </Link>
-              );
-            })}
+            </button>
+            {campaigns.map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setCampaignFilter(id)}
+                title={id}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: "1px solid var(--line)",
+                  background:
+                    campaignFilter === id ? "var(--ink)" : "var(--surface)",
+                  color:
+                    campaignFilter === id ? "var(--surface)" : "var(--ink-2)",
+                  maxWidth: 220,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
-      {fetchError && (
+      {error && (
         <div
           style={{
             marginBottom: 20,
@@ -373,7 +352,8 @@ export default async function CreativesPage({ searchParams }: PageProps) {
             borderRadius: 10,
           }}
         >
-          {fetchError} — run the sync crons to populate data.
+          {error} — run the sync crons (`/api/cron/sync-ad-insights`,{" "}
+          `/api/cron/sync-qualified-trials`) to populate data.
         </div>
       )}
 
@@ -383,7 +363,7 @@ export default async function CreativesPage({ searchParams }: PageProps) {
           border: "1px solid var(--line)",
           borderRadius: "var(--radius-lg)",
           padding: 24,
-          marginBottom: 32,
+          marginBottom: 28,
           boxShadow: "var(--shadow-sm)",
         }}
       >
@@ -410,7 +390,7 @@ export default async function CreativesPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      {ads.length === 0 && !fetchError && (
+      {ads.length === 0 && !error && (
         <div
           style={{
             padding: 80,
@@ -448,19 +428,19 @@ export default async function CreativesPage({ searchParams }: PageProps) {
 
       <p
         style={{
-          marginTop: 32,
+          marginTop: 28,
           fontSize: 12,
           color: "var(--ink-3)",
           fontStyle: "italic",
         }}
       >
         * Est. qualified and Blended qualified CPA apply the account-level
-        qualified rate uniformly to every ad. Real per-creative rate isn&apos;t
-        measurable until the iOS SDK captures fbc/fbp on install. Use these
-        columns for absolute magnitude; the ranking by reported CPA equals the
-        ranking by blended qualified CPA.
+        qualified rate uniformly. Real per-creative rate isn&apos;t measurable
+        until the iOS SDK captures fbc/fbp on install — use these columns for
+        absolute magnitude only; ranking by reported CPA equals ranking by
+        blended qualified CPA.
       </p>
-    </div>
+    </>
   );
 }
 
@@ -501,13 +481,7 @@ function Metric({
         {value}
       </div>
       {sub && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--ink-3)",
-            marginTop: 4,
-          }}
-        >
+        <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>
           {sub}
         </div>
       )}
@@ -531,7 +505,6 @@ function AdCard({
   const blendedCpa = safeDiv(ad.spend, estQualified);
   const reportedCpa = safeDiv(ad.spend, ad.trial_starts);
   const adsManager = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountId.replace(/^act_/, "")}&selected_ad_ids=${ad.ad_id}`;
-
   const statusTone =
     ad.effective_status === "ACTIVE"
       ? "var(--accent-2)"
@@ -745,9 +718,7 @@ function CardMetric({
         {value}
       </div>
       {sub && (
-        <div
-          style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}
-        >
+        <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>
           {sub}
         </div>
       )}
