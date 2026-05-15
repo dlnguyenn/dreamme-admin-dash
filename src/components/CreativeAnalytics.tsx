@@ -43,6 +43,28 @@ interface QualifiedRow {
   count: number;
 }
 
+interface RcAccountRow {
+  date: string;
+  mrr: string | number | null;
+  revenue: string | number | null;
+  active_subscriptions: number | null;
+  active_trials: number | null;
+  new_customers: number | null;
+  trial_starts: number | null;
+  trial_conversions: number | null;
+  trial_conversion_rate: string | number | null;
+  ltv_30d_per_paying_customer: string | number | null;
+}
+
+interface RcAdRow {
+  ad_id: string;
+  date: string;
+  trial_starts: number;
+  trial_conversions: number;
+  revenue_28d: string | number | null;
+  ltv_30d: string | number | null;
+}
+
 interface AdAgg {
   ad_id: string;
   ad_name: string;
@@ -82,6 +104,11 @@ function fmtPct(n: number): string {
 }
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : NaN;
+}
+function paybackLabel(days: number): string {
+  if (!Number.isFinite(days)) return "—";
+  if (days > 999) return "999+ d";
+  return `${Math.round(days)} d`;
 }
 function utcDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -167,6 +194,8 @@ export function CreativeAnalytics() {
   );
   const [insights, setInsights] = React.useState<InsightRow[]>([]);
   const [qualifiedRows, setQualifiedRows] = React.useState<QualifiedRow[]>([]);
+  const [rcAccount, setRcAccount] = React.useState<RcAccountRow[]>([]);
+  const [rcAds, setRcAds] = React.useState<RcAdRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -175,16 +204,24 @@ export function CreativeAnalytics() {
   const refresh = React.useCallback(async () => {
     setError(null);
     try {
-      const [ins, q] = await Promise.all([
+      const [ins, q, rcAcc, rcAd] = await Promise.all([
         sbSelect<InsightRow>(
           `ad_insights_daily?select=*&date=gte.${since}&date=lte.${until}`,
         ),
         sbSelect<QualifiedRow>(
           `qualified_trials_daily?select=date,count&date=gte.${since}&date=lte.${until}`,
         ),
+        sbSelect<RcAccountRow>(
+          `rc_account_metrics_daily?select=*&date=gte.${since}&date=lte.${until}`,
+        ),
+        sbSelect<RcAdRow>(
+          `rc_ad_metrics_daily?select=*&date=gte.${since}&date=lte.${until}`,
+        ),
       ]);
       setInsights(ins);
       setQualifiedRows(q);
+      setRcAccount(rcAcc);
+      setRcAds(rcAd);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -215,6 +252,47 @@ export function CreativeAnalytics() {
   const trueQualifiedCpa = safeDiv(totalSpend, qualifiedCount);
   const reportedCpa = safeDiv(totalSpend, totalTrialStarts);
   const accountCtr = safeDiv(totalClicks, totalImpressions);
+
+  // Account-level revenue / LTV / ROAS from RevenueCat. Window matches the
+  // selected range so apples-to-apples vs spend.
+  const accountRevenue = rcAccount.reduce(
+    (s, r) => s + (Number(r.revenue) || 0),
+    0,
+  );
+  const accountTrialConversions = rcAccount.reduce(
+    (s, r) => s + (Number(r.trial_conversions) || 0),
+    0,
+  );
+  // Average across daily LTV samples (RC reports it per-day for the cohort
+  // that converted that day; mean is the simplest stable summary).
+  const ltvSamples = rcAccount
+    .map((r) => Number(r.ltv_30d_per_paying_customer))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const accountLtv30d =
+    ltvSamples.length > 0
+      ? ltvSamples.reduce((s, n) => s + n, 0) / ltvSamples.length
+      : NaN;
+  const blendedRoas = safeDiv(accountRevenue, totalSpend);
+  // Daily revenue rate (window total / window days) → days-to-payback for total spend.
+  const windowDays = Math.max(1, rcAccount.length || 1);
+  const dailyRevenue = accountRevenue / windowDays;
+  const blendedPaybackDays = safeDiv(totalSpend, dailyRevenue);
+  const trialToPaidRate = safeDiv(accountTrialConversions, totalTrialStarts);
+
+  // Per-ad attribution lookup. Today this is empty for everyone; once iOS
+  // attribution wires up, ad_id → real per-ad LTV/revenue starts populating.
+  const rcAdMap = React.useMemo(() => {
+    const m = new Map<string, { revenue: number; ltv: number; trialStarts: number }>();
+    for (const r of rcAds) {
+      const cur = m.get(r.ad_id) ?? { revenue: 0, ltv: 0, trialStarts: 0 };
+      cur.revenue += Number(r.revenue_28d) || 0;
+      const ltv = Number(r.ltv_30d);
+      if (Number.isFinite(ltv) && ltv > 0) cur.ltv = ltv;
+      cur.trialStarts += Number(r.trial_starts) || 0;
+      m.set(r.ad_id, cur);
+    }
+    return m;
+  }, [rcAds]);
 
   const campaigns = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -363,10 +441,11 @@ export function CreativeAnalytics() {
           border: "1px solid var(--line)",
           borderRadius: "var(--radius-lg)",
           padding: 24,
-          marginBottom: 28,
+          marginBottom: 16,
           boxShadow: "var(--shadow-sm)",
         }}
       >
+        <SectionLabel>Acquisition</SectionLabel>
         <div
           style={{
             display: "grid",
@@ -386,6 +465,62 @@ export function CreativeAnalytics() {
             value={fmtUSD(trueQualifiedCpa)}
             sub={`Reported: ${fmtUSD(reportedCpa)}`}
             accent
+          />
+        </div>
+      </section>
+
+      <section
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-lg)",
+          padding: 24,
+          marginBottom: 28,
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <SectionLabel>
+          Money made{" "}
+          <span
+            style={{
+              color: "var(--ink-4)",
+              textTransform: "none",
+              letterSpacing: "normal",
+              fontFamily: "var(--font-geist), sans-serif",
+              fontSize: 11,
+              marginLeft: 8,
+            }}
+          >
+            from RevenueCat · {windowDays}d window
+          </span>
+        </SectionLabel>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: 24,
+          }}
+        >
+          <Metric label="Revenue" value={fmtUSD(accountRevenue)} />
+          <Metric
+            label="Trial → paid"
+            value={fmtPct(trialToPaidRate)}
+            sub={`${fmtInt(accountTrialConversions)} conversions`}
+          />
+          <Metric label="30d LTV / paid" value={fmtUSD(accountLtv30d)} />
+          <Metric
+            label="Blended ROAS"
+            value={
+              Number.isFinite(blendedRoas)
+                ? `${blendedRoas.toFixed(2)}×`
+                : "—"
+            }
+            accent
+          />
+          <Metric
+            label="Blended payback"
+            value={paybackLabel(blendedPaybackDays)}
+            sub="days at current daily revenue"
           />
         </div>
       </section>
@@ -422,6 +557,10 @@ export function CreativeAnalytics() {
             ad={a}
             qualifiedRate={qualifiedRate}
             accountId={ACCOUNT_ID}
+            totalSpend={totalSpend}
+            accountRevenue={accountRevenue}
+            accountLtv30d={accountLtv30d}
+            rcAd={rcAdMap.get(a.ad_id) ?? null}
           />
         ))}
       </div>
@@ -434,11 +573,14 @@ export function CreativeAnalytics() {
           fontStyle: "italic",
         }}
       >
-        * Est. qualified and Blended qualified CPA apply the account-level
-        qualified rate uniformly. Real per-creative rate isn&apos;t measurable
-        until the iOS SDK captures fbc/fbp on install — use these columns for
-        absolute magnitude only; ranking by reported CPA equals ranking by
-        blended qualified CPA.
+        * Per-ad revenue, ROAS, and payback are blended estimates today
+        (account rate × per-ad spend share). They become real per-ad
+        measurements once iOS attribution lands — see{" "}
+        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+          docs/attribution-handoff.md
+        </code>
+        . Until then, use them for absolute magnitude only; ranking by
+        reported CPA equals ranking by blended ROAS.
       </p>
     </>
   );
@@ -493,10 +635,18 @@ function AdCard({
   ad,
   qualifiedRate,
   accountId,
+  totalSpend,
+  accountRevenue,
+  accountLtv30d,
+  rcAd,
 }: {
   ad: AdAgg;
   qualifiedRate: number;
   accountId: string;
+  totalSpend: number;
+  accountRevenue: number;
+  accountLtv30d: number;
+  rcAd: { revenue: number; ltv: number; trialStarts: number } | null;
 }) {
   const ctr = safeDiv(ad.clicks, ad.impressions);
   const estQualified = Number.isFinite(qualifiedRate)
@@ -505,6 +655,19 @@ function AdCard({
   const blendedCpa = safeDiv(ad.spend, estQualified);
   const reportedCpa = safeDiv(ad.spend, ad.trial_starts);
   const adsManager = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountId.replace(/^act_/, "")}&selected_ad_ids=${ad.ad_id}`;
+
+  // Per-ad money: prefer real RC attribution row when present; otherwise
+  // blend by spend share. The per-card asterisk distinguishes the two.
+  const hasRealAttribution = !!rcAd && rcAd.revenue > 0;
+  const adRevenue = hasRealAttribution
+    ? rcAd!.revenue
+    : safeDiv(ad.spend * accountRevenue, totalSpend);
+  const adRoas = safeDiv(adRevenue, ad.spend);
+  // Days-to-payback at the LTV per paying customer × estimated paying-customer count.
+  // Approximation: revenue / ad.spend = ROAS; payback ≈ ad.spend / (adRevenue / 28).
+  const adDailyRevenue = adRevenue / 28;
+  const adPayback = safeDiv(ad.spend, adDailyRevenue);
+  void accountLtv30d; // reserved — used once attribution lands and we compute true LTV cohorts.
   const statusTone =
     ad.effective_status === "ACTIVE"
       ? "var(--accent-2)"
@@ -656,6 +819,29 @@ function AdCard({
             value={fmtUSD(blendedCpa)}
             sub={`Rep. ${fmtUSD(reportedCpa)}`}
           />
+          <CardMetric
+            label={hasRealAttribution ? "Revenue" : "Revenue*"}
+            value={fmtUSD(adRevenue)}
+          />
+          <CardMetric
+            label={hasRealAttribution ? "ROAS" : "ROAS*"}
+            value={
+              Number.isFinite(adRoas) ? `${adRoas.toFixed(2)}×` : "—"
+            }
+            tone={
+              !Number.isFinite(adRoas)
+                ? undefined
+                : adRoas >= 1
+                  ? "good"
+                  : adRoas >= 0.5
+                    ? "warn"
+                    : "bad"
+            }
+          />
+          <CardMetric
+            label={hasRealAttribution ? "Payback" : "Payback*"}
+            value={paybackLabel(adPayback)}
+          />
         </div>
 
         <a
@@ -688,11 +874,21 @@ function CardMetric({
   label,
   value,
   sub,
+  tone,
 }: {
   label: string;
   value: string;
   sub?: string;
+  tone?: "good" | "warn" | "bad";
 }) {
+  const valueColor =
+    tone === "good"
+      ? "var(--accent-2)"
+      : tone === "bad"
+        ? "var(--accent)"
+        : tone === "warn"
+          ? "var(--ink-2)"
+          : "var(--ink)";
   return (
     <div>
       <div
@@ -711,7 +907,7 @@ function CardMetric({
         style={{
           fontSize: 14,
           fontWeight: 500,
-          color: "var(--ink)",
+          color: valueColor,
           lineHeight: 1.2,
         }}
       >
@@ -722,6 +918,23 @@ function CardMetric({
           {sub}
         </div>
       )}
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontFamily: "var(--font-geist-mono), monospace",
+        textTransform: "uppercase",
+        letterSpacing: "0.14em",
+        color: "var(--ink-3)",
+        marginBottom: 16,
+      }}
+    >
+      {children}
     </div>
   );
 }
