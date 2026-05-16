@@ -105,11 +105,6 @@ function fmtPct(n: number): string {
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : NaN;
 }
-function paybackLabel(days: number): string {
-  if (!Number.isFinite(days)) return "—";
-  if (days > 999) return "999+ d";
-  return `${Math.round(days)} d`;
-}
 function utcDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -248,8 +243,10 @@ export function CreativeAnalytics() {
     (s, r) => s + (r.count || 0),
     0,
   );
-  const qualifiedRate = safeDiv(qualifiedCount, totalTrialStarts);
-  const trueQualifiedCpa = safeDiv(totalSpend, qualifiedCount);
+  // qualifiedRate / trueQualifiedCpa intentionally removed: n8n fires for ALL
+  // trials (paid + organic) while totalTrialStarts is Meta-SDK-only, so the
+  // ratio is mismatched and produces nonsense numbers (e.g. 1625%). Bring
+  // these back once iOS attribution lands so the n8n count can be Meta-filtered.
   const reportedCpa = safeDiv(totalSpend, totalTrialStarts);
   const accountCtr = safeDiv(totalClicks, totalImpressions);
 
@@ -273,11 +270,10 @@ export function CreativeAnalytics() {
       ? ltvSamples.reduce((s, n) => s + n, 0) / ltvSamples.length
       : NaN;
   const blendedRoas = safeDiv(accountRevenue, totalSpend);
-  // Daily revenue rate (window total / window days) → days-to-payback for total spend.
   const windowDays = Math.max(1, rcAccount.length || 1);
-  const dailyRevenue = accountRevenue / windowDays;
-  const blendedPaybackDays = safeDiv(totalSpend, dailyRevenue);
-  const trialToPaidRate = safeDiv(accountTrialConversions, totalTrialStarts);
+  // Trial→paid uses the account-wide n8n trial count as the denominator so
+  // both sides are account-scope. (Conversions are also account-scope.)
+  const trialToPaidRate = safeDiv(accountTrialConversions, qualifiedCount);
 
   // Per-ad attribution lookup. Today this is empty for everyone; once iOS
   // attribution wires up, ad_id → real per-ad LTV/revenue starts populating.
@@ -435,6 +431,32 @@ export function CreativeAnalytics() {
         </div>
       )}
 
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "12px 16px",
+          fontSize: 12,
+          color: "var(--ink-3)",
+          background:
+            "color-mix(in oklab, var(--p-mia) 12%, var(--surface))",
+          border:
+            "1px solid color-mix(in oklab, var(--p-mia) 30%, var(--line))",
+          borderRadius: 10,
+          lineHeight: 1.55,
+        }}
+      >
+        <strong style={{ color: "var(--ink-2)" }}>
+          Heads up — Meta is a small share of installs.
+        </strong>{" "}
+        Most revenue is organic (TikTok), so account-wide ROAS overstates
+        Meta-isolated ROAS. Per-ad revenue/payback aren&apos;t computable
+        until iOS attribution wires up — see{" "}
+        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+          docs/attribution-handoff.md
+        </code>
+        .
+      </div>
+
       <section
         style={{
           background: "var(--surface)",
@@ -445,7 +467,7 @@ export function CreativeAnalytics() {
           boxShadow: "var(--shadow-sm)",
         }}
       >
-        <SectionLabel>Acquisition</SectionLabel>
+        <SectionLabel>Meta acquisition · window</SectionLabel>
         <div
           style={{
             display: "grid",
@@ -457,14 +479,15 @@ export function CreativeAnalytics() {
           <Metric label="Impressions" value={fmtInt(totalImpressions)} />
           <Metric label="CTR" value={fmtPct(accountCtr)} />
           <Metric label="Installs" value={fmtInt(totalInstalls)} />
-          <Metric label="Trial starts" value={fmtInt(totalTrialStarts)} />
-          <Metric label="Qualified trials" value={fmtInt(qualifiedCount)} />
-          <Metric label="Qualified rate" value={fmtPct(qualifiedRate)} />
           <Metric
-            label="True qualified CPA"
-            value={fmtUSD(trueQualifiedCpa)}
-            sub={`Reported: ${fmtUSD(reportedCpa)}`}
-            accent
+            label="Trial starts"
+            value={fmtInt(totalTrialStarts)}
+            sub="Meta SDK in-app event"
+          />
+          <Metric
+            label="Reported trial CPA"
+            value={fmtUSD(reportedCpa)}
+            sub="spend ÷ trial starts"
           />
         </div>
       </section>
@@ -480,7 +503,7 @@ export function CreativeAnalytics() {
         }}
       >
         <SectionLabel>
-          Money made{" "}
+          Account revenue · all sources{" "}
           <span
             style={{
               color: "var(--ink-4)",
@@ -491,7 +514,7 @@ export function CreativeAnalytics() {
               marginLeft: 8,
             }}
           >
-            from RevenueCat · {windowDays}d window
+            RevenueCat · {windowDays}d window · includes organic
           </span>
         </SectionLabel>
         <div
@@ -503,24 +526,25 @@ export function CreativeAnalytics() {
         >
           <Metric label="Revenue" value={fmtUSD(accountRevenue)} />
           <Metric
+            label="Trials (account)"
+            value={fmtInt(qualifiedCount)}
+            sub="n8n bridge · all sources"
+          />
+          <Metric
             label="Trial → paid"
             value={fmtPct(trialToPaidRate)}
             sub={`${fmtInt(accountTrialConversions)} conversions`}
           />
           <Metric label="30d LTV / paid" value={fmtUSD(accountLtv30d)} />
           <Metric
-            label="Blended ROAS"
+            label="Account ROAS"
             value={
               Number.isFinite(blendedRoas)
                 ? `${blendedRoas.toFixed(2)}×`
                 : "—"
             }
+            sub="all revenue ÷ Meta spend · inflated"
             accent
-          />
-          <Metric
-            label="Blended payback"
-            value={paybackLabel(blendedPaybackDays)}
-            sub="days at current daily revenue"
           />
         </div>
       </section>
@@ -555,7 +579,6 @@ export function CreativeAnalytics() {
           <AdCard
             key={a.ad_id}
             ad={a}
-            qualifiedRate={qualifiedRate}
             accountId={ACCOUNT_ID}
             totalSpend={totalSpend}
             accountRevenue={accountRevenue}
@@ -571,16 +594,27 @@ export function CreativeAnalytics() {
           fontSize: 12,
           color: "var(--ink-3)",
           fontStyle: "italic",
+          lineHeight: 1.6,
         }}
       >
-        * Per-ad revenue, ROAS, and payback are blended estimates today
-        (account rate × per-ad spend share). They become real per-ad
-        measurements once iOS attribution lands — see{" "}
+        <strong>Notes on the numbers.</strong> Trial starts and Reported CPA
+        are Meta-SDK in-platform signals only (the iOS SDK fires{" "}
+        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+          fb_mobile_complete_registration
+        </code>{" "}
+        for users it attributes back to a Meta ad). Trials (account) and
+        Account ROAS include organic traffic (TikTok, ASA, word-of-mouth)
+        and are NOT Meta-isolated — useful as a macro signal of overall app
+        health, not as a measure of Meta ad performance. Per-ad ROAS will
+        light up once{" "}
+        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+          Purchases.shared.attribution.setAd(...)
+        </code>{" "}
+        is wired in iOS (see{" "}
         <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
           docs/attribution-handoff.md
         </code>
-        . Until then, use them for absolute magnitude only; ranking by
-        reported CPA equals ranking by blended ROAS.
+        ).
       </p>
     </>
   );
@@ -633,7 +667,6 @@ function Metric({
 
 function AdCard({
   ad,
-  qualifiedRate,
   accountId,
   totalSpend,
   accountRevenue,
@@ -641,7 +674,6 @@ function AdCard({
   rcAd,
 }: {
   ad: AdAgg;
-  qualifiedRate: number;
   accountId: string;
   totalSpend: number;
   accountRevenue: number;
@@ -649,25 +681,18 @@ function AdCard({
   rcAd: { revenue: number; ltv: number; trialStarts: number } | null;
 }) {
   const ctr = safeDiv(ad.clicks, ad.impressions);
-  const estQualified = Number.isFinite(qualifiedRate)
-    ? ad.trial_starts * qualifiedRate
-    : NaN;
-  const blendedCpa = safeDiv(ad.spend, estQualified);
   const reportedCpa = safeDiv(ad.spend, ad.trial_starts);
   const adsManager = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountId.replace(/^act_/, "")}&selected_ad_ids=${ad.ad_id}`;
 
-  // Per-ad money: prefer real RC attribution row when present; otherwise
-  // blend by spend share. The per-card asterisk distinguishes the two.
+  // Real per-ad ROAS only renders once iOS attribution lands. Until then,
+  // blending by spend share at <30% Meta install share would lie loudly —
+  // better to show "—" with a clear "needs attribution" caption.
   const hasRealAttribution = !!rcAd && rcAd.revenue > 0;
-  const adRevenue = hasRealAttribution
-    ? rcAd!.revenue
-    : safeDiv(ad.spend * accountRevenue, totalSpend);
+  const adRevenue = hasRealAttribution ? rcAd!.revenue : NaN;
   const adRoas = safeDiv(adRevenue, ad.spend);
-  // Days-to-payback at the LTV per paying customer × estimated paying-customer count.
-  // Approximation: revenue / ad.spend = ROAS; payback ≈ ad.spend / (adRevenue / 28).
-  const adDailyRevenue = adRevenue / 28;
-  const adPayback = safeDiv(ad.spend, adDailyRevenue);
-  void accountLtv30d; // reserved — used once attribution lands and we compute true LTV cohorts.
+  void accountLtv30d;
+  void accountRevenue;
+  void totalSpend;
   const statusTone =
     ad.effective_status === "ACTIVE"
       ? "var(--accent-2)"
@@ -813,35 +838,34 @@ function AdCard({
           <CardMetric label="CTR" value={fmtPct(ctr)} />
           <CardMetric label="Installs" value={fmtInt(ad.installs)} />
           <CardMetric label="Trials" value={fmtInt(ad.trial_starts)} />
-          <CardMetric label="Est. qual.*" value={fmtInt(estQualified)} />
           <CardMetric
-            label="Qual. CPA*"
-            value={fmtUSD(blendedCpa)}
-            sub={`Rep. ${fmtUSD(reportedCpa)}`}
+            label="Reported CPA"
+            value={fmtUSD(reportedCpa)}
           />
-          <CardMetric
-            label={hasRealAttribution ? "Revenue" : "Revenue*"}
-            value={fmtUSD(adRevenue)}
-          />
-          <CardMetric
-            label={hasRealAttribution ? "ROAS" : "ROAS*"}
-            value={
-              Number.isFinite(adRoas) ? `${adRoas.toFixed(2)}×` : "—"
-            }
-            tone={
-              !Number.isFinite(adRoas)
-                ? undefined
-                : adRoas >= 1
-                  ? "good"
-                  : adRoas >= 0.5
-                    ? "warn"
-                    : "bad"
-            }
-          />
-          <CardMetric
-            label={hasRealAttribution ? "Payback" : "Payback*"}
-            value={paybackLabel(adPayback)}
-          />
+          {hasRealAttribution ? (
+            <CardMetric
+              label="ROAS"
+              value={
+                Number.isFinite(adRoas) ? `${adRoas.toFixed(2)}×` : "—"
+              }
+              tone={
+                !Number.isFinite(adRoas)
+                  ? undefined
+                  : adRoas >= 1
+                    ? "good"
+                    : adRoas >= 0.5
+                      ? "warn"
+                      : "bad"
+              }
+              sub={fmtUSD(adRevenue)}
+            />
+          ) : (
+            <CardMetric
+              label="ROAS"
+              value="—"
+              sub="needs attribution"
+            />
+          )}
         </div>
 
         <a

@@ -47,6 +47,10 @@ export async function GET(req: Request) {
     process.env.N8N_TRIAL_QUALIFIED_WORKFLOW_ID ?? DEFAULT_WORKFLOW_ID;
   const source = `n8n_workflow_${workflowId}`;
 
+  const url = new URL(req.url);
+  const daysParam = Number(url.searchParams.get("days") ?? "35");
+  const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 90) : 35;
+
   const today = utcMidnight(new Date());
   const dayMs = 24 * 60 * 60 * 1000;
 
@@ -59,7 +63,7 @@ export async function GET(req: Request) {
 
   const now = new Date().toISOString();
   try {
-    for (let i = 2; i >= 0; i--) {
+    for (let i = days - 1; i >= 0; i--) {
       const dayStart = new Date(today.getTime() - i * dayMs);
       const dayEnd = new Date(dayStart.getTime() + dayMs);
       const count = await fetchExecutionCount({

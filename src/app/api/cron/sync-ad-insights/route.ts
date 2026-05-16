@@ -45,8 +45,14 @@ export async function GET(req: Request) {
   }
 
   const accountId = process.env.META_AD_ACCOUNT_ID ?? DEFAULT_ACCOUNT_ID;
+  // Default 35d so weekly/monthly dashboard windows are always fully
+  // backfilled even if a daily run is skipped. Override with ?days=N for
+  // one-shot backfills.
+  const url = new URL(req.url);
+  const daysParam = Number(url.searchParams.get("days") ?? "35");
+  const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 90) : 35;
   const today = new Date();
-  const since = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const since = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
   const sinceDate = utcDate(since);
   const untilDate = utcDate(today);
 
