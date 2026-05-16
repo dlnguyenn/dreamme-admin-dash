@@ -161,7 +161,7 @@ export async function fetchChart(params: {
   const projectId = getProjectId();
   if (!projectId) throw new Error("REVENUECAT_PROJECT_ID not set");
   return rcFetchJson<ChartResponse>(
-    `/projects/${projectId}/metrics/charts/${params.chartName}`,
+    `/projects/${projectId}/charts/${params.chartName}`,
     {
       start_date: params.startDate,
       end_date: params.endDate,
