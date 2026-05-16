@@ -9,6 +9,49 @@ iOS repo).
 the iOS SDK never fires `fb_mobile_complete_registration` with attribution).
 One iOS PR closes both holes.
 
+## Three pre-flight items that don't need iOS code (do these first)
+
+These take 30 minutes total in dashboards. They give immediate value
+even before the Swift work below ships.
+
+### 1. Enable Meta AEM (Aggregated Event Measurement)
+Meta Business Manager → Events Manager → your iOS app dataset →
+**Aggregated Event Measurement** → Configure. Rank the 8 priority
+events in this order:
+1. Subscribe (the conversion that matters most for ad-bid optimization)
+2. StartTrial
+3. AddPaymentInfo
+4. CompleteRegistration
+5. InitiateCheckout
+6. ViewContent
+7. AddToCart
+8. Search
+
+AEM runs in parallel with SKAdNetwork and works for ATT-allowed users
+*and* gives ad-level resolution. Without it, SKAN alone gives campaign-
+level resolution at best. Free, instant; nothing to install.
+
+### 2. Connect RC → Meta CAPI in the RevenueCat dashboard
+RC Settings → Integrations → Meta Ads → Connect. Authorize against
+Business Manager; pick the `act_1575502753719515` ad account and the
+iOS pixel. Map RC events: `INITIAL_PURCHASE` → Purchase,
+`RENEWAL` → Subscribe, `TRIAL_STARTED` → StartTrial,
+`TRIAL_CONVERTED` → Subscribe. RC starts pushing real downstream
+conversion signal to Meta's auto-bidder → better automatic budget
+allocation, no app code needed.
+
+### 3. Disable client-side Meta SDK auto-logging (one line of Swift)
+Once Item 2 is on, the iOS SDK and RC→Meta CAPI will both fire
+purchase events, causing **double-counting in Meta's optimization**.
+Add this once during FB SDK init:
+
+```swift
+Settings.shared.isAutoLogAppEventsEnabled = false
+```
+
+(Already-fired duplicate events are fine — Meta dedupes by event_id
+when both paths send it.)
+
 ## Why this matters
 
 I queried RevenueCat (`projc9e74a6c`) on 2026-05-15 with `trial_conversion_rate`
@@ -152,6 +195,44 @@ just lifts those query params.
    receiving `fb_mobile_complete_registration` events with the campaign
    IDs populated. The n8n `trial_qualified` workflow can then be retired
    (or repurposed as redundancy).
+
+## When TikTok Spark Ads ship (parallel pipeline)
+
+The dashboard repo is already wired to pull TikTok ad insights (cron at
+`/api/cron/sync-tiktok-ads`, table `tiktok_ad_insights_daily`, Spark Ad
+detection via `identity_type === "AUTH_CODE"`). Once you start running
+TikTok ads, the iOS attribution wiring needs a small extension:
+
+1. Detect the install referrer for TikTok. TikTok's iOS SDK exposes
+   `TikTokBusinessSDK.getDeferredDeeplink()` (mirrors the Meta deferred
+   deep-link API). Add a sibling resolver:
+   ```swift
+   TikTokBusiness.shared.fetchDeferredDeeplink { url, error in
+       guard let url = url, let attr = TikTokInstallAttribution.resolve(url: url) else { return }
+       Purchases.shared.attribution.setMediaSource("tiktok")
+       Purchases.shared.attribution.setCampaign(attr.campaignId)
+       Purchases.shared.attribution.setAdGroup(attr.adgroupId)
+       Purchases.shared.attribution.setAd(attr.adId)
+       Purchases.shared.attribution.setAttributes([
+           "tiktok_campaign_id": attr.campaignId,
+           "tiktok_adgroup_id":  attr.adgroupId,
+           "tiktok_ad_id":       attr.adId,
+       ])
+   }
+   ```
+2. Order of resolution: try Meta first, fall back to TikTok, fall back
+   to "organic". Only ONE `setMediaSource` should win per install.
+3. UTM template for TikTok ad destination URLs:
+   ```
+   https://dreamme.app/install?utm_source=tiktok&utm_campaign={__CAMPAIGN_ID__}&utm_medium={__AID__}&utm_content={__CID__}
+   ```
+   (TikTok macros: `__CAMPAIGN_ID__`, `__AID__` = ad ID, `__CID__` =
+   creative ID. Different syntax from Meta's `{{...}}`.)
+
+The dashboard's `rc_ad_metrics_daily` table doesn't care whether
+`attribution_ad` is a Meta or TikTok ad_id; it just joins on the value.
+So once both platforms are firing `setAd`, per-ad ROAS lights up for
+both in the same UI panel.
 
 ## Notes / gotchas
 

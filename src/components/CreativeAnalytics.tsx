@@ -7,8 +7,15 @@ import { SUPABASE_URL, SUPABASE_ANON } from "@/lib/supabase";
 const RANGES = ["1d", "7d", "14d", "30d"] as const;
 type Range = (typeof RANGES)[number];
 
+const PLATFORMS = ["meta", "tiktok"] as const;
+type Platform = (typeof PLATFORMS)[number];
+
 const ACCOUNT_ID =
   process.env.NEXT_PUBLIC_META_AD_ACCOUNT_ID ?? "act_1575502753719515";
+// Spend threshold below which a day is treated as "no-paid baseline" for
+// the incremental-lift card. $10 covers brand-protection / always-on tests
+// without misclassifying real promo days.
+const BASELINE_SPEND_THRESHOLD = 10;
 
 interface InsightRow {
   ad_id: string;
@@ -65,6 +72,34 @@ interface RcAdRow {
   ltv_30d: string | number | null;
 }
 
+interface TiktokRow {
+  ad_id: string;
+  date: string;
+  ad_name: string | null;
+  adgroup_id: string | null;
+  adgroup_name: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  status: string | null;
+  operation_status: string | null;
+  spend: string | number;
+  impressions: number;
+  clicks: number;
+  ctr: string | number | null;
+  cpm: string | number | null;
+  video_play_actions: number;
+  video_views_p100: number;
+  installs: number;
+  trial_starts: number;
+  purchases: number;
+  purchase_value: string | number;
+  is_spark_ad: boolean;
+  spark_creator_username: string | null;
+  spark_video_id: string | null;
+  spark_video_url: string | null;
+  thumbnail_url: string | null;
+}
+
 interface AdAgg {
   ad_id: string;
   ad_name: string;
@@ -83,6 +118,12 @@ interface AdAgg {
   image_url: string;
   video_id: string;
   latest_date: string;
+  // TikTok-only
+  video_views_p100?: number;
+  is_spark_ad?: boolean;
+  spark_creator_username?: string;
+  spark_video_url?: string;
+  platform: Platform;
 }
 
 function fmtUSD(n: number): string {
@@ -159,6 +200,7 @@ function aggregate(
         image_url: r.image_url ?? "",
         video_id: r.video_id ?? "",
         latest_date: r.date,
+        platform: "meta",
       };
       map.set(r.ad_id, a);
     }
@@ -182,26 +224,108 @@ function aggregate(
   return [...map.values()].sort((a, b) => b.spend - a.spend);
 }
 
+function aggregateTiktok(
+  rows: TiktokRow[],
+  campaignFilter: string | null,
+): AdAgg[] {
+  const map = new Map<string, AdAgg>();
+  for (const r of rows) {
+    if (campaignFilter && r.campaign_id !== campaignFilter) continue;
+    let a = map.get(r.ad_id);
+    if (!a) {
+      a = {
+        ad_id: r.ad_id,
+        ad_name: r.ad_name ?? "",
+        adset_id: r.adgroup_id ?? "",
+        adset_name: r.adgroup_name ?? "",
+        campaign_id: r.campaign_id ?? "",
+        campaign_name: r.campaign_name ?? "",
+        effective_status: r.operation_status ?? r.status ?? "",
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        installs: 0,
+        trial_starts: 0,
+        purchases: 0,
+        thumbnail_url: r.thumbnail_url ?? "",
+        image_url: "",
+        video_id: r.spark_video_id ?? "",
+        latest_date: r.date,
+        video_views_p100: 0,
+        is_spark_ad: !!r.is_spark_ad,
+        spark_creator_username: r.spark_creator_username ?? "",
+        spark_video_url: r.spark_video_url ?? "",
+        platform: "tiktok",
+      };
+      map.set(r.ad_id, a);
+    }
+    a.spend += Number(r.spend) || 0;
+    a.impressions += Number(r.impressions) || 0;
+    a.clicks += Number(r.clicks) || 0;
+    a.installs += Number(r.installs) || 0;
+    a.trial_starts += Number(r.trial_starts) || 0;
+    a.purchases += Number(r.purchases) || 0;
+    a.video_views_p100 = (a.video_views_p100 ?? 0) + (Number(r.video_views_p100) || 0);
+    if (r.date >= a.latest_date) {
+      a.latest_date = r.date;
+      if (r.ad_name) a.ad_name = r.ad_name;
+      if (r.adgroup_name) a.adset_name = r.adgroup_name;
+      if (r.campaign_name) a.campaign_name = r.campaign_name;
+      const status = r.operation_status ?? r.status ?? "";
+      if (status) a.effective_status = status;
+      if (r.thumbnail_url) a.thumbnail_url = r.thumbnail_url;
+      a.is_spark_ad = !!r.is_spark_ad;
+      if (r.spark_creator_username) a.spark_creator_username = r.spark_creator_username;
+      if (r.spark_video_url) a.spark_video_url = r.spark_video_url;
+    }
+  }
+  return [...map.values()].sort((a, b) => b.spend - a.spend);
+}
+
 export function CreativeAnalytics() {
   const [range, setRange] = React.useState<Range>("7d");
+  const [platform, setPlatform] = React.useState<Platform>("meta");
   const [campaignFilter, setCampaignFilter] = React.useState<string | null>(
     null,
   );
   const [insights, setInsights] = React.useState<InsightRow[]>([]);
+  const [tiktokInsights, setTiktokInsights] = React.useState<TiktokRow[]>([]);
   const [qualifiedRows, setQualifiedRows] = React.useState<QualifiedRow[]>([]);
   const [rcAccount, setRcAccount] = React.useState<RcAccountRow[]>([]);
   const [rcAds, setRcAds] = React.useState<RcAdRow[]>([]);
+  // 60d window used to derive a baseline trial volume from low-spend days,
+  // independent of the user-selected display window. Pulled from RC's
+  // trial_starts (more reliable + longer history than the n8n bridge,
+  // which only started firing reliably 2026-05-10).
+  const [baselineHistory, setBaselineHistory] = React.useState<
+    { date: string; meta_spend: number; trial_starts: number }[]
+  >([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Reset campaign filter when switching platform — campaign IDs don't cross.
+  React.useEffect(() => {
+    setCampaignFilter(null);
+  }, [platform]);
+
   const { since, until } = React.useMemo(() => dateWindow(range), [range]);
+
+  // Wide 60d window for baseline computation (separate from display window).
+  const baselineWindow = React.useMemo(() => {
+    const today = new Date();
+    const start = new Date(today.getTime() - 59 * 24 * 60 * 60 * 1000);
+    return { since: utcDate(start), until: utcDate(today) };
+  }, []);
 
   const refresh = React.useCallback(async () => {
     setError(null);
     try {
-      const [ins, q, rcAcc, rcAd] = await Promise.all([
+      const [ins, tt, q, rcAcc, rcAd, baseMeta, baseTrials] = await Promise.all([
         sbSelect<InsightRow>(
           `ad_insights_daily?select=*&date=gte.${since}&date=lte.${until}`,
+        ),
+        sbSelect<TiktokRow>(
+          `tiktok_ad_insights_daily?select=*&date=gte.${since}&date=lte.${until}`,
         ),
         sbSelect<QualifiedRow>(
           `qualified_trials_daily?select=date,count&date=gte.${since}&date=lte.${until}`,
@@ -212,17 +336,42 @@ export function CreativeAnalytics() {
         sbSelect<RcAdRow>(
           `rc_ad_metrics_daily?select=*&date=gte.${since}&date=lte.${until}`,
         ),
+        // Baseline pull: 60d of Meta spend-per-day + 60d of RC trial_starts,
+        // joined client-side. RC trials go back further than the n8n bridge.
+        sbSelect<{ date: string; spend: string | number }>(
+          `ad_insights_daily?select=date,spend&date=gte.${baselineWindow.since}&date=lte.${baselineWindow.until}`,
+        ),
+        sbSelect<{ date: string; trial_starts: number }>(
+          `rc_account_metrics_daily?select=date,trial_starts&date=gte.${baselineWindow.since}&date=lte.${baselineWindow.until}`,
+        ),
       ]);
       setInsights(ins);
+      setTiktokInsights(tt);
       setQualifiedRows(q);
       setRcAccount(rcAcc);
       setRcAds(rcAd);
+
+      // Build baseline history map: per-date Meta spend + RC trial_starts.
+      const metaByDate = new Map<string, number>();
+      for (const r of baseMeta) {
+        metaByDate.set(
+          r.date,
+          (metaByDate.get(r.date) ?? 0) + (Number(r.spend) || 0),
+        );
+      }
+      const history: { date: string; meta_spend: number; trial_starts: number }[] =
+        baseTrials.map((r) => ({
+          date: r.date,
+          meta_spend: metaByDate.get(r.date) ?? 0,
+          trial_starts: Number(r.trial_starts) || 0,
+        }));
+      setBaselineHistory(history);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [since, until]);
+  }, [since, until, baselineWindow.since, baselineWindow.until]);
 
   React.useEffect(() => {
     setLoading(true);
@@ -230,9 +379,26 @@ export function CreativeAnalytics() {
   }, [refresh]);
 
   const ads = React.useMemo(
-    () => aggregate(insights, campaignFilter),
-    [insights, campaignFilter],
+    () =>
+      platform === "meta"
+        ? aggregate(insights, campaignFilter)
+        : aggregateTiktok(tiktokInsights, campaignFilter),
+    [platform, insights, tiktokInsights, campaignFilter],
   );
+
+  // Incremental-lift baseline: avg trials/day on days where Meta spend < $10.
+  // Drop the leading dates that are all zero (n8n bridge wasn't firing
+  // pre-5/10/2026) so the baseline isn't artificially deflated.
+  const baseline = React.useMemo(() => {
+    const lowSpendDays = baselineHistory.filter(
+      (d) => d.meta_spend < BASELINE_SPEND_THRESHOLD && d.trial_starts > 0,
+    );
+    if (!lowSpendDays.length) {
+      return { perDay: 0, sampleDays: 0 };
+    }
+    const total = lowSpendDays.reduce((s, d) => s + d.trial_starts, 0);
+    return { perDay: total / lowSpendDays.length, sampleDays: lowSpendDays.length };
+  }, [baselineHistory]);
 
   const totalSpend = ads.reduce((s, a) => s + a.spend, 0);
   const totalImpressions = ads.reduce((s, a) => s + a.impressions, 0);
@@ -274,6 +440,25 @@ export function CreativeAnalytics() {
   // Trial→paid uses the account-wide n8n trial count as the denominator so
   // both sides are account-scope. (Conversions are also account-scope.)
   const trialToPaidRate = safeDiv(accountTrialConversions, qualifiedCount);
+
+  // Incremental lift: use RC trial_starts as the observed count (more
+  // reliable than n8n bridge which has a 5/10 cutoff and may miss events).
+  const windowRcTrials = rcAccount.reduce(
+    (s, r) => s + (Number(r.trial_starts) || 0),
+    0,
+  );
+  const windowDaysForLift = Math.max(1, rcAccount.length || windowDays);
+  const expectedBaselineTrials = baseline.perDay * windowDaysForLift;
+  const incrementalTrials = windowRcTrials - expectedBaselineTrials;
+  const liftRatio = safeDiv(incrementalTrials, expectedBaselineTrials);
+  const costPerIncrementalTrial = safeDiv(totalSpend, incrementalTrials);
+  // Sample-size confidence — fewer than 3 zero-spend days = wide error bars.
+  const baselineConfidence: "low" | "med" | "high" =
+    baseline.sampleDays >= 7
+      ? "high"
+      : baseline.sampleDays >= 3
+        ? "med"
+        : "low";
 
   // Per-ad attribution lookup. Today this is empty for everyone; once iOS
   // attribution wires up, ad_id → real per-ad LTV/revenue starts populating.
@@ -333,6 +518,26 @@ export function CreativeAnalytics() {
           flexWrap: "wrap",
         }}
       >
+        <div style={{ display: "flex", gap: 6 }}>
+          {PLATFORMS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setPlatform(p)}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                fontWeight: 500,
+                borderRadius: 999,
+                border: "1px solid var(--line)",
+                background: p === platform ? "var(--accent)" : "var(--surface)",
+                color: p === platform ? "white" : "var(--ink-2)",
+                textTransform: "capitalize",
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 6 }}>
           {RANGES.map((r) => (
             <button
@@ -467,7 +672,9 @@ export function CreativeAnalytics() {
           boxShadow: "var(--shadow-sm)",
         }}
       >
-        <SectionLabel>Meta acquisition · window</SectionLabel>
+        <SectionLabel>
+          {platform === "meta" ? "Meta" : "TikTok"} acquisition · window
+        </SectionLabel>
         <div
           style={{
             display: "grid",
@@ -482,7 +689,11 @@ export function CreativeAnalytics() {
           <Metric
             label="Trial starts"
             value={fmtInt(totalTrialStarts)}
-            sub="Meta SDK in-app event"
+            sub={
+              platform === "meta"
+                ? "Meta SDK in-app event"
+                : "TikTok start_trial event"
+            }
           />
           <Metric
             label="Reported trial CPA"
@@ -490,6 +701,112 @@ export function CreativeAnalytics() {
             sub="spend ÷ trial starts"
           />
         </div>
+      </section>
+
+      <section
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-lg)",
+          padding: 24,
+          marginBottom: 16,
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <SectionLabel>
+          Incremental lift · {platform} spend vs organic baseline{" "}
+          <span
+            style={{
+              color:
+                baselineConfidence === "low"
+                  ? "var(--accent)"
+                  : "var(--ink-4)",
+              textTransform: "none",
+              letterSpacing: "normal",
+              fontFamily: "var(--font-geist), sans-serif",
+              fontSize: 11,
+              marginLeft: 8,
+            }}
+          >
+            baseline = {baseline.sampleDays} day{baseline.sampleDays === 1 ? "" : "s"} of $&lt;{BASELINE_SPEND_THRESHOLD}/d spend ·{" "}
+            {baselineConfidence} confidence
+          </span>
+        </SectionLabel>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: 24,
+          }}
+        >
+          <Metric
+            label="Baseline (organic)"
+            value={fmtInt(expectedBaselineTrials)}
+            sub={`${baseline.perDay.toFixed(1)} trials/day expected`}
+          />
+          <Metric
+            label="Observed trials"
+            value={fmtInt(windowRcTrials)}
+            sub="RC · all sources"
+          />
+          <Metric
+            label="Above baseline"
+            value={fmtInt(incrementalTrials)}
+            sub={`${incrementalTrials >= 0 ? "+" : ""}${fmtInt(incrementalTrials)} vs expected`}
+          />
+          <Metric
+            label="Lift over baseline"
+            value={fmtPct(liftRatio)}
+            sub="(observed − baseline) ÷ baseline"
+            accent
+          />
+          <Metric
+            label="Cost per incremental"
+            value={fmtUSD(costPerIncrementalTrial)}
+            sub={`${fmtUSD(totalSpend)} ÷ ${fmtInt(incrementalTrials)} extra trials`}
+          />
+        </div>
+        {baselineConfidence === "low" && (
+          <p
+            style={{
+              marginTop: 14,
+              marginBottom: 0,
+              padding: "8px 12px",
+              fontSize: 11,
+              color: "var(--accent)",
+              background:
+                "color-mix(in oklab, var(--accent) 8%, var(--surface))",
+              border:
+                "1px solid color-mix(in oklab, var(--accent) 20%, var(--line))",
+              borderRadius: 8,
+              lineHeight: 1.55,
+            }}
+          >
+            <strong>Low confidence — baseline computed from{" "}
+            {baseline.sampleDays === 0 ? "no" : `only ${baseline.sampleDays}`}{" "}
+            zero-spend day{baseline.sampleDays === 1 ? "" : "s"}.</strong>{" "}
+            Meta has been running continuously, so we can&apos;t isolate
+            organic trial volume. To establish a real baseline: pause Meta
+            for 3–5 consecutive days. The dashboard auto-detects the
+            zero-spend window and recomputes.
+          </p>
+        )}
+        <p
+          style={{
+            marginTop: 14,
+            marginBottom: 0,
+            fontSize: 11,
+            color: "var(--ink-4)",
+            fontStyle: "italic",
+            lineHeight: 1.5,
+          }}
+        >
+          Baseline assumes organic trial volume stays steady. Trustworthy at
+          window ≥ 14d AND baseline sample ≥ 7 days. Negative lift = paid
+          window underperformed your typical organic day (could be
+          seasonality rather than bad ads). Observed trials come from
+          RevenueCat (all sources).
+        </p>
       </section>
 
       <section
@@ -560,11 +877,23 @@ export function CreativeAnalytics() {
             fontSize: 20,
           }}
         >
-          No ads in this window. Run{" "}
-          <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
-            /api/cron/sync-ad-insights
-          </code>{" "}
-          to backfill.
+          {platform === "meta" ? (
+            <>
+              No Meta ads in this window. Run{" "}
+              <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+                /api/cron/sync-ad-insights
+              </code>{" "}
+              to backfill.
+            </>
+          ) : (
+            <>
+              No TikTok ads in this window yet. Once you run Spark Ads, hit{" "}
+              <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+                /api/cron/sync-tiktok-ads
+              </code>{" "}
+              (see <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>docs/tiktok-ads-api-setup.md</code>).
+            </>
+          )}
         </div>
       )}
 
@@ -682,7 +1011,12 @@ function AdCard({
 }) {
   const ctr = safeDiv(ad.clicks, ad.impressions);
   const reportedCpa = safeDiv(ad.spend, ad.trial_starts);
-  const adsManager = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountId.replace(/^act_/, "")}&selected_ad_ids=${ad.ad_id}`;
+  const adsManager =
+    ad.platform === "meta"
+      ? `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountId.replace(/^act_/, "")}&selected_ad_ids=${ad.ad_id}`
+      : `https://ads.tiktok.com/i18n/perf?aadvid=${process.env.NEXT_PUBLIC_TIKTOK_ADVERTISER_ID ?? ""}&search_ids=${ad.ad_id}`;
+  const adsManagerLabel =
+    ad.platform === "meta" ? "Open in Ads Manager" : "Open in TikTok Ads Manager";
 
   // Real per-ad ROAS only renders once iOS attribution lands. Until then,
   // blending by spend share at <30% Meta install share would lie loudly —
@@ -748,7 +1082,30 @@ function AdCard({
             no thumbnail
           </div>
         )}
-        {ad.video_id && (
+        {ad.is_spark_ad && ad.spark_video_url ? (
+          <a
+            href={ad.spark_video_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              position: "absolute",
+              top: 8,
+              left: 8,
+              padding: "3px 8px",
+              fontSize: 10,
+              fontWeight: 700,
+              borderRadius: 999,
+              background: "rgba(0, 0, 0, 0.78)",
+              color: "#fff",
+              backdropFilter: "blur(4px)",
+              textDecoration: "none",
+              letterSpacing: "0.03em",
+            }}
+            title="Open the original TikTok post"
+          >
+            ⚡ SPARK · @{ad.spark_creator_username || "creator"}
+          </a>
+        ) : ad.video_id ? (
           <div
             style={{
               position: "absolute",
@@ -765,7 +1122,7 @@ function AdCard({
           >
             ▶ video
           </div>
-        )}
+        ) : null}
         {ad.effective_status && (
           <div
             style={{
@@ -887,7 +1244,7 @@ function AdCard({
             textDecoration: "none",
           }}
         >
-          Open in Ads Manager ↗
+          {adsManagerLabel} ↗
         </a>
       </div>
     </article>

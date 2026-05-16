@@ -10,6 +10,7 @@
     { "path": "/api/cron/spend/gemini", "schedule": "30 8 * * *" },
     { "path": "/api/cron/sync-ad-insights", "schedule": "0 7 * * *" },
     { "path": "/api/cron/sync-qualified-trials", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/sync-revenuecat", "schedule": "30 7 * * *" }
+    { "path": "/api/cron/sync-revenuecat", "schedule": "30 7 * * *" },
+    { "path": "/api/cron/sync-tiktok-ads", "schedule": "15 7 * * *" }
   ]
 }
