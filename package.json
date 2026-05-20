@@ -16,17 +16,23 @@
     "migrate-bucket": "tsx scripts/migrate-bucket.ts",
     "migrate-rows": "tsx scripts/migrate-rows.ts",
     "db:migrate": "tsx scripts/apply-migrations.ts",
+    "qualified-cpa": "tsx scripts/qualified-cpa-report.ts",
+    "generate-variants": "tsx scripts/generate-creative-variants.ts",
+    "refresh-audiences": "tsx scripts/refresh-meta-audiences.ts",
+    "push-variants": "tsx scripts/push-creative-variants.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "next": "15.0.7",
+    "opentype.js": "^1.3.5",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.8.7",
+    "@types/opentype.js": "^1.3.9",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitest/ui": "^4.1.5",

@@ -41,3 +41,6 @@ next-env.d.ts.bak
 # supabase local
 supabase/.branches
 supabase/.temp
+
+# Compositor scratch / video outputs (not for git)
+tmp/

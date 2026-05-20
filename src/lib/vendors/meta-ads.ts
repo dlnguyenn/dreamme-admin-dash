@@ -401,3 +401,196 @@ export async function fetchAdInsightsWithCreative(params: {
 
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Custom Audience + Lookalike management
+// ---------------------------------------------------------------------------
+
+import { createHash } from "node:crypto";
+
+/** SHA-256 of trimmed, lowercased email — Meta's required normalization. */
+export function hashEmailForMeta(email: string): string {
+  return createHash("sha256")
+    .update(email.trim().toLowerCase(), "utf8")
+    .digest("hex");
+}
+
+async function metaPostJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+  maxRetries = 4,
+): Promise<T> {
+  const TOKEN = getToken();
+  if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
+  const headers = {
+    Authorization: `Bearer ${TOKEN}`,
+    "Content-Type": "application/json",
+  };
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) return (await res.json()) as T;
+    const text = await res.text();
+    let err = text;
+    try {
+      const j = JSON.parse(text) as {
+        error?: { message?: string; code?: number; type?: string };
+      };
+      if (j.error) {
+        if (j.error.code === 190) {
+          err = `Token expired/invalid (code 190): ${j.error.message ?? ""}.`;
+        } else {
+          err = `${j.error.code ?? "?"} ${j.error.type ?? ""} ${j.error.message ?? ""}`.trim();
+        }
+      }
+    } catch {
+      // not JSON
+    }
+    if (!RETRYABLE_STATUSES.has(res.status) || attempt >= maxRetries) {
+      throw new Error(`Meta API POST ${res.status}: ${err}`);
+    }
+    const retryAfter = res.headers.get("retry-after");
+    const retryMs = retryAfter
+      ? Math.max(0, Math.min(60_000, Number(retryAfter) * 1000))
+      : 0;
+    const backoff = Math.min(32_000, 1000 * Math.pow(2, attempt));
+    await sleep(retryMs || backoff + Math.floor(Math.random() * 250));
+    attempt++;
+  }
+}
+
+export interface CreateAudienceResult {
+  id: string;
+}
+
+/** Create an empty Custom Audience (subtype CUSTOM, customer-list source). */
+export async function createCustomAudience(params: {
+  accountId: string; // act_XXX
+  name: string;
+  description?: string;
+}): Promise<CreateAudienceResult> {
+  const API_VERSION = getApiVersion();
+  const url = `https://graph.facebook.com/${API_VERSION}/${params.accountId}/customaudiences`;
+  return metaPostJson<CreateAudienceResult>(url, {
+    name: params.name,
+    description: params.description ?? "",
+    subtype: "CUSTOM",
+    customer_file_source: "USER_PROVIDED_ONLY",
+  });
+}
+
+/**
+ * Upload hashed user data to a Custom Audience. Meta's batch size limit is
+ * 10,000 users per call; we chunk automatically.
+ */
+export async function uploadEmailsToAudience(params: {
+  audienceId: string;
+  emails: string[]; // raw (we hash inside)
+  log?: (m: string) => void;
+}): Promise<{ uploadedCount: number; batches: number }> {
+  const API_VERSION = getApiVersion();
+  const log = params.log ?? ((m) => process.stderr.write(m + "\n"));
+  const hashed = params.emails.map(hashEmailForMeta);
+
+  const BATCH = 10_000;
+  let uploaded = 0;
+  let batches = 0;
+  for (let i = 0; i < hashed.length; i += BATCH) {
+    const chunk = hashed.slice(i, i + BATCH);
+    const url = `https://graph.facebook.com/${API_VERSION}/${params.audienceId}/users`;
+    await metaPostJson(url, {
+      payload: {
+        schema: "EMAIL_SHA256",
+        data: chunk.map((h) => [h]),
+      },
+      session: {
+        session_id: Date.now() + batches,
+        batch_seq: batches + 1,
+        last_batch_flag: i + BATCH >= hashed.length,
+      },
+    });
+    batches++;
+    uploaded += chunk.length;
+    log(`  uploaded batch ${batches}: ${uploaded}/${hashed.length}`);
+  }
+  return { uploadedCount: uploaded, batches };
+}
+
+/** Create a 1% Lookalike from a seed Custom Audience. */
+export async function createLookalike(params: {
+  accountId: string;
+  originAudienceId: string;
+  name: string;
+  ratio?: number; // 0.01 = 1%
+  country?: string; // ISO 2-letter
+}): Promise<CreateAudienceResult> {
+  const API_VERSION = getApiVersion();
+  const url = `https://graph.facebook.com/${API_VERSION}/${params.accountId}/customaudiences`;
+  return metaPostJson<CreateAudienceResult>(url, {
+    name: params.name,
+    subtype: "LOOKALIKE",
+    origin_audience_id: params.originAudienceId,
+    lookalike_spec: JSON.stringify({
+      type: "similarity",
+      country: params.country ?? "US",
+      ratio: params.ratio ?? 0.01,
+    }),
+  });
+}
+
+/**
+ * Pause / activate an ad by id. Used by the cull-variants cron.
+ */
+export async function updateAdStatus(params: {
+  adId: string;
+  status: "ACTIVE" | "PAUSED";
+}): Promise<{ success: true }> {
+  const API_VERSION = getApiVersion();
+  const url = `https://graph.facebook.com/${API_VERSION}/${params.adId}`;
+  await metaPostJson(url, { status: params.status });
+  return { success: true };
+}
+
+/**
+ * Add a list of custom-audience IDs to an existing ad set's targeting,
+ * preserving all other targeting fields. Uses a POST with `targeting` field
+ * (the Marketing API's standard "replace targeting" endpoint — we read
+ * existing first, merge, then write back).
+ */
+export async function addCustomAudiencesToAdSet(params: {
+  adsetId: string;
+  audienceIds: string[];
+}): Promise<{ success: true }> {
+  const API_VERSION = getApiVersion();
+
+  // 1. Read existing targeting
+  const existing = await metaFetchJson<{
+    targeting?: Record<string, unknown> & {
+      custom_audiences?: Array<{ id: string; name?: string }>;
+    };
+  }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.adsetId}?fields=targeting`,
+    4,
+  );
+  const targeting = { ...(existing.targeting ?? {}) };
+  const existingAudiences = Array.isArray(targeting.custom_audiences)
+    ? targeting.custom_audiences
+    : [];
+  const merged = [
+    ...existingAudiences.filter(
+      (a) => !params.audienceIds.includes(a.id),
+    ),
+    ...params.audienceIds.map((id) => ({ id })),
+  ];
+  targeting.custom_audiences = merged;
+
+  // 2. Write back
+  const url = `https://graph.facebook.com/${API_VERSION}/${params.adsetId}`;
+  await metaPostJson(url, { targeting });
+  return { success: true };
+}

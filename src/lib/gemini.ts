@@ -1,16 +1,21 @@
 import { logAiUsageEvent } from "./vendors/ai-usage-logger";
 import { priceGeminiUsage } from "./vendors/gemini-pricing";
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY ?? "";
-const MODEL =
-  process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
+// Lazy env reads — top-level constants capture process.env before
+// loadEnvConfig runs in CLI scripts (ESM imports hoist).
 const ENDPOINT = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 529]);
 
+function getApiKey(): string {
+  return process.env.GOOGLE_API_KEY ?? "";
+}
+function getModel(): string {
+  return process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
+}
+
 export function geminiConfigured() {
-  return !!GOOGLE_API_KEY;
+  return !!getApiKey();
 }
 
 async function sleep(ms: number) {
@@ -62,6 +67,8 @@ export async function editImage(params: {
    */
   route?: string;
 }): Promise<{ imageBase64: string; mimeType: string }> {
+  const GOOGLE_API_KEY = getApiKey();
+  const MODEL = getModel();
   if (!GOOGLE_API_KEY) throw new Error("GOOGLE_API_KEY not set");
   const maxRetries = params.maxRetries ?? 3;
   const timeoutMs = params.timeoutMs ?? 45_000;
