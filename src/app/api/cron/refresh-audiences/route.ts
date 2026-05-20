@@ -14,7 +14,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 600; // 10 min — RC enumeration can take several minutes
+export const maxDuration = 300; // 5 min — Hobby plan cap. RC enumeration may need pagination tuning to fit.
 
 const DEFAULT_ACCOUNT_ID = "act_1575502753719515";
 
