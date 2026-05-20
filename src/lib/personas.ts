@@ -7,7 +7,8 @@ export type PersonaId =
   | "diane"
   | "sydney"
   | "maddy"
-  | "hannah";
+  | "hannah"
+  | "jess";
 
 export interface Persona {
   id: PersonaId;
@@ -91,6 +92,14 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     tagline: "sun-bleached, clean-girl glow",
     avatar: "🌊",
   },
+  jess: {
+    id: "jess",
+    name: "Jess",
+    color: "var(--p-jess)",
+    soft: "var(--p-jess-soft)",
+    tagline: "everyday rose, casual warmth",
+    avatar: "🌼",
+  },
 };
 
 export const PERSONA_IDS: PersonaId[] = [
@@ -103,6 +112,7 @@ export const PERSONA_IDS: PersonaId[] = [
   "sydney",
   "maddy",
   "hannah",
+  "jess",
 ];
 
 export const isPersonaId = (v: unknown): v is PersonaId =>

@@ -14,6 +14,7 @@ export const PERSONA_TIKTOK_PROFILES: Record<PersonaId, string> = {
   sydney: "glp1withsydney",
   maddy: "maddyglp1",
   hannah: "glp1withmshannahlane",
+  jess: "",
 };
 
 export function apifyConfigured() {

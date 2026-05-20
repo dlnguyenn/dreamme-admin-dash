@@ -231,6 +231,28 @@ export const PERSONA_PROFILES: Record<PersonaId, PersonaProfile> = {
     writingStyle:
       "Sentence case throughout. Warm, present-tense, slightly aspirational without being preachy. Uses framings like 'I've found that...' and 'what works for me is...' Genuine, optimistic, never demanding. Light closing emoji (🌊 or 🤍) used rarely. Avoids Gen-Z slang, all-caps, and exclamation marks unless genuinely earned. Title case for tip headers. No syringe emoji — writes 'shot' instead per house rules.",
   },
+  jess: {
+    id: "jess",
+    name: "Jess",
+    age: 24,
+    location: "Charleston, SC",
+    archetype: "The Average Girl on GLP-1",
+    voice:
+      "Relatable, average girl on GLP-1 just talking about her journey. Not trying to be a pro — just one step ahead. Casual, candid, no medical jargon. Sharing what is working day to day. Talks like a friend texting you between classes, not an influencer scripting a hook. Gen Z casual lowercase, contractions, 7th grade reading level.",
+    contentTerritory: [
+      "Day-in-the-life on GLP-1 as a regular 24-year-old",
+      "What I ate today on the shot (no meal-prep theater)",
+      "Honest week-by-week updates — what's working, what isn't",
+      "Side effects in plain language (no medical jargon)",
+      "Charleston life, going out with friends, dating on GLP-1",
+      "Being the 'average girl' — not the before/after extremes",
+      "Talking to friends and family about being on GLP-1",
+    ],
+    startWeightLbs: 172,
+    goalWeightLbs: 138,
+    writingStyle:
+      "Almost entirely lowercase. Gen Z casual, contractions always, 7th grade reading level. Short sentences, easy rhythm. No medical jargon ever — 'shot,' 'tired,' 'less hungry' over clinical terms. Says 'honestly,' 'kinda,' 'lowkey,' 'tbh' naturally without overdoing it. Never lectures, never performs expertise — frames everything as 'just one step ahead' of the reader. Light emoji (🌼 or 🤍) used sparingly.",
+  },
 };
 
 export function getPersonaProfile(id: PersonaId): PersonaProfile {

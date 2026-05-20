@@ -20,6 +20,7 @@
   --p-sydney: #d4b896;
   --p-maddy: #9ea8b8;
   --p-hannah: #cfc4a8;
+  --p-jess: #d4a8a8;
   --p-andrea-soft: #f5e4d6;
   --p-emma-soft: #ebe2f1;
   --p-olivia-soft: #dee8dc;
@@ -29,6 +30,7 @@
   --p-sydney-soft: #ede2cd;
   --p-maddy-soft: #dee2e8;
   --p-hannah-soft: #ece6d4;
+  --p-jess-soft: #ede0e0;
   --radius: 14px;
   --radius-lg: 20px;
   --shadow-sm: 0 1px 2px rgba(26, 24, 22, 0.04), 0 1px 1px rgba(26, 24, 22, 0.03);
@@ -59,6 +61,7 @@
   --p-sydney-soft: #2d2720;
   --p-maddy-soft: #22252a;
   --p-hannah-soft: #28251e;
+  --p-jess-soft: #2a1f1f;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.5);
