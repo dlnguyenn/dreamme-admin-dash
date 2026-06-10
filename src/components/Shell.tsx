@@ -14,6 +14,7 @@ export type DashId =
   | "poster"
   | "resources"
   | "spend"
+  | "marketing"
   | "requests"
   | "synthid-research"
   | "image-studio";
@@ -37,6 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
   { id: "spend", label: "Spend", icon: "Chart", status: "live", desc: "AI + business expenses", adminOnly: true },
+  { id: "marketing", label: "Marketing Efficiency", icon: "Chart", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
   { id: "requests", label: "Feature Requests", icon: "Bookmark", status: "live", desc: "User-submitted product asks", adminOnly: true },
   { id: "synthid-research", label: "SynthID Research", icon: "Image", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Image", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },

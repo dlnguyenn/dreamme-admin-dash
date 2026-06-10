@@ -185,6 +185,29 @@ export interface SpendLineItem {
   createdAt: string;
 }
 
+/**
+ * One day from the `blended_marketing_efficiency` Postgres view: daily Meta
+ * spend joined to RevenueCat account economics, with 7-day rolling MER,
+ * net-new subs and MRR growth precomputed. Read-only; numeric columns come
+ * back from PostgREST as strings, so coerce with Number() at the call site.
+ */
+export interface BlendedEfficiencyRow {
+  date: string;
+  meta_spend: string | number;
+  revenue: string | number;
+  mrr: string | number;
+  active_subscriptions: number;
+  new_customers: number;
+  trial_starts: number;
+  trial_conversions: number;
+  mer_daily: string | number | null;
+  meta_spend_7d: string | number | null;
+  revenue_7d: string | number | null;
+  mer_7d: string | number | null;
+  net_new_subs_7d: number | null;
+  mrr_growth_7d: string | number | null;
+}
+
 export type ResourceKind = "image" | "link";
 
 export interface ReferenceSlide {
