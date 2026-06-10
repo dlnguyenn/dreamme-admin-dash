@@ -1,4 +1,5 @@
 import type {
+  BlendedEfficiencyRow,
   Delivery,
   DeliveryRow,
   FeatureRequest,
@@ -382,6 +383,23 @@ export const API = {
       "select=*&order=period_start.desc",
     );
     return rows.map(mapSpend);
+  },
+
+  /**
+   * Read the `blended_marketing_efficiency` view (daily Meta spend joined to
+   * RevenueCat economics, with 7-day rolling MER / net-new subs / MRR growth).
+   * Returns rows newest-first; numeric columns arrive as strings.
+   */
+  async fetchBlendedEfficiency(days = 90): Promise<BlendedEfficiencyRow[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    return sbSelect<BlendedEfficiencyRow>(
+      "blended_marketing_efficiency",
+      `select=*&order=date.desc&limit=${days}`,
+    );
   },
 
   async fetchFeatureRequests(): Promise<FeatureRequest[]> {
