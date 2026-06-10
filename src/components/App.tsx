@@ -17,6 +17,7 @@ import { HookAnalytics } from "./HookAnalytics";
 import { SpyTool } from "./SpyTool";
 import { SpendDashboard } from "./SpendDashboard";
 import { MarketingEfficiency } from "./MarketingEfficiency";
+import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
@@ -203,6 +204,8 @@ export function App() {
     screen = <SpendDashboard />;
   } else if (current === "marketing") {
     screen = <MarketingEfficiency />;
+  } else if (current === "creatives") {
+    screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "resources") {

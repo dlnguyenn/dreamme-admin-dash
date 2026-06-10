@@ -314,6 +314,26 @@ export async function submitImageBatch(params: {
   };
 }
 
+export async function listImageBatches(params: {
+  limit?: number;
+  offset?: number;
+}): Promise<ImageBatchSummary[]> {
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+  const offset = Math.max(params.offset ?? 0, 0);
+  const url = `${SUPABASE_URL}/rest/v1/image_generation_batches?select=*&order=submitted_at.desc&limit=${limit}&offset=${offset}`;
+  const res = await fetch(url, {
+    headers: supabaseHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `image_generation_batches list failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  const rows = (await res.json()) as BatchRow[];
+  return rows.map(rowToSummary);
+}
+
 interface BatchRow {
   id: string;
   gemini_batch_name: string;
@@ -419,23 +439,32 @@ export async function getImageBatch(params: {
   for (let i = 0; i < row.items.length; i++) {
     const item = row.items[i];
     const entry = inlined[i];
+    const promptSnippet = item.prompt.slice(0, 80);
+    const logFailure = (error: string) => {
+      console.error(
+        `[image-gen] batch ${params.batchId} item ${i + 1}/${row.items.length} failed: ${error}`,
+        { promptSnippet, source: row.source },
+      );
+    };
     if (!entry) {
-      results.push({ prompt: item.prompt, error: "no response from Gemini" });
+      const error = "no response from Gemini";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     if (entry.error) {
-      results.push({
-        prompt: item.prompt,
-        error: entry.error.message ?? `Gemini item error code ${entry.error.code ?? "?"}`,
-      });
+      const error =
+        entry.error.message ??
+        `Gemini item error code ${entry.error.code ?? "?"}`;
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     const block = entry.response?.promptFeedback?.blockReason;
     if (block) {
-      results.push({
-        prompt: item.prompt,
-        error: `Gemini blocked: ${block}`,
-      });
+      const error = `Gemini blocked: ${block}`;
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     const parts = entry.response?.candidates?.[0]?.content?.parts ?? [];
@@ -448,10 +477,9 @@ export async function getImageBatch(params: {
       }
     }
     if (!inline?.data) {
-      results.push({
-        prompt: item.prompt,
-        error: "Gemini returned no image",
-      });
+      const error = "Gemini returned no image";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
       continue;
     }
     try {
@@ -476,10 +504,9 @@ export async function getImageBatch(params: {
       });
       totalImagesUploaded += 1;
     } catch (err) {
-      results.push({
-        prompt: item.prompt,
-        error: (err as Error).message ?? "upload/insert failed",
-      });
+      const error = (err as Error).message ?? "upload/insert failed";
+      logFailure(error);
+      results.push({ prompt: item.prompt, error });
     }
   }
 

@@ -160,7 +160,7 @@ async function loadImageBitmap(file: File): Promise<ImageBitmap | HTMLImageEleme
  * Skips the canvas round-trip for small files (<= 500 KB) that are already
  * JPEG/WebP — those can ship as-is without re-encoding.
  */
-async function downscaleImageToBase64(
+export async function downscaleImageToBase64(
   file: File,
   opts: { maxDimension?: number; quality?: number } = {},
 ): Promise<{ base64: string; mime: string }> {
