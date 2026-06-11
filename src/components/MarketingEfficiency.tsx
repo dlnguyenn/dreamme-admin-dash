@@ -28,6 +28,41 @@ function fmtDate(iso: string): string {
   });
 }
 
+// Whole days from today (UTC) until an ISO date; negative once the date passes.
+function daysUntil(iso: string): number {
+  const target = new Date(`${iso}T00:00:00Z`).getTime();
+  const now = Date.now();
+  return Math.ceil((target - now) / 86_400_000);
+}
+
+interface DashExperiment {
+  id: string;
+  title: string;
+  change: string;
+  startedISO: string;
+  readISO: string;
+  baseline: string;
+  rule: string;
+  file: string;
+}
+
+// Hand-maintained for now — one card per live paid-ads experiment. When this
+// grows past a handful, promote to a `marketing_experiments` Supabase table and
+// fetch it like the rest of the page. Full protocol for each lives in the repo
+// at the `file` path below.
+const EXPERIMENTS: DashExperiment[] = [
+  {
+    id: "comic-sans-budget-scale",
+    title: "Comic Sans budget scale",
+    change: "$150 → $225/day (+50%)",
+    startedISO: "2026-06-11",
+    readISO: "2026-06-20",
+    baseline: "Baseline: $2.65 CPI · 1.35 freq · 400 installs/wk",
+    rule: "Win if CPI holds ≤ $3.20 · Fail if CPI > $3.45 → revert to $150",
+    file: "experiments/2026-06-11-comic-sans-budget-scale.md",
+  },
+];
+
 export function MarketingEfficiency() {
   const [rows, setRows] = React.useState<BlendedEfficiencyRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -139,6 +174,8 @@ export function MarketingEfficiency() {
         </div>
       )}
 
+      <ActiveExperiments />
+
       <div
         style={{
           marginBottom: 24,
@@ -226,6 +263,95 @@ export function MarketingEfficiency() {
         </table>
       </div>
     </>
+  );
+}
+
+function ActiveExperiments() {
+  if (EXPERIMENTS.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <SectionLabel>Active experiments</SectionLabel>
+      <div style={{ display: "grid", gap: 12 }}>
+        {EXPERIMENTS.map((x) => {
+          const left = daysUntil(x.readISO);
+          const ready = left <= 0;
+          return (
+            <div
+              key={x.id}
+              style={{
+                padding: "16px 18px",
+                borderRadius: 14,
+                background: "var(--surface)",
+                border: "1px solid var(--line)",
+                borderLeft: `3px solid ${
+                  ready ? "var(--accent)" : "color-mix(in oklab, var(--p-emma) 65%, var(--ink))"
+                }`,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  marginBottom: 8,
+                }}
+              >
+                <div className="serif" style={{ fontSize: 19, letterSpacing: "-0.02em" }}>
+                  {x.title}{" "}
+                  <span style={{ color: "var(--ink-3)", fontStyle: "italic" }}>· {x.change}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.1em",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      color: ready ? "var(--accent)" : "color-mix(in oklab, var(--p-olivia) 70%, var(--ink))",
+                      background: ready
+                        ? "color-mix(in oklab, var(--accent) 12%, var(--surface))"
+                        : "color-mix(in oklab, var(--p-olivia) 14%, var(--surface))",
+                      border: "1px solid var(--line)",
+                    }}
+                  >
+                    {ready ? "Ready to read" : "Running"}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      color: "var(--ink-3)",
+                    }}
+                  >
+                    {ready
+                      ? `read due ${fmtDate(x.readISO)}`
+                      : `reads ${fmtDate(x.readISO)} · ${left}d`}
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginBottom: 4 }}>
+                {x.baseline}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{x.rule}</div>
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  color: "var(--ink-3)",
+                }}
+              >
+                {x.file}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
