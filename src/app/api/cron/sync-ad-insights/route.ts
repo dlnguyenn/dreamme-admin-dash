@@ -100,6 +100,8 @@ export async function GET(req: Request) {
       video_id: r.video_id || null,
       message: r.message || null,
       headline: r.headline || null,
+      video_3sec_views: r.video_3sec_views,
+      video_thruplays: r.video_thruplays,
       synced_at: new Date().toISOString(),
     }));
 
