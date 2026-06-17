@@ -70,6 +70,10 @@ const PURCHASE_ACTION_TYPES = new Set([
   "app_custom_event.fb_mobile_purchase",
 ]);
 
+// Meta reports "3-second video plays" as the `video_view` action type inside
+// the `actions` array. Hook rate = these ÷ impressions.
+const VIDEO_3SEC_ACTION_TYPES = new Set(["video_view"]);
+
 function sumActions(
   actions: AdInsightAction[] | undefined,
   types: Set<string>,
@@ -232,6 +236,8 @@ export interface AdInsightRowWithCreative extends AdInsightRow {
   video_id: string;
   message: string;
   headline: string;
+  video_3sec_views: number;
+  video_thruplays: number;
 }
 
 interface AdMetaRow {
@@ -273,6 +279,7 @@ interface InsightsDailyRow {
   unique_clicks?: string | number;
   actions?: AdInsightAction[];
   action_values?: AdInsightAction[];
+  video_thruplay_watched_actions?: AdInsightAction[];
 }
 
 /**
@@ -307,6 +314,7 @@ export async function fetchAdInsightsWithCreative(params: {
     "unique_clicks",
     "actions",
     "action_values",
+    "video_thruplay_watched_actions",
     "date_start",
     "date_stop",
   ].join(",");
@@ -392,6 +400,11 @@ export async function fetchAdInsightsWithCreative(params: {
         video_id: String(creative?.video_id ?? ""),
         message,
         headline,
+        video_3sec_views: sumActions(actions, VIDEO_3SEC_ACTION_TYPES),
+        video_thruplays: (row.video_thruplay_watched_actions ?? []).reduce(
+          (s, a) => s + Number(a.value ?? 0),
+          0,
+        ),
       });
     }
 

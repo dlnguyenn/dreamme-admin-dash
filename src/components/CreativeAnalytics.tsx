@@ -42,6 +42,8 @@ interface InsightRow {
   video_id: string | null;
   message: string | null;
   headline: string | null;
+  video_3sec_views: number | null;
+  video_thruplays: number | null;
   synced_at: string;
 }
 
@@ -114,6 +116,8 @@ interface AdAgg {
   installs: number;
   trial_starts: number;
   purchases: number;
+  video_3sec_views: number;
+  video_thruplays: number;
   thumbnail_url: string;
   image_url: string;
   video_id: string;
@@ -196,6 +200,8 @@ function aggregate(
         installs: 0,
         trial_starts: 0,
         purchases: 0,
+        video_3sec_views: 0,
+        video_thruplays: 0,
         thumbnail_url: r.thumbnail_url ?? "",
         image_url: r.image_url ?? "",
         video_id: r.video_id ?? "",
@@ -210,6 +216,8 @@ function aggregate(
     a.installs += Number(r.installs) || 0;
     a.trial_starts += Number(r.trial_starts) || 0;
     a.purchases += Number(r.purchases) || 0;
+    a.video_3sec_views += Number(r.video_3sec_views) || 0;
+    a.video_thruplays += Number(r.video_thruplays) || 0;
     if (r.date >= a.latest_date) {
       a.latest_date = r.date;
       if (r.ad_name) a.ad_name = r.ad_name;
@@ -247,6 +255,8 @@ function aggregateTiktok(
         installs: 0,
         trial_starts: 0,
         purchases: 0,
+        video_3sec_views: 0,
+        video_thruplays: 0,
         thumbnail_url: r.thumbnail_url ?? "",
         image_url: "",
         video_id: r.spark_video_id ?? "",
@@ -285,6 +295,7 @@ function aggregateTiktok(
 export function CreativeAnalytics() {
   const [range, setRange] = React.useState<Range>("7d");
   const [platform, setPlatform] = React.useState<Platform>("meta");
+  const [sortBy, setSortBy] = React.useState<"spend" | "hook">("spend");
   const [campaignFilter, setCampaignFilter] = React.useState<string | null>(
     null,
   );
@@ -378,13 +389,18 @@ export function CreativeAnalytics() {
     refresh();
   }, [refresh]);
 
-  const ads = React.useMemo(
-    () =>
+  const ads = React.useMemo(() => {
+    const base =
       platform === "meta"
         ? aggregate(insights, campaignFilter)
-        : aggregateTiktok(tiktokInsights, campaignFilter),
-    [platform, insights, tiktokInsights, campaignFilter],
-  );
+        : aggregateTiktok(tiktokInsights, campaignFilter);
+    if (sortBy === "hook") {
+      const hookOf = (a: AdAgg) =>
+        a.impressions > 0 ? a.video_3sec_views / a.impressions : 0;
+      return [...base].sort((a, b) => hookOf(b) - hookOf(a));
+    }
+    return base;
+  }, [platform, insights, tiktokInsights, campaignFilter, sortBy]);
 
   // Incremental-lift baseline: avg trials/day on days where Meta spend < $10.
   // Drop the leading dates that are all zero (n8n bridge wasn't firing
@@ -405,6 +421,8 @@ export function CreativeAnalytics() {
   const totalClicks = ads.reduce((s, a) => s + a.clicks, 0);
   const totalInstalls = ads.reduce((s, a) => s + a.installs, 0);
   const totalTrialStarts = ads.reduce((s, a) => s + a.trial_starts, 0);
+  const totalVideo3sec = ads.reduce((s, a) => s + (a.video_3sec_views || 0), 0);
+  const accountHookRate = safeDiv(totalVideo3sec, totalImpressions);
   const qualifiedCount = qualifiedRows.reduce(
     (s, r) => s + (r.count || 0),
     0,
@@ -557,6 +575,35 @@ export function CreativeAnalytics() {
             </button>
           ))}
         </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span
+            style={{
+              fontSize: 11,
+              fontFamily: "var(--font-geist-mono), monospace",
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: "var(--ink-3)",
+            }}
+          >
+            Sort
+          </span>
+          {(["spend", "hook"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSortBy(s)}
+              style={{
+                padding: "4px 10px",
+                fontSize: 12,
+                borderRadius: 999,
+                border: "1px solid var(--line)",
+                background: sortBy === s ? "var(--ink)" : "var(--surface)",
+                color: sortBy === s ? "var(--surface)" : "var(--ink-2)",
+              }}
+            >
+              {s === "spend" ? "Spend" : "Hook rate"}
+            </button>
+          ))}
+        </div>
         {campaigns.length > 1 && (
           <div
             style={{
@@ -685,6 +732,13 @@ export function CreativeAnalytics() {
           <Metric label="Spend" value={fmtUSD(totalSpend)} />
           <Metric label="Impressions" value={fmtInt(totalImpressions)} />
           <Metric label="CTR" value={fmtPct(accountCtr)} />
+          {platform === "meta" && (
+            <Metric
+              label="Hook rate"
+              value={fmtPct(accountHookRate)}
+              sub="3-sec views ÷ impr."
+            />
+          )}
           <Metric label="Installs" value={fmtInt(totalInstalls)} />
           <Metric
             label="Trial starts"
@@ -1010,6 +1064,7 @@ function AdCard({
   rcAd: { revenue: number; ltv: number; trialStarts: number } | null;
 }) {
   const ctr = safeDiv(ad.clicks, ad.impressions);
+  const hookRate = safeDiv(ad.video_3sec_views, ad.impressions);
   const reportedCpa = safeDiv(ad.spend, ad.trial_starts);
   const adsManager =
     ad.platform === "meta"
@@ -1193,6 +1248,21 @@ function AdCard({
         >
           <CardMetric label="Spend" value={fmtUSD(ad.spend)} />
           <CardMetric label="CTR" value={fmtPct(ctr)} />
+          {ad.platform === "meta" && (
+            <CardMetric
+              label="Hook"
+              value={fmtPct(hookRate)}
+              tone={
+                !Number.isFinite(hookRate)
+                  ? undefined
+                  : hookRate >= 0.3
+                    ? "good"
+                    : hookRate >= 0.2
+                      ? "warn"
+                      : "bad"
+              }
+            />
+          )}
           <CardMetric label="Installs" value={fmtInt(ad.installs)} />
           <CardMetric label="Trials" value={fmtInt(ad.trial_starts)} />
           <CardMetric
