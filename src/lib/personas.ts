@@ -7,7 +7,17 @@ export type PersonaId =
   | "diane"
   | "sydney"
   | "maddy"
-  | "hannah";
+  | "hannah"
+  | "hailey"
+  | "taylor"
+  | "max"
+  | "ava"
+  | "rachel"
+  | "sarah"
+  | "jessica"
+  | "alex"
+  | "maya"
+  | "jess";
 
 export interface Persona {
   id: PersonaId;
@@ -91,6 +101,86 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     tagline: "sun-bleached, clean-girl glow",
     avatar: "🌊",
   },
+  hailey: {
+    id: "hailey",
+    name: "Hailey",
+    color: "var(--p-hailey)",
+    soft: "var(--p-hailey-soft)",
+    tagline: "sunflower fields, golden hour",
+    avatar: "🌻",
+  },
+  taylor: {
+    id: "taylor",
+    name: "Taylor",
+    color: "var(--p-taylor)",
+    soft: "var(--p-taylor-soft)",
+    tagline: "champagne shimmer, soft glam",
+    avatar: "✨",
+  },
+  max: {
+    id: "max",
+    name: "Max",
+    color: "var(--p-max)",
+    soft: "var(--p-max-soft)",
+    tagline: "weekend casual, easy denim",
+    avatar: "🧢",
+  },
+  ava: {
+    id: "ava",
+    name: "Ava",
+    color: "var(--p-ava)",
+    soft: "var(--p-ava-soft)",
+    tagline: "fresh greens, garden light",
+    avatar: "🍃",
+  },
+  rachel: {
+    id: "rachel",
+    name: "Rachel",
+    color: "var(--p-rachel)",
+    soft: "var(--p-rachel-soft)",
+    tagline: "autumn russet, cozy warmth",
+    avatar: "🦊",
+  },
+  sarah: {
+    id: "sarah",
+    name: "Sarah",
+    color: "var(--p-sarah)",
+    soft: "var(--p-sarah-soft)",
+    tagline: "bright sun, citrus warmth",
+    avatar: "☀️",
+  },
+  jessica: {
+    id: "jessica",
+    name: "Jessica",
+    color: "var(--p-jessica)",
+    soft: "var(--p-jessica-soft)",
+    tagline: "starlit violet, dreamy haze",
+    avatar: "💫",
+  },
+  alex: {
+    id: "alex",
+    name: "Alex",
+    color: "var(--p-alex)",
+    soft: "var(--p-alex-soft)",
+    tagline: "alpine stone, cool calm",
+    avatar: "🏔️",
+  },
+  maya: {
+    id: "maya",
+    name: "Maya",
+    color: "var(--p-maya)",
+    soft: "var(--p-maya-soft)",
+    tagline: "hibiscus bloom, coral warmth",
+    avatar: "🌺",
+  },
+  jess: {
+    id: "jess",
+    name: "Jess",
+    color: "var(--p-jess)",
+    soft: "var(--p-jess-soft)",
+    tagline: "teal tide, serene aqua",
+    avatar: "🪷",
+  },
 };
 
 export const PERSONA_IDS: PersonaId[] = [
@@ -103,6 +193,16 @@ export const PERSONA_IDS: PersonaId[] = [
   "sydney",
   "maddy",
   "hannah",
+  "hailey",
+  "taylor",
+  "max",
+  "ava",
+  "rachel",
+  "sarah",
+  "jessica",
+  "alex",
+  "maya",
+  "jess",
 ];
 
 export const isPersonaId = (v: unknown): v is PersonaId =>
