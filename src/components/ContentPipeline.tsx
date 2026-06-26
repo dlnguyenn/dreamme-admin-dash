@@ -240,13 +240,25 @@ export function ContentPipeline({
     }
   };
 
-  const tabsDef: Array<{ id: "all" | PersonaId; label: string; personaId: PersonaId | null }> = [
-    { id: "all", label: "All", personaId: null },
-    ...PERSONA_IDS.map((pid) => ({
-      id: pid,
-      label: PERSONAS[pid].name,
-      personaId: pid,
-    })),
+  type TabDef = { id: "all" | PersonaId; label: string; personaId: PersonaId | null };
+  // Core = original production personas; Casting = the 10 image-studio candidates.
+  const CORE_PERSONA_IDS: PersonaId[] = [
+    "andrea", "emma", "olivia", "mia", "abby", "sydney", "maddy", "hannah", "jess",
+  ];
+  const coreSet = new Set<string>(CORE_PERSONA_IDS);
+  const mkTab = (pid: PersonaId): TabDef => ({ id: pid, label: PERSONAS[pid].name, personaId: pid });
+  const personaTabGroups: Array<{ label: string; tabs: TabDef[] }> = [
+    {
+      label: "Core",
+      tabs: [
+        { id: "all", label: "All", personaId: null },
+        ...PERSONA_IDS.filter((p) => coreSet.has(p)).map(mkTab),
+      ],
+    },
+    {
+      label: "Casting",
+      tabs: PERSONA_IDS.filter((p) => !coreSet.has(p)).map(mkTab),
+    },
   ];
 
   return (
@@ -499,88 +511,103 @@ export function ContentPipeline({
           />
         </div>
       ) : (
-      <div
-        ref={personaTabsRef}
-        style={{
-          display: "flex",
-          gap: 6,
-          marginBottom: 28,
-          padding: 5,
-          background: "var(--surface-2)",
-          border: "1px solid var(--line)",
-          borderRadius: 12,
-          maxWidth: "100%",
-          flexWrap: "wrap",
-          rowGap: 6,
-        }}
-      >
-        {tabsDef.map((t) => {
-          const active = tab === t.id;
-          const persona = t.personaId ? PERSONAS[t.personaId] : null;
-          return (
-            <button
-              key={t.id}
-              data-tab-active={active ? "true" : "false"}
-              onClick={() => setTab(t.id)}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 28 }}>
+        {personaTabGroups.map((group) => (
+          <div key={group.label}>
+            <div
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "7px 14px 7px 10px",
-                borderRadius: 8,
-                border: "none",
-                background: active ? "var(--surface)" : "transparent",
-                boxShadow: active ? "var(--shadow-sm)" : "none",
-                color: "var(--ink)",
-                fontSize: 13,
-                fontWeight: active ? 500 : 400,
-                cursor: "pointer",
-                flexShrink: 0,
-                scrollSnapAlign: isMobile ? "center" : undefined,
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                color: "var(--ink-3)",
+                margin: "0 0 6px 4px",
               }}
             >
-              {persona ? (
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: persona.color,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 10,
-                  }}
-                >
-                  {persona.avatar}
-                </span>
-              ) : (
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background:
-                      "linear-gradient(135deg, var(--p-andrea), var(--p-emma), var(--p-olivia))",
-                  }}
-                />
-              )}
-              {t.label}
-              <span
-                style={{
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  fontSize: 10,
-                  color: "var(--ink-3)",
-                  padding: "1px 6px",
-                  background: active ? "var(--bg-2)" : "transparent",
-                  borderRadius: 4,
-                }}
-              >
-                {counts[t.id]}
-              </span>
-            </button>
-          );
-        })}
+              {group.label}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                padding: 5,
+                background: "var(--surface-2)",
+                border: "1px solid var(--line)",
+                borderRadius: 12,
+                maxWidth: "100%",
+                flexWrap: "wrap",
+                rowGap: 6,
+              }}
+            >
+              {group.tabs.map((t) => {
+                const active = tab === t.id;
+                const persona = t.personaId ? PERSONAS[t.personaId] : null;
+                return (
+                  <button
+                    key={t.id}
+                    data-tab-active={active ? "true" : "false"}
+                    onClick={() => setTab(t.id)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "7px 14px 7px 10px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: active ? "var(--surface)" : "transparent",
+                      boxShadow: active ? "var(--shadow-sm)" : "none",
+                      color: "var(--ink)",
+                      fontSize: 13,
+                      fontWeight: active ? 500 : 400,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {persona ? (
+                      <span
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: persona.color,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 10,
+                        }}
+                      >
+                        {persona.avatar}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background:
+                            "linear-gradient(135deg, var(--p-andrea), var(--p-emma), var(--p-olivia))",
+                        }}
+                      />
+                    )}
+                    {t.label}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        fontSize: 10,
+                        color: "var(--ink-3)",
+                        padding: "1px 6px",
+                        background: active ? "var(--bg-2)" : "transparent",
+                        borderRadius: 4,
+                      }}
+                    >
+                      {counts[t.id]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
       )}
 
