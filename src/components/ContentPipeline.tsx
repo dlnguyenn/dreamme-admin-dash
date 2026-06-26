@@ -510,8 +510,8 @@ export function ContentPipeline({
           border: "1px solid var(--line)",
           borderRadius: 12,
           maxWidth: "100%",
-          overflowX: "auto",
-          WebkitOverflowScrolling: "touch",
+          flexWrap: "wrap",
+          rowGap: 6,
         }}
       >
         {tabsDef.map((t) => {
