@@ -509,8 +509,8 @@ export function ContentPipeline({
           background: "var(--surface-2)",
           border: "1px solid var(--line)",
           borderRadius: 12,
-          width: "fit-content",
-          overflowX: "visible",
+          maxWidth: "100%",
+          overflowX: "auto",
           WebkitOverflowScrolling: "touch",
         }}
       >
