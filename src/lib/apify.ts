@@ -14,6 +14,17 @@ export const PERSONA_TIKTOK_PROFILES: Record<PersonaId, string> = {
   sydney: "glp1withsydney",
   maddy: "maddyglp1",
   hannah: "glp1withmshannahlane",
+  // Casting-test candidates + jess: no TikTok handle (not in TikTok rotation).
+  hailey: "",
+  taylor: "",
+  max: "",
+  ava: "",
+  rachel: "",
+  sarah: "",
+  jessica: "",
+  alex: "",
+  maya: "",
+  jess: "",
 };
 
 export function apifyConfigured() {
