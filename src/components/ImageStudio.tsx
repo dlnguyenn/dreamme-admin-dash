@@ -11,6 +11,14 @@ import type { Avatar } from "@/lib/types";
 const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
 
+// Mirror of MAX_REFERENCE_IMAGES in src/lib/image-generation.ts. Kept as a
+// local literal so this client component doesn't import the server-only lib.
+const MAX_REFERENCE_IMAGES = 4;
+
+// One reference image to send to the API: URL (avatar / pasted) or base64
+// (uploaded file). Matches the RefInput shape the routes accept.
+type RefInput = { url?: string; base64?: string; mimeType?: string };
+
 interface ImageGenerationRow {
   id: string;
   prompt: string;
@@ -58,21 +66,85 @@ interface ImageBatchSummary {
 
 const PAGE_SIZE = 24;
 
+/** A single reference-image thumbnail with a remove (×) button. Used in the
+ *  composer's attached-references row. */
+function RefThumb({
+  src,
+  label,
+  onRemove,
+}: {
+  src: string;
+  label: string;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      title={label}
+      style={{
+        position: "relative",
+        width: 64,
+        height: 64,
+        borderRadius: 8,
+        overflow: "hidden",
+        border: "1px solid var(--line)",
+        background: "var(--surface-2)",
+        flex: "0 0 auto",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={label}
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove reference ${label}`}
+        style={{
+          position: "absolute",
+          top: 2,
+          right: 2,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          border: "none",
+          background: "rgba(0,0,0,0.6)",
+          color: "#fff",
+          cursor: "pointer",
+          fontSize: 12,
+          lineHeight: "18px",
+          padding: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export function ImageStudio() {
   const toast = useToast();
 
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("9:16");
   const [refUrl, setRefUrl] = React.useState("");
-  // Local file picker — alternative to refUrl. When set, sent as
-  // base64 to /api/image-studio/generate. UI uses an "either or" toggle:
-  // typing a URL clears the file; picking a file clears the URL.
-  const [refFile, setRefFile] = React.useState<{
-    name: string;
-    mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-    base64: string;
-    previewUrl: string;
-  } | null>(null);
+  // Local file picker — up to MAX_REFERENCE_IMAGES uploads, sent as base64
+  // to /api/image-studio/generate. Combinable with a selected avatar and an
+  // optional pasted URL; the composer shows all active references as a
+  // thumbnail row, capped at MAX_REFERENCE_IMAGES total.
+  const [refFiles, setRefFiles] = React.useState<
+    Array<{
+      id: string;
+      name: string;
+      mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+      base64: string;
+      previewUrl: string;
+    }>
+  >([]);
   const refFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [count, setCount] = React.useState<number>(1);
   const [generating, setGenerating] = React.useState(false);
@@ -260,13 +332,30 @@ export function ImageStudio() {
       avatars.find((a) => a.name === selectedAvatar)?.imageUrl) ||
     null;
 
+  // All active references in send order: avatar (if selected) → uploaded
+  // files → a pasted URL. Capped at MAX_REFERENCE_IMAGES. Combinable now —
+  // avatar no longer excludes uploads.
+  const trimmedRefUrl = refUrl.trim();
+  const refUrlValid = /^https?:\/\//i.test(trimmedRefUrl);
+  const activeRefCount =
+    (avatarRefUrl ? 1 : 0) +
+    refFiles.length +
+    (trimmedRefUrl && refUrlValid ? 1 : 0);
+  const buildReferenceImages = (): RefInput[] => {
+    const refs: RefInput[] = [];
+    if (avatarRefUrl) refs.push({ url: avatarRefUrl });
+    for (const f of refFiles) refs.push({ base64: f.base64, mimeType: f.mimeType });
+    if (trimmedRefUrl && refUrlValid) refs.push({ url: trimmedRefUrl });
+    return refs.slice(0, MAX_REFERENCE_IMAGES);
+  };
+
   const generate = async () => {
     if (!prompt.trim() || generating) return;
-    const trimmedRef = refUrl.trim();
-    if (trimmedRef && !avatarRefUrl && !/^https?:\/\//i.test(trimmedRef)) {
+    if (trimmedRefUrl && !refUrlValid) {
       toast("Reference URL must start with http(s)://");
       return;
     }
+    const referenceImages = buildReferenceImages();
     setGenerating(true);
     setGenErrors([]);
     setGenTotal(count);
@@ -277,13 +366,7 @@ export function ImageStudio() {
         body: JSON.stringify({
           prompt: prompt.trim(),
           aspectRatio,
-          referenceImageUrl:
-            avatarRefUrl ??
-            (refFile == null && trimmedRef ? trimmedRef : undefined),
-          referenceImageBase64: avatarRefUrl ? undefined : refFile?.base64,
-          referenceImageMimeType: avatarRefUrl
-            ? undefined
-            : refFile?.mimeType,
+          referenceImages: referenceImages.length ? referenceImages : undefined,
           count: count > 1 ? count : undefined,
         }),
       });
@@ -318,6 +401,7 @@ export function ImageStudio() {
         geminiModel: string;
         createdAt: string;
         referenceImageUrl: string | null;
+        referenceImageUrls?: string[];
       }>;
       const rows: ImageGenerationRow[] = results.map((r) => ({
         id: r.id,
@@ -327,7 +411,12 @@ export function ImageStudio() {
         gemini_model: r.geminiModel,
         source: "dashboard",
         created_at: r.createdAt,
-        reference_urls: r.referenceImageUrl ? [r.referenceImageUrl] : null,
+        reference_urls:
+          r.referenceImageUrls && r.referenceImageUrls.length
+            ? r.referenceImageUrls
+            : r.referenceImageUrl
+              ? [r.referenceImageUrl]
+              : null,
       }));
       setLatest(rows);
       if (errors.length > 0) {
@@ -352,30 +441,24 @@ export function ImageStudio() {
   // auto-polls until SUCCEEDED.
   const submitAsBatch = async () => {
     if (!prompt.trim() || generating) return;
-    const trimmedRef = refUrl.trim();
-    if (trimmedRef && !avatarRefUrl && !/^https?:\/\//i.test(trimmedRef)) {
+    if (trimmedRefUrl && !refUrlValid) {
       toast("Reference URL must start with http(s)://");
       return;
     }
-    // Don't duplicate the base64 across items — that multiplies the
-    // payload by `count` and pushes us past Vercel's ~4.5 MB serverless
-    // body limit, which returns an HTML 413 the client can't JSON-parse.
-    // Send the shared reference once at the top level; the server fans
-    // it out into each item.
-    const itemBlueprint = {
+    // Don't duplicate base64 across items — that multiplies the payload by
+    // `count` and pushes us past Vercel's ~4.5 MB serverless body limit.
+    // Send the shared references once at the top level; the server fans
+    // them out into each item.
+    const referenceImages = buildReferenceImages();
+    const items = Array.from({ length: count }, () => ({
       prompt: prompt.trim(),
       aspectRatio,
-      referenceImageUrl:
-        avatarRefUrl ??
-        (refFile == null && trimmedRef ? trimmedRef : undefined),
-    };
-    const items = Array.from({ length: count }, () => itemBlueprint);
+    }));
     const body = {
       items,
-      sharedReferenceImageBase64: avatarRefUrl ? undefined : refFile?.base64,
-      sharedReferenceImageMimeType: avatarRefUrl
-        ? undefined
-        : refFile?.mimeType,
+      sharedReferenceImages: referenceImages.length
+        ? referenceImages
+        : undefined,
     };
     setGenerating(true);
     try {
@@ -615,14 +698,14 @@ export function ImageStudio() {
       setSelectedAvatar(null);
       return;
     }
-    setSelectedAvatar(id);
-    // Clear competing reference inputs.
-    if (refUrl) setRefUrl("");
-    if (refFile) {
-      URL.revokeObjectURL(refFile.previewUrl);
-      setRefFile(null);
-      if (refFileInputRef.current) refFileInputRef.current.value = "";
+    // Avatar is combinable with uploads + a URL, but still counts toward
+    // the cap. Selecting one swaps for the previously selected avatar, so
+    // it only adds a slot when none was selected before.
+    if (!selectedAvatar && activeRefCount >= MAX_REFERENCE_IMAGES) {
+      toast(`Up to ${MAX_REFERENCE_IMAGES} reference images`);
+      return;
     }
+    setSelectedAvatar(id);
   };
 
   const pickAvatarUpload = (id: AvatarId) => {
@@ -960,46 +1043,76 @@ export function ImageStudio() {
                   marginBottom: 6,
                 }}
               >
-                Reference image (optional — image-to-image). Paste a URL or
-                upload a local file (max 8 MB, png/jpeg/webp/gif).
+                Reference images (optional — image-to-image). Pick an avatar
+                above and/or upload files, plus an optional URL — up to{" "}
+                {MAX_REFERENCE_IMAGES} total ({activeRefCount}/
+                {MAX_REFERENCE_IMAGES} used). Each file max 8 MB,
+                png/jpeg/webp/gif.
               </div>
+              {/* Thumbnail row of every active reference (mockup style). */}
+              {activeRefCount > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  {avatarRefUrl && (
+                    <RefThumb
+                      key="avatar"
+                      src={avatarRefUrl}
+                      label={selectedAvatar ?? "avatar"}
+                      onRemove={() => setSelectedAvatar(null)}
+                    />
+                  )}
+                  {refFiles.map((f) => (
+                    <RefThumb
+                      key={f.id}
+                      src={f.previewUrl}
+                      label={f.name}
+                      onRemove={() => {
+                        URL.revokeObjectURL(f.previewUrl);
+                        setRefFiles((prev) =>
+                          prev.filter((x) => x.id !== f.id),
+                        );
+                      }}
+                    />
+                  ))}
+                  {trimmedRefUrl && refUrlValid && (
+                    <RefThumb
+                      key="url"
+                      src={trimmedRefUrl}
+                      label="url"
+                      onRemove={() => setRefUrl("")}
+                    />
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 6 }}>
                 <input
                   type="url"
                   placeholder="https://example.com/image.jpg"
                   value={refUrl}
-                  onChange={(e) => {
-                    setRefUrl(e.target.value);
-                    if (e.target.value && refFile) {
-                      // Picking a URL clears the uploaded file (mutex).
-                      setRefFile(null);
-                      if (refFileInputRef.current) {
-                        refFileInputRef.current.value = "";
-                      }
-                    }
-                    if (e.target.value && selectedAvatar) {
-                      setSelectedAvatar(null);
-                    }
-                  }}
+                  onChange={(e) => setRefUrl(e.target.value)}
                   style={inputStyle}
-                  disabled={refFile != null || selectedAvatar != null}
-                  title={
-                    selectedAvatar
-                      ? `An avatar (${selectedAvatar}) is the active reference — deselect it to type a URL.`
-                      : undefined
-                  }
                 />
                 <input
                   ref={refFileInputRef}
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
                   style={{ display: "none" }}
                   onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.size > 8 * 1024 * 1024) {
-                      toast("File exceeds 8 MB");
-                      e.target.value = "";
+                    const picked = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (!picked.length) return;
+                    let slots = MAX_REFERENCE_IMAGES - activeRefCount;
+                    if (slots <= 0) {
+                      toast(
+                        `Up to ${MAX_REFERENCE_IMAGES} reference images`,
+                      );
                       return;
                     }
                     const allowed = new Set([
@@ -1008,107 +1121,66 @@ export function ImageStudio() {
                       "image/webp",
                       "image/gif",
                     ]);
-                    if (!allowed.has(file.type)) {
-                      toast(`Unsupported type: ${file.type || "unknown"}`);
-                      e.target.value = "";
-                      return;
+                    const additions: typeof refFiles = [];
+                    let skippedForCap = false;
+                    for (const file of picked) {
+                      if (slots <= 0) {
+                        skippedForCap = true;
+                        break;
+                      }
+                      if (file.size > 8 * 1024 * 1024) {
+                        toast(`${file.name}: exceeds 8 MB`);
+                        continue;
+                      }
+                      if (!allowed.has(file.type)) {
+                        toast(
+                          `${file.name}: unsupported type ${file.type || "unknown"}`,
+                        );
+                        continue;
+                      }
+                      // Downscale before base64 — raw phone photos overflow
+                      // Vercel's ~4.5 MB serverless body cap. Helper resizes
+                      // to 1536px / JPEG q=0.9 (~300-600 KB), plenty for
+                      // image-to-image.
+                      const { base64, mime } =
+                        await downscaleImageToBase64(file);
+                      additions.push({
+                        id: crypto.randomUUID(),
+                        name: file.name,
+                        mimeType: (mime === "image/jpeg" ||
+                        mime === "image/png" ||
+                        mime === "image/webp" ||
+                        mime === "image/gif"
+                          ? mime
+                          : "image/jpeg") as
+                          | "image/png"
+                          | "image/jpeg"
+                          | "image/webp"
+                          | "image/gif",
+                        base64,
+                        previewUrl: URL.createObjectURL(file),
+                      });
+                      slots--;
                     }
-                    // Downscale before base64 — raw 8 MB phone photos
-                    // become ~10.7 MB base64 and overflow Vercel's
-                    // ~4.5 MB serverless body cap. The shared helper
-                    // resizes to 1536px / JPEG q=0.9, landing around
-                    // 300-600 KB. Reference quality is plenty for
-                    // image-to-image at that resolution.
-                    const { base64, mime } =
-                      await downscaleImageToBase64(file);
-                    setRefFile({
-                      name: file.name,
-                      mimeType: (mime === "image/jpeg" ||
-                      mime === "image/png" ||
-                      mime === "image/webp" ||
-                      mime === "image/gif"
-                        ? mime
-                        : "image/jpeg") as
-                        | "image/png"
-                        | "image/jpeg"
-                        | "image/webp"
-                        | "image/gif",
-                      base64,
-                      previewUrl: URL.createObjectURL(file),
-                    });
-                    setRefUrl("");
-                    if (selectedAvatar) setSelectedAvatar(null);
+                    if (additions.length) {
+                      setRefFiles((prev) => [...prev, ...additions]);
+                    }
+                    if (skippedForCap) {
+                      toast(
+                        `Only ${MAX_REFERENCE_IMAGES} reference images allowed; extras skipped`,
+                      );
+                    }
                   }}
                 />
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => refFileInputRef.current?.click()}
-                  disabled={refUrl.trim().length > 0}
+                  disabled={activeRefCount >= MAX_REFERENCE_IMAGES}
                 >
                   Upload
                 </Button>
               </div>
-              {refFile && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 8,
-                    padding: "6px 8px",
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--line)",
-                    borderRadius: 8,
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={refFile.previewUrl}
-                    alt="reference preview"
-                    style={{
-                      width: 36,
-                      height: 36,
-                      objectFit: "cover",
-                      borderRadius: 4,
-                    }}
-                  />
-                  <div
-                    style={{
-                      flex: 1,
-                      fontSize: 11,
-                      color: "var(--ink-2)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={refFile.name}
-                  >
-                    {refFile.name}
-                  </div>
-                  <button
-                    onClick={() => {
-                      URL.revokeObjectURL(refFile.previewUrl);
-                      setRefFile(null);
-                      if (refFileInputRef.current) {
-                        refFileInputRef.current.value = "";
-                      }
-                    }}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--ink-3)",
-                      padding: 0,
-                      fontSize: 16,
-                      lineHeight: 1,
-                    }}
-                    aria-label="Remove uploaded reference"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
             </div>
           </Section>
       </div>
@@ -1730,9 +1802,15 @@ export function ImageStudio() {
                       color: "white",
                       borderRadius: 6,
                     }}
-                    title="Generated from a reference image"
+                    title={
+                      row.reference_urls.length > 1
+                        ? `Generated from ${row.reference_urls.length} reference images`
+                        : "Generated from a reference image"
+                    }
                   >
-                    edit
+                    {row.reference_urls.length > 1
+                      ? `edit ×${row.reference_urls.length}`
+                      : "edit"}
                   </span>
                 )}
                 {selectMode && (
@@ -1821,15 +1899,41 @@ export function ImageStudio() {
           </div>
           {active.reference_urls && active.reference_urls.length > 0 && (
             <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
-              Reference:{" "}
-              <a
-                href={active.reference_urls[0]}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "var(--ink-2)" }}
+              {active.reference_urls.length > 1
+                ? `References (${active.reference_urls.length}):`
+                : "Reference:"}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 4,
+                }}
               >
-                {active.reference_urls[0]}
-              </a>
+                {active.reference_urls.map((u, i) => (
+                  <a
+                    key={`${u}-${i}`}
+                    href={u}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={u}
+                    style={{ color: "var(--ink-2)", display: "inline-block" }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={u}
+                      alt={`reference ${i + 1}`}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        objectFit: "cover",
+                        borderRadius: 6,
+                        border: "1px solid var(--line)",
+                      }}
+                    />
+                  </a>
+                ))}
+              </div>
             </div>
           )}
           <div

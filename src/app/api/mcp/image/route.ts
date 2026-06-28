@@ -18,11 +18,13 @@
 import { NextResponse } from "next/server";
 import {
   ASPECT_RATIOS,
+  MAX_REFERENCE_IMAGES,
   RateLimitError,
   generateImage,
   generateImageBatch,
   imageGenerationConfigured,
   type AspectRatio,
+  type RefInput,
 } from "@/lib/image-generation";
 import { originFromRequest, validateBearer } from "@/lib/mcp-oauth";
 import { parseProxyUploadArgs, proxyUpload } from "@/lib/proxy-upload";
@@ -67,13 +69,13 @@ type JsonRpcResponse = {
 const TOOL_DEFINITION = {
   name: "generate_image",
   description:
-    "Generate an image from a text prompt using Google Gemini. Returns a public URL pointing to the stored PNG/JPEG. Optionally accepts a reference image_url (or base64) for image-to-image edits — pass the URL of a previous output plus a prompt like \"make it green\" to iterate.",
+    "Generate an image from a text prompt using Google Gemini. Returns a public URL pointing to the stored PNG/JPEG. Optionally accepts up to 4 reference images for image-to-image edits/composition — a single reference via image_url (or image_base64), or multiple via image_urls / images. Pass the URL of a previous output plus a prompt like \"make it green\" to iterate, or several references (e.g. a face + outfit + scene) to compose.",
   inputSchema: {
     type: "object",
     properties: {
       prompt: {
         type: "string",
-        description: "Text description of the image to generate (or the edit instruction when a reference image is supplied).",
+        description: "Text description of the image to generate (or the edit instruction when reference images are supplied).",
       },
       aspect_ratio: {
         type: "string",
@@ -84,7 +86,7 @@ const TOOL_DEFINITION = {
         type: "string",
         format: "uri",
         description:
-          "Optional public http(s) URL of a reference image. When provided, the model edits / re-renders that image guided by the prompt (image-to-image). Useful for iterative tweaks (e.g. \"make it green\" with the previous output URL).",
+          "Optional public http(s) URL of a single reference image (image-to-image). For multiple references use image_urls instead.",
       },
       image_base64: {
         type: "string",
@@ -96,6 +98,30 @@ const TOOL_DEFINITION = {
         enum: ["image/png", "image/jpeg", "image/webp", "image/gif"],
         description:
           "MIME type for image_base64. Defaults to image/png.",
+      },
+      image_urls: {
+        type: "array",
+        maxItems: 4,
+        items: { type: "string", format: "uri" },
+        description:
+          "Optional array of up to 4 public http(s) reference image URLs. Combined with any image_url / images entries; total references capped at 4.",
+      },
+      images: {
+        type: "array",
+        maxItems: 4,
+        items: {
+          type: "object",
+          required: ["base64"],
+          properties: {
+            base64: { type: "string" },
+            mime_type: {
+              type: "string",
+              enum: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+            },
+          },
+        },
+        description:
+          "Optional array of up to 4 base64-encoded reference images (each { base64, mime_type }). Combined with any image_urls; total references capped at 4.",
       },
       count: {
         type: "integer",
@@ -178,6 +204,35 @@ const SUBMIT_IMAGE_BATCH_TOOL = {
                 "image/gif",
               ],
             },
+            image_urls: {
+              type: "array",
+              maxItems: 4,
+              items: { type: "string", format: "uri" },
+              description:
+                "Up to 4 reference image URLs for this item (capped at 4 total references).",
+            },
+            images: {
+              type: "array",
+              maxItems: 4,
+              items: {
+                type: "object",
+                required: ["base64"],
+                properties: {
+                  base64: { type: "string" },
+                  mime_type: {
+                    type: "string",
+                    enum: [
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp",
+                      "image/gif",
+                    ],
+                  },
+                },
+              },
+              description:
+                "Up to 4 base64 reference images for this item (capped at 4 total references).",
+            },
           },
         },
       },
@@ -255,6 +310,88 @@ function rpcResult(id: string | number | null, result: unknown): JsonRpcResponse
   return { jsonrpc: "2.0", id, result };
 }
 
+/**
+ * Parse MCP reference-image args into a RefInput[]. Accepts both the
+ * legacy single fields (image_url / image_base64 / image_mime_type) and
+ * the multi-image array fields (image_urls / images). Returns an error
+ * string on the first validation failure. `label` prefixes errors for
+ * per-item batch context (e.g. "items[2].").
+ */
+function parseRefInputs(
+  src: {
+    image_url?: unknown;
+    image_base64?: unknown;
+    image_mime_type?: unknown;
+    image_urls?: unknown;
+    images?: unknown;
+  },
+  label = "",
+): { refs: RefInput[] } | { error: string } {
+  const refs: RefInput[] = [];
+  const isHttp = (u: string) => {
+    try {
+      const p = new URL(u);
+      return p.protocol === "http:" || p.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
+  if (src.image_url !== undefined) {
+    if (typeof src.image_url !== "string")
+      return { error: `${label}image_url must be a string` };
+    if (!isHttp(src.image_url))
+      return { error: `${label}image_url must be http(s)` };
+    refs.push({ url: src.image_url });
+  }
+  if (src.image_base64 !== undefined) {
+    if (typeof src.image_base64 !== "string")
+      return { error: `${label}image_base64 must be a base64-encoded string` };
+    if (
+      src.image_mime_type !== undefined &&
+      typeof src.image_mime_type !== "string"
+    )
+      return { error: `${label}image_mime_type must be a string` };
+    refs.push({
+      base64: src.image_base64,
+      mimeType: src.image_mime_type as string | undefined,
+    });
+  }
+  if (src.image_urls !== undefined) {
+    if (!Array.isArray(src.image_urls))
+      return { error: `${label}image_urls must be an array` };
+    for (const u of src.image_urls) {
+      if (typeof u !== "string")
+        return { error: `${label}image_urls entries must be strings` };
+      if (!isHttp(u))
+        return { error: `${label}image_urls entries must be http(s): ${u}` };
+      refs.push({ url: u });
+    }
+  }
+  if (src.images !== undefined) {
+    if (!Array.isArray(src.images))
+      return { error: `${label}images must be an array` };
+    for (const im of src.images) {
+      if (!im || typeof im !== "object")
+        return { error: `${label}images entries must be objects` };
+      const o = im as { base64?: unknown; mime_type?: unknown };
+      if (typeof o.base64 !== "string")
+        return { error: `${label}images[].base64 must be a string` };
+      if (o.mime_type !== undefined && typeof o.mime_type !== "string")
+        return { error: `${label}images[].mime_type must be a string` };
+      refs.push({
+        base64: o.base64,
+        mimeType: o.mime_type as string | undefined,
+      });
+    }
+  }
+  if (refs.length > MAX_REFERENCE_IMAGES)
+    return {
+      error: `${label}too many reference images (max ${MAX_REFERENCE_IMAGES}, got ${refs.length})`,
+    };
+  return { refs };
+}
+
 async function handleGenerateImageStreaming(
   reqId: string | number | null,
   args: {
@@ -263,6 +400,8 @@ async function handleGenerateImageStreaming(
     image_url?: unknown;
     image_base64?: unknown;
     image_mime_type?: unknown;
+    image_urls?: unknown;
+    images?: unknown;
     count?: unknown;
   },
   progressToken: string | number | undefined,
@@ -283,55 +422,11 @@ async function handleGenerateImageStreaming(
       ? (aspectRaw as AspectRatio)
       : undefined;
 
-  let referenceImageUrl: string | undefined;
-  if (args.image_url !== undefined) {
-    if (typeof args.image_url !== "string") {
-      return formatResponse(rpcError(reqId, -32602, "image_url must be a string"), true);
-    }
-    try {
-      const parsed = new URL(args.image_url);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        return formatResponse(
-          rpcError(reqId, -32602, `image_url must be http(s); got ${parsed.protocol}`),
-          true,
-        );
-      }
-    } catch {
-      return formatResponse(
-        rpcError(reqId, -32602, `Invalid image_url: ${args.image_url}`),
-        true,
-      );
-    }
-    referenceImageUrl = args.image_url;
+  const parsedRefs = parseRefInputs(args);
+  if ("error" in parsedRefs) {
+    return formatResponse(rpcError(reqId, -32602, parsedRefs.error), true);
   }
-
-  let referenceImageBase64: string | undefined;
-  let referenceImageMimeType: string | undefined;
-  if (args.image_base64 !== undefined) {
-    if (typeof args.image_base64 !== "string") {
-      return formatResponse(
-        rpcError(reqId, -32602, "image_base64 must be a base64-encoded string"),
-        true,
-      );
-    }
-    referenceImageBase64 = args.image_base64;
-    if (args.image_mime_type !== undefined) {
-      if (typeof args.image_mime_type !== "string") {
-        return formatResponse(
-          rpcError(reqId, -32602, "image_mime_type must be a string"),
-          true,
-        );
-      }
-      referenceImageMimeType = args.image_mime_type;
-    }
-  }
-
-  if (referenceImageUrl && referenceImageBase64) {
-    return formatResponse(
-      rpcError(reqId, -32602, "Provide either image_url or image_base64, not both"),
-      true,
-    );
-  }
+  const referenceImages = parsedRefs.refs;
 
   let count = 1;
   if (args.count !== undefined) {
@@ -406,9 +501,7 @@ async function handleGenerateImageStreaming(
         const { results, errors } = await generateImageBatch({
           prompt,
           aspectRatio,
-          referenceImageUrl,
-          referenceImageBase64,
-          referenceImageMimeType,
+          referenceImages: referenceImages.length ? referenceImages : undefined,
           source: "mcp",
           count,
           // Generous server-side budget. Gemini 3.1 image preview can
@@ -595,42 +688,14 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
           }
           aspectRatio = aspectRaw as AspectRatio;
         }
-        if (raw.image_url !== undefined && typeof raw.image_url !== "string") {
-          return rpcError(id, -32602, `items[${i}].image_url must be a string`);
-        }
-        if (
-          raw.image_base64 !== undefined &&
-          typeof raw.image_base64 !== "string"
-        ) {
-          return rpcError(
-            id,
-            -32602,
-            `items[${i}].image_base64 must be a string`,
-          );
-        }
-        if (
-          raw.image_mime_type !== undefined &&
-          typeof raw.image_mime_type !== "string"
-        ) {
-          return rpcError(
-            id,
-            -32602,
-            `items[${i}].image_mime_type must be a string`,
-          );
-        }
-        if (raw.image_url && raw.image_base64) {
-          return rpcError(
-            id,
-            -32602,
-            `items[${i}] must use either image_url or image_base64, not both`,
-          );
+        const itemRefs = parseRefInputs(raw, `items[${i}].`);
+        if ("error" in itemRefs) {
+          return rpcError(id, -32602, itemRefs.error);
         }
         items.push({
           prompt: raw.prompt,
           aspectRatio,
-          referenceImageUrl: raw.image_url as string | undefined,
-          referenceImageBase64: raw.image_base64 as string | undefined,
-          referenceImageMimeType: raw.image_mime_type as string | undefined,
+          referenceImages: itemRefs.refs.length ? itemRefs.refs : undefined,
         });
       }
       try {
@@ -776,6 +841,8 @@ export async function POST(req: Request): Promise<Response> {
             image_url?: unknown;
             image_base64?: unknown;
             image_mime_type?: unknown;
+            image_urls?: unknown;
+            images?: unknown;
           };
         };
         const id = e.id ?? null;
@@ -792,9 +859,17 @@ export async function POST(req: Request): Promise<Response> {
             aspectRaw && (ASPECT_RATIOS as readonly string[]).includes(aspectRaw)
               ? (aspectRaw as AspectRatio)
               : undefined;
+          const parsedRefs = parseRefInputs(args);
+          if ("error" in parsedRefs) {
+            responses.push(rpcError(id, -32602, parsedRefs.error));
+            continue;
+          }
           const result = await generateImage({
             prompt,
             aspectRatio,
+            referenceImages: parsedRefs.refs.length
+              ? parsedRefs.refs
+              : undefined,
             source: "mcp",
             timeoutMs: 240_000,
           });
