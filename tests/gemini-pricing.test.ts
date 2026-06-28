@@ -33,8 +33,9 @@ describe("priceGeminiUsage", () => {
       outputTokens: 500,
       imageCount: 1,
     });
-    // 1 * 0.039 + 1000 * 1e-7 + 500 * 4e-7 = 0.039 + 0.0001 + 0.0002 = 0.0393
-    expect(usd).toBeCloseTo(0.0393, 6);
+    // 1 * 0.067 + 1000 * 5e-7 + 500 * 0 = 0.067 + 0.0005 = 0.0675
+    // (image output is priced via the per-image rate, so output tokens are 0-rated)
+    expect(usd).toBeCloseTo(0.0675, 6);
   });
 
   it("prices image-only output (no token info) at per-image rate", async () => {
@@ -47,7 +48,22 @@ describe("priceGeminiUsage", () => {
       outputTokens: 0,
       imageCount: 1,
     });
-    expect(usd).toBeCloseTo(0.039, 6);
+    expect(usd).toBeCloseTo(0.067, 6);
+  });
+
+  it("applies the 50% batch discount to the per-image rate", async () => {
+    const { priceGeminiUsage } = await import(
+      "@/lib/vendors/gemini-pricing"
+    );
+    const usd = priceGeminiUsage({
+      model: "gemini-3.1-flash-image-preview",
+      inputTokens: 0,
+      outputTokens: 0,
+      imageCount: 4,
+      isBatch: true,
+    });
+    // 4 * 0.067 * 0.5 = 0.134
+    expect(usd).toBeCloseTo(0.134, 6);
   });
 
   it("respects env overrides for per-image price", async () => {
@@ -75,6 +91,6 @@ describe("priceGeminiUsage", () => {
       outputTokens: 0,
       imageCount: 1,
     });
-    expect(usd).toBeCloseTo(0.039, 6);
+    expect(usd).toBeCloseTo(0.067, 6);
   });
 });
