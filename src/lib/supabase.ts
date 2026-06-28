@@ -128,14 +128,10 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function loadImageBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
-  if (typeof createImageBitmap === "function") {
-    try {
-      return await createImageBitmap(file, { imageOrientation: "from-image" });
-    } catch {
-      // Fall through to <img> fallback below.
-    }
-  }
+// Decode via an <img> element + object URL. Modern browsers (incl. Safari)
+// auto-apply EXIF orientation here, and this path reliably produces real
+// pixels where createImageBitmap can silently return a blank bitmap.
+function decodeViaImgElement(file: File): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -149,6 +145,48 @@ async function loadImageBitmap(file: File): Promise<ImageBitmap | HTMLImageEleme
     };
     img.src = url;
   });
+}
+
+async function loadImageBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      // Fall through to <img> fallback below.
+    }
+  }
+  return decodeViaImgElement(file);
+}
+
+/**
+ * True when the canvas is effectively empty — fully transparent or pure
+ * black across sampled pixels. Some browsers (notably Safari) let
+ * createImageBitmap "succeed" but yield a blank bitmap, so drawImage paints
+ * nothing and we'd otherwise encode a solid-black JPEG. Sampling lets us
+ * detect that and recover.
+ */
+function canvasLooksBlank(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+): boolean {
+  try {
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let maxColor = 0;
+    let maxAlpha = 0;
+    // Sample ~2000 pixels across the image.
+    const step = Math.max(4, Math.floor(data.length / (4 * 2000)) * 4);
+    for (let i = 0; i < data.length; i += step) {
+      if (data[i] > maxColor) maxColor = data[i];
+      if (data[i + 1] > maxColor) maxColor = data[i + 1];
+      if (data[i + 2] > maxColor) maxColor = data[i + 2];
+      if (data[i + 3] > maxAlpha) maxAlpha = data[i + 3];
+    }
+    return maxAlpha === 0 || maxColor === 0;
+  } catch {
+    // getImageData can throw on a tainted canvas — assume not blank.
+    return false;
+  }
 }
 
 /**
@@ -207,6 +245,23 @@ export async function downscaleImageToBase64(
   if (!ctx) return fileToBase64(file);
   ctx.drawImage(bitmap as CanvasImageSource, 0, 0, dstW, dstH);
   if ("close" in bitmap && typeof bitmap.close === "function") bitmap.close();
+
+  // Guard against a blank/black canvas. createImageBitmap can "succeed" but
+  // paint nothing on some browsers (e.g. Safari), which would otherwise ship
+  // a solid-black image. If detected, redraw via an <img> element, and if
+  // that's still blank, fall back to the original file bytes.
+  if (canvasLooksBlank(ctx, dstW, dstH)) {
+    try {
+      const img = await decodeViaImgElement(file);
+      ctx.clearRect(0, 0, dstW, dstH);
+      ctx.drawImage(img, 0, 0, dstW, dstH);
+    } catch {
+      return fileToBase64(file);
+    }
+    if (canvasLooksBlank(ctx, dstW, dstH)) {
+      return fileToBase64(file);
+    }
+  }
 
   const blob: Blob | null = await new Promise((resolve) =>
     canvas.toBlob(resolve, "image/jpeg", quality),
