@@ -6,10 +6,16 @@ import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
 import { downscaleImageToBase64 } from "@/lib/supabase";
 import { AVATAR_IDS, type AvatarId } from "@/lib/avatars";
-import type { Avatar } from "@/lib/types";
+import { POSE_IDS, type PoseId } from "@/lib/poses";
+import type { Avatar, Pose } from "@/lib/types";
 
 const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
+
+// Appended to the prompt at send time when a pose reference is selected, so
+// Gemini treats that image as a composition/pose cue rather than identity.
+const POSE_HINT =
+  "One of the attached reference images is a POSE reference — match its body pose, framing, and composition. Preserve the subject's face and identity from the other reference image(s), not from the pose reference.";
 
 // Mirror of MAX_REFERENCE_IMAGES in src/lib/image-generation.ts. Kept as a
 // local literal so this client component doesn't import the server-only lib.
@@ -186,6 +192,18 @@ export function ImageStudio() {
   const [avatarUploadTarget, setAvatarUploadTarget] =
     React.useState<AvatarId | null>(null);
 
+  // Pose references — same model as avatars, but the selected one is a
+  // composition/pose cue (and appends POSE_HINT to the prompt at send time).
+  const [poses, setPoses] = React.useState<Pose[]>([]);
+  const [selectedPose, setSelectedPoseState] = React.useState<PoseId | null>(
+    null,
+  );
+  const [poseBusy, setPoseBusy] = React.useState<PoseId | null>(null);
+  const poseFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [poseUploadTarget, setPoseUploadTarget] = React.useState<PoseId | null>(
+    null,
+  );
+
   const loadGallery = React.useCallback(async (nextPage: number) => {
     setLoadingGallery(true);
     setGalleryError(null);
@@ -234,6 +252,10 @@ export function ImageStudio() {
     if (raw && (AVATAR_IDS as readonly string[]).includes(raw)) {
       setSelectedAvatarState(raw as AvatarId);
     }
+    const rawPose = window.localStorage.getItem("dreamme.imageStudio.pose");
+    if (rawPose && (POSE_IDS as readonly string[]).includes(rawPose)) {
+      setSelectedPoseState(rawPose as PoseId);
+    }
   }, []);
 
   const loadAvatars = React.useCallback(async () => {
@@ -247,9 +269,21 @@ export function ImageStudio() {
     }
   }, []);
 
+  const loadPoses = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/poses");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "failed");
+      setPoses(json.poses ?? []);
+    } catch {
+      // Non-fatal — pose picker just renders empty if it fails.
+    }
+  }, []);
+
   React.useEffect(() => {
     loadAvatars();
-  }, [loadAvatars]);
+    loadPoses();
+  }, [loadAvatars, loadPoses]);
 
   const setSelectedAvatar = React.useCallback((id: AvatarId | null) => {
     setSelectedAvatarState(id);
@@ -258,6 +292,16 @@ export function ImageStudio() {
       window.localStorage.setItem("dreamme.imageStudio.avatar", id);
     } else {
       window.localStorage.removeItem("dreamme.imageStudio.avatar");
+    }
+  }, []);
+
+  const setSelectedPose = React.useCallback((id: PoseId | null) => {
+    setSelectedPoseState(id);
+    if (typeof window === "undefined") return;
+    if (id) {
+      window.localStorage.setItem("dreamme.imageStudio.pose", id);
+    } else {
+      window.localStorage.removeItem("dreamme.imageStudio.pose");
     }
   }, []);
 
@@ -331,23 +375,34 @@ export function ImageStudio() {
     (selectedAvatar &&
       avatars.find((a) => a.name === selectedAvatar)?.imageUrl) ||
     null;
+  const poseRefUrl =
+    (selectedPose && poses.find((p) => p.name === selectedPose)?.imageUrl) ||
+    null;
 
-  // All active references in send order: avatar (if selected) → uploaded
-  // files → a pasted URL. Capped at MAX_REFERENCE_IMAGES. Combinable now —
-  // avatar no longer excludes uploads.
+  // All active references in send order: avatar (identity) → pose
+  // (composition) → uploaded files → a pasted URL. Capped at
+  // MAX_REFERENCE_IMAGES. All combinable.
   const trimmedRefUrl = refUrl.trim();
   const refUrlValid = /^https?:\/\//i.test(trimmedRefUrl);
   const activeRefCount =
     (avatarRefUrl ? 1 : 0) +
+    (poseRefUrl ? 1 : 0) +
     refFiles.length +
     (trimmedRefUrl && refUrlValid ? 1 : 0);
   const buildReferenceImages = (): RefInput[] => {
     const refs: RefInput[] = [];
     if (avatarRefUrl) refs.push({ url: avatarRefUrl });
+    if (poseRefUrl) refs.push({ url: poseRefUrl });
     for (const f of refFiles) refs.push({ base64: f.base64, mimeType: f.mimeType });
     if (trimmedRefUrl && refUrlValid) refs.push({ url: trimmedRefUrl });
     return refs.slice(0, MAX_REFERENCE_IMAGES);
   };
+
+  // The prompt actually sent: when a pose reference is in play, append the
+  // pose hint so Gemini reads that image as composition, not identity. The
+  // user's editable prompt textarea stays clean.
+  const buildPromptForSend = (): string =>
+    poseRefUrl ? `${prompt.trim()}\n\n${POSE_HINT}` : prompt.trim();
 
   const generate = async () => {
     if (!prompt.trim() || generating) return;
@@ -364,7 +419,7 @@ export function ImageStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: prompt.trim(),
+          prompt: buildPromptForSend(),
           aspectRatio,
           referenceImages: referenceImages.length ? referenceImages : undefined,
           count: count > 1 ? count : undefined,
@@ -450,8 +505,9 @@ export function ImageStudio() {
     // Send the shared references once at the top level; the server fans
     // them out into each item.
     const referenceImages = buildReferenceImages();
+    const promptToSend = buildPromptForSend();
     const items = Array.from({ length: count }, () => ({
-      prompt: prompt.trim(),
+      prompt: promptToSend,
       aspectRatio,
     }));
     const body = {
@@ -801,6 +857,112 @@ export function ImageStudio() {
     }
   };
 
+  // --- Pose references (mirror of the avatar handlers) ---
+  const togglePose = (id: PoseId) => {
+    const pose = poses.find((p) => p.name === id);
+    if (!pose?.imageUrl) {
+      pickPoseUpload(id);
+      return;
+    }
+    if (selectedPose === id) {
+      setSelectedPose(null);
+      return;
+    }
+    if (!selectedPose && activeRefCount >= MAX_REFERENCE_IMAGES) {
+      toast(`Up to ${MAX_REFERENCE_IMAGES} reference images`);
+      return;
+    }
+    setSelectedPose(id);
+  };
+
+  const pickPoseUpload = (id: PoseId) => {
+    setPoseUploadTarget(id);
+    poseFileInputRef.current?.click();
+  };
+
+  const onPoseFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const target = poseUploadTarget;
+    e.target.value = "";
+    setPoseUploadTarget(null);
+    if (!file || !target) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast("File exceeds 8 MB");
+      return;
+    }
+    const allowed: ReadonlyArray<string> = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif",
+    ];
+    if (!allowed.includes(file.type)) {
+      toast(`Unsupported type: ${file.type || "unknown"}`);
+      return;
+    }
+    setPoseBusy(target);
+    try {
+      const { base64, mime } = await downscaleImageToBase64(file);
+      const res = await fetch(`/api/poses/${encodeURIComponent(target)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: base64, image_mime: mime }),
+      });
+      const text = await res.text();
+      let json: { ok?: boolean; error?: string; pose?: Pose };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const snippet = text.slice(0, 120).replace(/\s+/g, " ").trim();
+        toast(
+          `Pose upload failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`,
+        );
+        return;
+      }
+      if (!json.ok || !json.pose) {
+        toast(`Pose upload failed: ${json.error ?? "unknown error"}`);
+        return;
+      }
+      const updated = json.pose;
+      setPoses((prev) => {
+        const next = prev.filter((p) => p.name !== updated.name);
+        next.push(updated);
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+      toast(`${target} updated`);
+    } catch (err) {
+      toast(`Pose upload failed: ${(err as Error).message}`);
+    } finally {
+      setPoseBusy(null);
+    }
+  };
+
+  const clearPose = async (id: PoseId) => {
+    if (!window.confirm(`Remove the reference image for ${id}?`)) return;
+    setPoseBusy(id);
+    try {
+      const res = await fetch(`/api/poses/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        toast(`Clear failed: ${json?.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      const updated = json.pose as Pose;
+      setPoses((prev) =>
+        prev.map((p) => (p.name === updated.name ? updated : p)),
+      );
+      if (selectedPose === id) setSelectedPose(null);
+      toast(`${id} cleared`);
+    } catch (err) {
+      toast(`Clear failed: ${(err as Error).message}`);
+    } finally {
+      setPoseBusy(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -879,10 +1041,10 @@ export function ImageStudio() {
                   marginBottom: 8,
                 }}
               >
-                Avatar (optional). Click a saved avatar to use it as the
-                reference image. Click an empty slot to upload one.
-                Selecting an avatar overrides any URL or uploaded file
-                below.
+                Avatar (optional). Click a saved avatar to use it as an
+                identity reference. Click an empty slot to upload one.
+                Combines with a pose, uploads, and a URL — up to{" "}
+                {MAX_REFERENCE_IMAGES} references total.
               </div>
               <input
                 ref={avatarFileInputRef}
@@ -1035,6 +1197,159 @@ export function ImageStudio() {
                 })}
               </div>
             </div>
+            <div style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginBottom: 8,
+                }}
+              >
+                Pose reference (optional). Click a pose to send it to Google
+                as a composition cue — a pose hint is added to the prompt
+                automatically so the face stays from your avatar/uploads.
+                Click an empty slot to upload one.
+              </div>
+              <input
+                ref={poseFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                style={{ display: "none" }}
+                onChange={onPoseFileChange}
+              />
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {POSE_IDS.map((id) => {
+                  const pose = poses.find((p) => p.name === id);
+                  const hasImage = !!pose?.imageUrl;
+                  const isSelected = selectedPose === id;
+                  const busy = poseBusy === id;
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => !busy && togglePose(id)}
+                        disabled={busy}
+                        title={
+                          hasImage
+                            ? isSelected
+                              ? `${id} — selected (click to deselect)`
+                              : `${id} — click to use as pose reference`
+                            : `${id} — click to upload a pose image`
+                        }
+                        style={{
+                          width: 56,
+                          height: 56,
+                          padding: 0,
+                          borderRadius: 12,
+                          background: hasImage
+                            ? "var(--surface-2)"
+                            : "transparent",
+                          border: isSelected
+                            ? "2px solid var(--accent-2)"
+                            : hasImage
+                              ? "1px solid var(--line)"
+                              : "1px dashed var(--line)",
+                          cursor: busy ? "wait" : "pointer",
+                          overflow: "hidden",
+                          position: "relative",
+                          transform: isSelected ? "scale(1.04)" : "scale(1)",
+                          transition: "transform 120ms ease",
+                          opacity: busy ? 0.5 : 1,
+                        }}
+                      >
+                        {hasImage ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={pose!.imageUrl!}
+                            alt={id}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 18, color: "var(--ink-3)" }}>
+                            +
+                          </span>
+                        )}
+                      </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: isSelected ? "var(--ink)" : "var(--ink-3)",
+                            fontWeight: isSelected ? 600 : 400,
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {id.replace(/-/g, " ")}
+                        </span>
+                        {hasImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!busy) pickPoseUpload(id);
+                            }}
+                            disabled={busy}
+                            title="Replace this pose's image"
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ink-3)",
+                              cursor: busy ? "wait" : "pointer",
+                              fontSize: 10,
+                              textDecoration: "underline",
+                            }}
+                          >
+                            edit
+                          </button>
+                        )}
+                        {hasImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!busy) clearPose(id);
+                            }}
+                            disabled={busy}
+                            title="Clear this pose"
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ink-3)",
+                              cursor: busy ? "wait" : "pointer",
+                              fontSize: 10,
+                              textDecoration: "underline",
+                            }}
+                          >
+                            clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div style={{ marginTop: 12 }}>
               <div
                 style={{
@@ -1065,6 +1380,14 @@ export function ImageStudio() {
                       src={avatarRefUrl}
                       label={selectedAvatar ?? "avatar"}
                       onRemove={() => setSelectedAvatar(null)}
+                    />
+                  )}
+                  {poseRefUrl && (
+                    <RefThumb
+                      key="pose"
+                      src={poseRefUrl}
+                      label={`pose: ${selectedPose ?? ""}`}
+                      onRemove={() => setSelectedPose(null)}
                     />
                   )}
                   {refFiles.map((f) => (

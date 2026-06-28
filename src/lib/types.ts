@@ -1,5 +1,6 @@
 import type { PersonaId } from "./personas";
 import type { AvatarId } from "./avatars";
+import type { PoseId } from "./poses";
 
 export interface Delivery {
   id: string;
@@ -308,6 +309,18 @@ export interface AvatarRow {
 
 export interface Avatar {
   name: AvatarId;
+  imageUrl: string | null;
+  updatedAt: string;
+}
+
+export interface PoseRow {
+  name: string;
+  image_url: string | null;
+  updated_at: string;
+}
+
+export interface Pose {
+  name: PoseId;
   imageUrl: string | null;
   updatedAt: string;
 }
