@@ -147,25 +147,50 @@ export const REFERENCE_ALLOWED_MIME = new Set([
   "image/gif",
 ]);
 
+/**
+ * The semantic role of a reference image. Used to interleave a labeling
+ * text part directly before the image in the Gemini request so the model
+ * knows which image is the face vs the pose. "plain" (or undefined) emits
+ * no label — the image is sent bare (legacy behavior for n8n/MCP refs).
+ */
+export type RefRole = "identity" | "pose" | "plain";
+
 export interface ReferenceImage {
   bytes: Buffer;
   mimeType: string;
+  role?: RefRole;
 }
 
 /**
  * A single reference image input: either a public URL or inline base64
- * (+ mimeType). Used in array form to attach multiple references to one
- * generation. Shared across the dashboard routes, the MCP tools, and the
- * batch path.
+ * (+ mimeType), with an optional semantic role. Used in array form to
+ * attach multiple references to one generation. Shared across the
+ * dashboard routes, the MCP tools, and the batch path.
  */
 export interface RefInput {
   url?: string;
   base64?: string;
   mimeType?: string;
+  role?: RefRole;
 }
 
 /** Hard cap on reference images per generation. */
 export const MAX_REFERENCE_IMAGES = 4;
+
+/**
+ * Label text emitted immediately before a reference image in the Gemini
+ * `parts` array, so the model binds each image to its role by adjacency.
+ * "plain"/undefined returns null → no label (image sent bare).
+ */
+const REF_ROLE_LABELS: Partial<Record<RefRole, string>> = {
+  identity:
+    "IDENTITY reference — use this person's face and identity in the generated image:",
+  pose: "POSE reference — match this image's body pose, framing, and composition; do NOT take facial identity or clothing from this image:",
+};
+
+export function refRoleLabel(role?: RefRole): string | null {
+  return (role && REF_ROLE_LABELS[role]) || null;
+}
 
 /** Decode + validate one base64 reference into a ReferenceImage. */
 export function decodeBase64Reference(
@@ -218,10 +243,14 @@ export async function resolveReferenceImages(params: {
   const urls: string[] = [];
   for (const ref of inputs) {
     if (ref.url) {
-      images.push(await fetchReferenceImage(ref.url));
+      const img = await fetchReferenceImage(ref.url);
+      img.role = ref.role;
+      images.push(img);
       urls.push(ref.url);
     } else if (ref.base64) {
-      images.push(decodeBase64Reference(ref.base64, ref.mimeType));
+      const img = decodeBase64Reference(ref.base64, ref.mimeType);
+      img.role = ref.role;
+      images.push(img);
     }
   }
   return { images, urls };
@@ -304,6 +333,10 @@ async function callGemini(
 ): Promise<{ bytes: Buffer; mimeType: string; usage: GeminiResponse["usageMetadata"] }> {
   const parts: Part[] = [];
   for (const ref of referenceImages) {
+    // Label roled references immediately before the image so the model
+    // binds face-vs-pose by adjacency. Plain refs are sent bare.
+    const label = refRoleLabel(ref.role);
+    if (label) parts.push({ text: label });
     parts.push({
       inline_data: {
         mime_type: ref.mimeType,

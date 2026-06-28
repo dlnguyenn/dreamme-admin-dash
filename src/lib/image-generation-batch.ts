@@ -31,6 +31,7 @@ import {
   decodeBase64Reference,
   extFromMime,
   fetchReferenceImage,
+  refRoleLabel,
   imageGenerationConfigured,
   insertRow,
   randomId,
@@ -178,9 +179,12 @@ async function resolveItemRefs(
         cached = await fetchReferenceImage(ref.url);
         cache.set(ref.url, cached);
       }
-      images.push(cached);
+      // Clone so a per-item role doesn't mutate the shared cached object.
+      images.push({ ...cached, role: ref.role });
     } else if (ref.base64) {
-      images.push(decodeBase64Reference(ref.base64, ref.mimeType));
+      const img = decodeBase64Reference(ref.base64, ref.mimeType);
+      img.role = ref.role;
+      images.push(img);
     }
   }
   return images;
@@ -189,6 +193,8 @@ async function resolveItemRefs(
 function buildRequestParts(prompt: string, refs: ReferenceImage[]): Part[] {
   const parts: Part[] = [];
   for (const ref of refs) {
+    const label = refRoleLabel(ref.role);
+    if (label) parts.push({ text: label });
     parts.push({
       inline_data: {
         mime_type: ref.mimeType,

@@ -29,6 +29,7 @@ const RefInputSchema = z.object({
   mimeType: z
     .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
     .optional(),
+  role: z.enum(["identity", "pose", "plain"]).optional(),
 });
 
 const Body = z.object({
