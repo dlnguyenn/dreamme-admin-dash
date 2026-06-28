@@ -13,7 +13,7 @@ export const POSE_IDS = [
   "walking",
   "indoor-selfie",
   "over-shoulder",
-  "hands-on-hips",
+  "mirror-covered-face",
   "mirror-ootd",
   "candid",
 ] as const;
