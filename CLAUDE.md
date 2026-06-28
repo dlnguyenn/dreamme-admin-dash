@@ -253,11 +253,13 @@ provider. Single endpoint, four tools.
 - **Storage**: every generated image lands in the public
   `mcp-image-generations` Supabase bucket with one
   `image_generations` row.
-- **Rate limits**: `MCP_IMAGE_HOURLY_LIMIT` (default 50) and
-  `MCP_IMAGE_DAILY_LIMIT` (default 100), enforced in
-  `checkRateLimit()`. Counts apply globally (no per-caller identity)
-  and span both the dashboard and MCP paths. Batch submissions
-  reserve `items.length` against these caps at submission time.
+- **Rate limits**: `MCP_IMAGE_HOURLY_LIMIT` (default 150) and
+  `MCP_IMAGE_DAILY_LIMIT` (default 500), enforced in
+  `checkRateLimit()` over a rolling 60-min / 24-hour window. Counts
+  apply globally (no per-caller identity) and span both the dashboard
+  and MCP paths, so dashboard generations, claude.ai-connector calls,
+  and batch outputs all share one budget. Batch submissions reserve
+  `items.length` against these caps at submission time.
 
 ### Tools exposed
 
