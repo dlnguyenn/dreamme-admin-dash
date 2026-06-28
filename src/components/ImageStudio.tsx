@@ -6,7 +6,12 @@ import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
 import { downscaleImageToBase64 } from "@/lib/supabase";
 import { AVATAR_IDS, type AvatarId } from "@/lib/avatars";
-import { POSE_IDS, type PoseId } from "@/lib/poses";
+import {
+  POSE_IDS,
+  WOMEN_POSE_IDS,
+  MEN_POSE_IDS,
+  type PoseId,
+} from "@/lib/poses";
 import type { Avatar, Pose } from "@/lib/types";
 
 const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
@@ -73,6 +78,12 @@ interface ImageBatchSummary {
 }
 
 const PAGE_SIZE = 24;
+
+/** Display label for a pose slug: drop the `men-` section prefix and turn
+ *  hyphens into spaces (e.g. "men-mirror-ootd" -> "mirror ootd"). */
+function poseLabel(id: string): string {
+  return id.replace(/^men-/, "").replace(/-/g, " ");
+}
 
 /** A single reference-image thumbnail with a remove (×) button. Used in the
  *  composer's attached-references row. */
@@ -963,6 +974,134 @@ export function ImageStudio() {
     }
   };
 
+  // One pose tile grid for a given set of slot ids. Used for the Women and
+  // Men pose sections; selection is shared (one pose at a time across both).
+  const renderPoseGrid = (ids: readonly PoseId[]) => (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {ids.map((id) => {
+        const pose = poses.find((p) => p.name === id);
+        const hasImage = !!pose?.imageUrl;
+        const isSelected = selectedPose === id;
+        const busy = poseBusy === id;
+        const label = poseLabel(id);
+        return (
+          <div
+            key={id}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => !busy && togglePose(id)}
+              disabled={busy}
+              title={
+                hasImage
+                  ? isSelected
+                    ? `${label} — selected (click to deselect)`
+                    : `${label} — click to use as pose reference`
+                  : `${label} — click to upload a pose image`
+              }
+              style={{
+                width: 56,
+                height: 56,
+                padding: 0,
+                borderRadius: 12,
+                background: hasImage ? "var(--surface-2)" : "transparent",
+                border: isSelected
+                  ? "2px solid var(--accent-2)"
+                  : hasImage
+                    ? "1px solid var(--line)"
+                    : "1px dashed var(--line)",
+                cursor: busy ? "wait" : "pointer",
+                overflow: "hidden",
+                position: "relative",
+                transform: isSelected ? "scale(1.04)" : "scale(1)",
+                transition: "transform 120ms ease",
+                opacity: busy ? 0.5 : 1,
+              }}
+            >
+              {hasImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pose!.imageUrl!}
+                  alt={label}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                <span style={{ fontSize: 18, color: "var(--ink-3)" }}>+</span>
+              )}
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: isSelected ? "var(--ink)" : "var(--ink-3)",
+                  fontWeight: isSelected ? 600 : 400,
+                  textTransform: "capitalize",
+                }}
+              >
+                {label}
+              </span>
+              {hasImage && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!busy) pickPoseUpload(id);
+                  }}
+                  disabled={busy}
+                  title="Replace this pose's image"
+                  style={{
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--ink-3)",
+                    cursor: busy ? "wait" : "pointer",
+                    fontSize: 10,
+                    textDecoration: "underline",
+                  }}
+                >
+                  edit
+                </button>
+              )}
+              {hasImage && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!busy) clearPose(id);
+                  }}
+                  disabled={busy}
+                  title="Clear this pose"
+                  style={{
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--ink-3)",
+                    cursor: busy ? "wait" : "pointer",
+                    fontSize: 10,
+                    textDecoration: "underline",
+                  }}
+                >
+                  clear
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -1217,137 +1356,39 @@ export function ImageStudio() {
                 style={{ display: "none" }}
                 onChange={onPoseFileChange}
               />
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {POSE_IDS.map((id) => {
-                  const pose = poses.find((p) => p.name === id);
-                  const hasImage = !!pose?.imageUrl;
-                  const isSelected = selectedPose === id;
-                  const busy = poseBusy === id;
-                  return (
-                    <div
-                      key={id}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => !busy && togglePose(id)}
-                        disabled={busy}
-                        title={
-                          hasImage
-                            ? isSelected
-                              ? `${id} — selected (click to deselect)`
-                              : `${id} — click to use as pose reference`
-                            : `${id} — click to upload a pose image`
-                        }
-                        style={{
-                          width: 56,
-                          height: 56,
-                          padding: 0,
-                          borderRadius: 12,
-                          background: hasImage
-                            ? "var(--surface-2)"
-                            : "transparent",
-                          border: isSelected
-                            ? "2px solid var(--accent-2)"
-                            : hasImage
-                              ? "1px solid var(--line)"
-                              : "1px dashed var(--line)",
-                          cursor: busy ? "wait" : "pointer",
-                          overflow: "hidden",
-                          position: "relative",
-                          transform: isSelected ? "scale(1.04)" : "scale(1)",
-                          transition: "transform 120ms ease",
-                          opacity: busy ? 0.5 : 1,
-                        }}
-                      >
-                        {hasImage ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={pose!.imageUrl!}
-                            alt={id}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                              display: "block",
-                            }}
-                          />
-                        ) : (
-                          <span style={{ fontSize: 18, color: "var(--ink-3)" }}>
-                            +
-                          </span>
-                        )}
-                      </button>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: isSelected ? "var(--ink)" : "var(--ink-3)",
-                            fontWeight: isSelected ? 600 : 400,
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {id.replace(/-/g, " ")}
-                        </span>
-                        {hasImage && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!busy) pickPoseUpload(id);
-                            }}
-                            disabled={busy}
-                            title="Replace this pose's image"
-                            style={{
-                              padding: 0,
-                              border: "none",
-                              background: "transparent",
-                              color: "var(--ink-3)",
-                              cursor: busy ? "wait" : "pointer",
-                              fontSize: 10,
-                              textDecoration: "underline",
-                            }}
-                          >
-                            edit
-                          </button>
-                        )}
-                        {hasImage && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!busy) clearPose(id);
-                            }}
-                            disabled={busy}
-                            title="Clear this pose"
-                            style={{
-                              padding: 0,
-                              border: "none",
-                              background: "transparent",
-                              color: "var(--ink-3)",
-                              cursor: busy ? "wait" : "pointer",
-                              fontSize: 10,
-                              textDecoration: "underline",
-                            }}
-                          >
-                            clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 14 }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      color: "var(--ink-3)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Women
+                  </div>
+                  {renderPoseGrid(WOMEN_POSE_IDS)}
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      color: "var(--ink-3)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Men
+                  </div>
+                  {renderPoseGrid(MEN_POSE_IDS)}
+                </div>
               </div>
             </div>
             <div style={{ marginTop: 12 }}>
@@ -1386,7 +1427,7 @@ export function ImageStudio() {
                     <RefThumb
                       key="pose"
                       src={poseRefUrl}
-                      label={`pose: ${selectedPose ?? ""}`}
+                      label={`pose: ${selectedPose ? poseLabel(selectedPose) : ""}`}
                       onRemove={() => setSelectedPose(null)}
                     />
                   )}

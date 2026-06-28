@@ -7,7 +7,7 @@
  * Mirrors src/lib/avatars.ts. Poses drive *composition* references (body
  * pose / framing), distinct from avatars which drive *identity* references.
  */
-export const POSE_IDS = [
+export const WOMEN_POSE_IDS = [
   "standing",
   "car-selfie",
   "walking",
@@ -17,6 +17,22 @@ export const POSE_IDS = [
   "mirror-ootd",
   "candid",
 ] as const;
+
+// Men pose slots mirror the women set, slugged with a `men-` prefix so the
+// names stay unique in the single-PK pose_references table. The UI strips
+// the prefix for display and groups them in a separate section.
+export const MEN_POSE_IDS = [
+  "men-standing",
+  "men-car-selfie",
+  "men-walking",
+  "men-indoor-selfie",
+  "men-over-shoulder",
+  "men-mirror-covered-face",
+  "men-mirror-ootd",
+  "men-candid",
+] as const;
+
+export const POSE_IDS = [...WOMEN_POSE_IDS, ...MEN_POSE_IDS] as const;
 
 export type PoseId = (typeof POSE_IDS)[number];
 
