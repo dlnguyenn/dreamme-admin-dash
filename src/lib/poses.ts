@@ -9,9 +9,9 @@
  */
 export const POSE_IDS = [
   "standing",
-  "sitting",
+  "car-selfie",
   "walking",
-  "leaning",
+  "indoor-selfie",
   "over-shoulder",
   "hands-on-hips",
   "mirror-ootd",
