@@ -19,9 +19,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const RefInputSchema = z.object({
+  url: z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "must be http(s)")
+    .optional(),
+  base64: z.string().max(11_000_000).optional(),
+  mimeType: z
+    .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
+    .optional(),
+});
+
 const Body = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  // Up to 4 references (URL or inline base64). Preferred over the single
+  // referenceImage* fields below, which are kept for back-compat.
+  referenceImages: z.array(RefInputSchema).max(4).optional(),
   referenceImageUrl: z
     .string()
     .url()
@@ -69,6 +84,7 @@ export async function POST(req: Request) {
       const result = await generateImage({
         prompt: parsed.prompt,
         aspectRatio: parsed.aspectRatio,
+        referenceImages: parsed.referenceImages,
         referenceImageUrl: parsed.referenceImageUrl,
         referenceImageBase64: parsed.referenceImageBase64,
         referenceImageMimeType: parsed.referenceImageMimeType,
@@ -82,6 +98,7 @@ export async function POST(req: Request) {
     const { results, errors } = await generateImageBatch({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
+      referenceImages: parsed.referenceImages,
       referenceImageUrl: parsed.referenceImageUrl,
       referenceImageBase64: parsed.referenceImageBase64,
       referenceImageMimeType: parsed.referenceImageMimeType,

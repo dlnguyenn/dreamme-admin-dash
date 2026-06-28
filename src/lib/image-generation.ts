@@ -152,6 +152,81 @@ export interface ReferenceImage {
   mimeType: string;
 }
 
+/**
+ * A single reference image input: either a public URL or inline base64
+ * (+ mimeType). Used in array form to attach multiple references to one
+ * generation. Shared across the dashboard routes, the MCP tools, and the
+ * batch path.
+ */
+export interface RefInput {
+  url?: string;
+  base64?: string;
+  mimeType?: string;
+}
+
+/** Hard cap on reference images per generation. */
+export const MAX_REFERENCE_IMAGES = 4;
+
+/** Decode + validate one base64 reference into a ReferenceImage. */
+export function decodeBase64Reference(
+  base64: string,
+  mimeType?: string,
+): ReferenceImage {
+  const mime = (mimeType ?? "image/png").toLowerCase();
+  if (!REFERENCE_ALLOWED_MIME.has(mime)) {
+    throw new Error(`Reference image mime not supported: ${mime}`);
+  }
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.length > REFERENCE_MAX_BYTES) {
+    throw new Error(`Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`);
+  }
+  return { bytes, mimeType: mime === "image/jpg" ? "image/jpeg" : mime };
+}
+
+/**
+ * Normalize reference inputs into fetched/decoded ReferenceImage[] plus the
+ * list of url-type references (for `reference_urls` provenance). Prefers the
+ * array form; falls back to the legacy single-field params so existing
+ * callers (n8n, older MCP requests) keep working. Capped at
+ * MAX_REFERENCE_IMAGES.
+ */
+export async function resolveReferenceImages(params: {
+  referenceImages?: RefInput[];
+  referenceImageUrl?: string;
+  referenceImageBase64?: string;
+  referenceImageMimeType?: string;
+}): Promise<{ images: ReferenceImage[]; urls: string[] }> {
+  let inputs: RefInput[] = [];
+  if (params.referenceImages && params.referenceImages.length > 0) {
+    inputs = params.referenceImages;
+  } else if (params.referenceImageUrl) {
+    inputs = [{ url: params.referenceImageUrl }];
+  } else if (params.referenceImageBase64) {
+    inputs = [
+      {
+        base64: params.referenceImageBase64,
+        mimeType: params.referenceImageMimeType,
+      },
+    ];
+  }
+  if (inputs.length > MAX_REFERENCE_IMAGES) {
+    throw new Error(
+      `Too many reference images (max ${MAX_REFERENCE_IMAGES}, got ${inputs.length})`,
+    );
+  }
+  const images: ReferenceImage[] = [];
+  const urls: string[] = [];
+  for (const ref of inputs) {
+    if (ref.url) {
+      images.push(await fetchReferenceImage(ref.url));
+      urls.push(ref.url);
+    } else if (ref.base64) {
+      images.push(decodeBase64Reference(ref.base64, ref.mimeType));
+    }
+  }
+  return { images, urls };
+}
+
 export async function fetchReferenceImage(url: string): Promise<ReferenceImage> {
   let parsed: URL;
   try {
@@ -351,7 +426,10 @@ export interface GenerateImageResult {
   aspectRatio: AspectRatio | null;
   geminiModel: string;
   createdAt: string;
+  /** First url-type reference, kept for back-compat with single-ref callers. */
   referenceImageUrl: string | null;
+  /** All url-type references for this generation (base64 refs are inline-only). */
+  referenceImageUrls: string[];
 }
 
 /**
@@ -406,6 +484,9 @@ function isTransientGeminiError(err: unknown): boolean {
 export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Up to MAX_REFERENCE_IMAGES references (URL or inline base64). Preferred
+   *  over the single-field params below; those remain for back-compat. */
+  referenceImages?: RefInput[];
   /** Optional public http(s) URL of a reference image (image-to-image mode). */
   referenceImageUrl?: string;
   /** Optional inline base64-encoded reference image (alternative to referenceImageUrl). */
@@ -431,23 +512,8 @@ export async function generateImage(params: {
     await checkRateLimit(1);
   }
 
-  const referenceImages: ReferenceImage[] = [];
-  if (params.referenceImageUrl) {
-    referenceImages.push(await fetchReferenceImage(params.referenceImageUrl));
-  } else if (params.referenceImageBase64) {
-    const mime = (params.referenceImageMimeType ?? "image/png").toLowerCase();
-    if (!REFERENCE_ALLOWED_MIME.has(mime)) {
-      throw new Error(`Reference image mime not supported: ${mime}`);
-    }
-    const bytes = Buffer.from(params.referenceImageBase64, "base64");
-    if (bytes.length > REFERENCE_MAX_BYTES) {
-      throw new Error(`Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`);
-    }
-    referenceImages.push({
-      bytes,
-      mimeType: mime === "image/jpg" ? "image/jpeg" : mime,
-    });
-  }
+  const { images: referenceImages, urls: referenceUrls } =
+    await resolveReferenceImages(params);
 
   // Auto-retry once on transient errors (timeouts, 5xx, network
   // hiccups, abort). n8n's image-gen workflows retry silently — we
@@ -507,14 +573,13 @@ export async function generateImage(params: {
     gen.mimeType,
   );
 
-  const refUrl = params.referenceImageUrl ?? null;
   const inserted = await insertRow({
     prompt,
     aspect_ratio: params.aspectRatio ?? null,
     image_url: imageUrl,
     gemini_model: MODEL,
     source: params.source,
-    reference_urls: refUrl ? [refUrl] : null,
+    reference_urls: referenceUrls.length > 0 ? referenceUrls : null,
   });
 
   const usage = gen.usage ?? {};
@@ -534,6 +599,7 @@ export async function generateImage(params: {
     metadata: {
       source: params.source,
       has_reference: referenceImages.length > 0,
+      reference_count: referenceImages.length,
     },
   });
 
@@ -544,7 +610,8 @@ export async function generateImage(params: {
     aspectRatio: params.aspectRatio ?? null,
     geminiModel: MODEL,
     createdAt: inserted.created_at,
-    referenceImageUrl: refUrl,
+    referenceImageUrl: referenceUrls[0] ?? null,
+    referenceImageUrls: referenceUrls,
   };
 }
 
@@ -570,6 +637,7 @@ export interface BatchItemError {
 export async function generateImageBatch(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
+  referenceImages?: RefInput[];
   referenceImageUrl?: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
@@ -593,6 +661,7 @@ export async function generateImageBatch(params: {
       generateImage({
         prompt: params.prompt,
         aspectRatio: params.aspectRatio,
+        referenceImages: params.referenceImages,
         referenceImageUrl: params.referenceImageUrl,
         referenceImageBase64: params.referenceImageBase64,
         referenceImageMimeType: params.referenceImageMimeType,

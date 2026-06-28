@@ -18,9 +18,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const RefInputSchema = z.object({
+  url: z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "must be http(s)")
+    .optional(),
+  base64: z.string().max(11_000_000).optional(),
+  mimeType: z
+    .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
+    .optional(),
+});
+
 const Item = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  // Up to 4 references per item. Preferred over the single fields below.
+  referenceImages: z.array(RefInputSchema).max(4).optional(),
   referenceImageUrl: z
     .string()
     .url()
@@ -35,11 +49,12 @@ const Item = z.object({
 const Body = z.object({
   items: z.array(Item).min(1).max(100),
   displayName: z.string().max(200).optional(),
-  // Shared reference image fan-out. The dashboard sends the heavy
-  // base64 once here instead of duplicating it per item, so the
-  // payload doesn't blow past the serverless body-size cap when
-  // count > 1. Server expands these into each item that doesn't
-  // already carry its own reference.
+  // Shared reference fan-out. The dashboard sends the heavy base64 once
+  // here instead of duplicating it per item, so the payload doesn't blow
+  // past the serverless body-size cap when count > 1. The server expands
+  // these into each item that doesn't already carry its own references.
+  sharedReferenceImages: z.array(RefInputSchema).max(4).optional(),
+  // Legacy single shared reference (kept for back-compat).
   sharedReferenceImageBase64: z.string().max(11_000_000).optional(),
   sharedReferenceImageMimeType: z
     .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
@@ -63,19 +78,34 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const sharedB64 = parsed.sharedReferenceImageBase64;
-    const sharedMime = parsed.sharedReferenceImageMimeType;
+    // Resolve the shared reference set once. Prefer the array form;
+    // fall back to the legacy single shared base64.
+    const sharedRefs =
+      parsed.sharedReferenceImages && parsed.sharedReferenceImages.length > 0
+        ? parsed.sharedReferenceImages
+        : parsed.sharedReferenceImageBase64
+          ? [
+              {
+                base64: parsed.sharedReferenceImageBase64,
+                mimeType: parsed.sharedReferenceImageMimeType,
+              },
+            ]
+          : undefined;
     const items: BatchItemInput[] = parsed.items.map((it) => {
       const hasOwnRef =
-        it.referenceImageUrl != null || it.referenceImageBase64 != null;
+        (it.referenceImages != null && it.referenceImages.length > 0) ||
+        it.referenceImageUrl != null ||
+        it.referenceImageBase64 != null;
       return {
         prompt: it.prompt,
         aspectRatio: it.aspectRatio,
+        // Item-level refs win; otherwise fan out the shared set.
+        referenceImages: hasOwnRef
+          ? it.referenceImages
+          : sharedRefs,
         referenceImageUrl: it.referenceImageUrl,
-        referenceImageBase64:
-          it.referenceImageBase64 ?? (hasOwnRef ? undefined : sharedB64),
-        referenceImageMimeType:
-          it.referenceImageMimeType ?? (hasOwnRef ? undefined : sharedMime),
+        referenceImageBase64: it.referenceImageBase64,
+        referenceImageMimeType: it.referenceImageMimeType,
       };
     });
     const summary = await submitImageBatch({

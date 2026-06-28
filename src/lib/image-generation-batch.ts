@@ -19,15 +19,16 @@ import {
   ASPECT_RATIOS,
   BUCKET,
   GOOGLE_API_KEY,
+  MAX_REFERENCE_IMAGES,
   MODEL,
-  REFERENCE_ALLOWED_MIME,
-  REFERENCE_MAX_BYTES,
   SERVICE_ROLE,
   SUPABASE_ANON,
   SUPABASE_URL,
   type AspectRatio,
+  type RefInput,
   type ReferenceImage,
   checkRateLimit,
+  decodeBase64Reference,
   extFromMime,
   fetchReferenceImage,
   imageGenerationConfigured,
@@ -53,6 +54,9 @@ export type BatchStatus =
 export interface BatchItemInput {
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Up to MAX_REFERENCE_IMAGES references (URL or base64). Preferred over
+   *  the single-field params below, which remain for back-compat. */
+  referenceImages?: RefInput[];
   referenceImageUrl?: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
@@ -135,32 +139,56 @@ function mapGeminiState(state: string | undefined): BatchStatus {
   return "PENDING";
 }
 
-async function decodeReference(
-  item: BatchItemInput,
-): Promise<ReferenceImage | undefined> {
-  if (item.referenceImageUrl) {
-    return fetchReferenceImage(item.referenceImageUrl);
+/** Normalize one item's references (array form preferred, single-field
+ *  fallback) into the RefInput list. */
+function itemRefInputs(item: BatchItemInput): RefInput[] {
+  if (item.referenceImages && item.referenceImages.length > 0) {
+    return item.referenceImages;
   }
+  if (item.referenceImageUrl) return [{ url: item.referenceImageUrl }];
   if (item.referenceImageBase64) {
-    const mime = (item.referenceImageMimeType ?? "image/png").toLowerCase();
-    if (!REFERENCE_ALLOWED_MIME.has(mime)) {
-      throw new Error(`Reference image mime not supported: ${mime}`);
-    }
-    const bytes = Buffer.from(item.referenceImageBase64, "base64");
-    if (bytes.length > REFERENCE_MAX_BYTES) {
-      throw new Error(`Reference image exceeds ${REFERENCE_MAX_BYTES} bytes`);
-    }
-    return {
-      bytes,
-      mimeType: mime === "image/jpg" ? "image/jpeg" : mime,
-    };
+    return [
+      {
+        base64: item.referenceImageBase64,
+        mimeType: item.referenceImageMimeType,
+      },
+    ];
   }
-  return undefined;
+  return [];
 }
 
-function buildRequestParts(prompt: string, ref?: ReferenceImage): Part[] {
+/** The url-type references for an item, for `reference_urls` provenance. */
+function itemReferenceUrls(item: BatchItemInput): string[] {
+  return itemRefInputs(item)
+    .map((r) => r.url)
+    .filter((u): u is string => !!u);
+}
+
+/** Resolve an item's references to fetched/decoded images, caching URL
+ *  fetches across the batch so shared refs are downloaded once. */
+async function resolveItemRefs(
+  item: BatchItemInput,
+  cache: Map<string, ReferenceImage>,
+): Promise<ReferenceImage[]> {
+  const images: ReferenceImage[] = [];
+  for (const ref of itemRefInputs(item)) {
+    if (ref.url) {
+      let cached = cache.get(ref.url);
+      if (!cached) {
+        cached = await fetchReferenceImage(ref.url);
+        cache.set(ref.url, cached);
+      }
+      images.push(cached);
+    } else if (ref.base64) {
+      images.push(decodeBase64Reference(ref.base64, ref.mimeType));
+    }
+  }
+  return images;
+}
+
+function buildRequestParts(prompt: string, refs: ReferenceImage[]): Part[] {
   const parts: Part[] = [];
-  if (ref) {
+  for (const ref of refs) {
     parts.push({
       inline_data: {
         mime_type: ref.mimeType,
@@ -203,6 +231,11 @@ export async function submitImageBatch(params: {
         "each item must use either reference_image_url OR reference_image_base64, not both",
       );
     }
+    if (itemRefInputs(item).length > MAX_REFERENCE_IMAGES) {
+      throw new Error(
+        `each item may have at most ${MAX_REFERENCE_IMAGES} reference images`,
+      );
+    }
   }
 
   // Half-price compute is still our compute — gate on the same global
@@ -210,22 +243,11 @@ export async function submitImageBatch(params: {
   await checkRateLimit(params.items.length);
 
   // Pre-fetch / decode reference images. Cache by URL so a batch where
-  // many items share one ref pays the network cost once.
+  // many items share refs pays the network cost once.
   const refByUrl = new Map<string, ReferenceImage>();
-  const itemRefs: Array<ReferenceImage | undefined> = [];
+  const itemRefs: ReferenceImage[][] = [];
   for (const item of params.items) {
-    if (item.referenceImageUrl) {
-      const cached = refByUrl.get(item.referenceImageUrl);
-      if (cached) {
-        itemRefs.push(cached);
-        continue;
-      }
-      const ref = await fetchReferenceImage(item.referenceImageUrl);
-      refByUrl.set(item.referenceImageUrl, ref);
-      itemRefs.push(ref);
-    } else {
-      itemRefs.push(await decodeReference(item));
-    }
+    itemRefs.push(await resolveItemRefs(item, refByUrl));
   }
 
   // Build the inline batch request payload.
@@ -495,7 +517,9 @@ export async function getImageBatch(params: {
         image_url: imageUrl,
         gemini_model: row.gemini_model,
         source: row.source,
-        reference_urls: item.referenceImageUrl ? [item.referenceImageUrl] : null,
+        reference_urls: itemReferenceUrls(item).length
+          ? itemReferenceUrls(item)
+          : null,
       });
       results.push({
         prompt: item.prompt,
