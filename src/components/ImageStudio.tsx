@@ -12,18 +12,20 @@ import type { Avatar, Pose } from "@/lib/types";
 const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
 
-// Appended to the prompt at send time when a pose reference is selected, so
-// Gemini treats that image as a composition/pose cue rather than identity.
-const POSE_HINT =
-  "One of the attached reference images is a POSE reference — match its body pose, framing, and composition. Preserve the subject's face and identity from the other reference image(s), not from the pose reference.";
-
 // Mirror of MAX_REFERENCE_IMAGES in src/lib/image-generation.ts. Kept as a
 // local literal so this client component doesn't import the server-only lib.
 const MAX_REFERENCE_IMAGES = 4;
 
 // One reference image to send to the API: URL (avatar / pasted) or base64
-// (uploaded file). Matches the RefInput shape the routes accept.
-type RefInput = { url?: string; base64?: string; mimeType?: string };
+// (uploaded file), with an optional semantic role so the server labels it
+// for Gemini (identity = face, pose = composition). Matches the RefInput
+// shape the routes accept.
+type RefInput = {
+  url?: string;
+  base64?: string;
+  mimeType?: string;
+  role?: "identity" | "pose" | "plain";
+};
 
 interface ImageGenerationRow {
   id: string;
@@ -391,18 +393,16 @@ export function ImageStudio() {
     (trimmedRefUrl && refUrlValid ? 1 : 0);
   const buildReferenceImages = (): RefInput[] => {
     const refs: RefInput[] = [];
-    if (avatarRefUrl) refs.push({ url: avatarRefUrl });
-    if (poseRefUrl) refs.push({ url: poseRefUrl });
-    for (const f of refFiles) refs.push({ base64: f.base64, mimeType: f.mimeType });
+    // Roles let the server label each image for Gemini by adjacency:
+    // avatar = identity (face), pose = composition. Uploads + pasted URL
+    // are generic ("plain", unlabeled).
+    if (avatarRefUrl) refs.push({ url: avatarRefUrl, role: "identity" });
+    if (poseRefUrl) refs.push({ url: poseRefUrl, role: "pose" });
+    for (const f of refFiles)
+      refs.push({ base64: f.base64, mimeType: f.mimeType });
     if (trimmedRefUrl && refUrlValid) refs.push({ url: trimmedRefUrl });
     return refs.slice(0, MAX_REFERENCE_IMAGES);
   };
-
-  // The prompt actually sent: when a pose reference is in play, append the
-  // pose hint so Gemini reads that image as composition, not identity. The
-  // user's editable prompt textarea stays clean.
-  const buildPromptForSend = (): string =>
-    poseRefUrl ? `${prompt.trim()}\n\n${POSE_HINT}` : prompt.trim();
 
   const generate = async () => {
     if (!prompt.trim() || generating) return;
@@ -419,7 +419,7 @@ export function ImageStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: buildPromptForSend(),
+          prompt: prompt.trim(),
           aspectRatio,
           referenceImages: referenceImages.length ? referenceImages : undefined,
           count: count > 1 ? count : undefined,
@@ -505,9 +505,9 @@ export function ImageStudio() {
     // Send the shared references once at the top level; the server fans
     // them out into each item.
     const referenceImages = buildReferenceImages();
-    const promptToSend = buildPromptForSend();
+    const trimmedPrompt = prompt.trim();
     const items = Array.from({ length: count }, () => ({
-      prompt: promptToSend,
+      prompt: trimmedPrompt,
       aspectRatio,
     }));
     const body = {
