@@ -210,6 +210,44 @@ export interface BlendedEfficiencyRow {
   mrr_growth_7d: string | number | null;
 }
 
+// One row per Meta campaign from the first-party SKAN/AdAttributionKit pipeline
+// (public.skan_campaign_efficiency). Counts are decoded from signature-verified,
+// did-win postbacks; spend is joined from ad_insights_daily. Numeric columns
+// arrive from PostgREST as strings. campaign_id/name/source_identifier are null
+// when the postback's source-identifier couldn't be mapped to a named campaign
+// (privacy-nulled or not yet in skan_campaign_mapping).
+export interface SkanCampaignEfficiencyRow {
+  campaign_key: string;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  source_identifier: string | null;
+  skan_trials: number;
+  skan_subscribes: number;
+  skan_purchases: number;
+  trials_p1: number;
+  trials_p2: number;
+  trials_p3: number;
+  subs_p1: number;
+  subs_p2: number;
+  subs_p3: number;
+  spend: string | number | null;
+  cost_per_skan_trial: string | number | null;
+  cost_per_skan_subscribe: string | number | null;
+  postbacks: number;
+  last_postback_at: string | null;
+}
+
+// Single-row reconciliation of SKAN-derived totals against RevenueCat (the
+// source of truth for absolute counts). public.skan_reconciliation.
+export interface SkanReconciliationRow {
+  skan_trials: number;
+  skan_subscribes: number;
+  meta_spend_35d: string | number | null;
+  rc_trials_35d: number | null;
+  rc_subscribes_35d: number | null;
+  blended_cac_35d: string | number | null;
+}
+
 export type ResourceKind = "image" | "link";
 
 export interface ReferenceSlide {

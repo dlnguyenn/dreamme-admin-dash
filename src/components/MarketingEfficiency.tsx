@@ -3,7 +3,11 @@
 import * as React from "react";
 import { PageHeader } from "./Shell";
 import { API } from "@/lib/supabase";
-import type { BlendedEfficiencyRow } from "@/lib/types";
+import type {
+  BlendedEfficiencyRow,
+  SkanCampaignEfficiencyRow,
+  SkanReconciliationRow,
+} from "@/lib/types";
 
 // PostgREST returns numeric columns as strings — coerce defensively.
 const num = (v: string | number | null | undefined): number =>
@@ -262,7 +266,269 @@ export function MarketingEfficiency() {
           </tbody>
         </table>
       </div>
+
+      <div style={{ height: 36 }} />
+      <SkanAttribution />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// First-party SKAdNetwork / AdAttributionKit attribution ("DIY MMP").
+// Per-campaign trial/subscribe + cost-per, decoded from signature-verified
+// Apple postbacks our own endpoint receives. RevenueCat remains the source of
+// truth for absolute counts; this ranks campaigns SKAN can resolve.
+// ---------------------------------------------------------------------------
+function SkanAttribution() {
+  const [rows, setRows] = React.useState<SkanCampaignEfficiencyRow[]>([]);
+  const [recon, setRecon] = React.useState<SkanReconciliationRow | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [r, rc] = await Promise.all([
+          API.fetchSkanCampaignEfficiency(),
+          API.fetchSkanReconciliation(),
+        ]);
+        if (!alive) return;
+        setRows(r);
+        setRecon(rc);
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const skanTrials = num(recon?.skan_trials);
+  const rcTrials = num(recon?.rc_trials_35d);
+  const blendedCac = recon?.blended_cac_35d != null ? num(recon.blended_cac_35d) : null;
+  // What share of RevenueCat's trials SKAN managed to resolve to a campaign.
+  const coverage = rcTrials > 0 ? skanTrials / rcTrials : null;
+
+  return (
+    <div>
+      <SectionLabel>First-party SKAN · per-campaign attribution</SectionLabel>
+
+      {/* Headline reconciliation + blended CAC — these work today from
+          RevenueCat + Meta spend, even before any postbacks decode. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 14,
+          marginBottom: 16,
+        }}
+      >
+        <HeadlineCard
+          label="Blended CAC · 35d"
+          value={blendedCac != null ? fmtUSD(blendedCac) : "—"}
+          tone="ink"
+        />
+        <HeadlineCard
+          label="RC trials · 35d"
+          value={recon?.rc_trials_35d != null ? String(rcTrials) : "—"}
+          tone="neutral"
+        />
+        <HeadlineCard
+          label="SKAN trials decoded"
+          value={String(skanTrials)}
+          tone="neutral"
+        />
+        <HeadlineCard
+          label="SKAN coverage"
+          value={coverage != null ? `${(coverage * 100).toFixed(0)}%` : "—"}
+          tone="neutral"
+        />
+      </div>
+
+      {/* Limitations disclosure — required: never over-promise SKAN. */}
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "12px 16px",
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          color: "var(--ink-3)",
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+          borderRadius: 12,
+        }}
+      >
+        <strong style={{ color: "var(--ink-2)" }}>
+          Blended CAC (Meta spend ÷ RevenueCat trials) is the number to trust.
+        </strong>{" "}
+        Per-campaign SKAN data below is aggregated by Apple, delayed 24–72h, and
+        subject to privacy thresholds: low-volume campaigns come back with{" "}
+        <em>no</em> campaign id and are grouped as <em>Unattributed</em> —{" "}
+        <span style={{ color: "var(--ink-2)" }}>shown as “—”, which is not zero</span>.
+        We can&rsquo;t beat that nulling (a paid MMP gets the same). RevenueCat is
+        the source of truth for absolute counts; SKAN only ranks the campaigns it
+        can resolve. Windows: <strong>P1</strong> 0–2d · <strong>P2</strong> 3–7d ·{" "}
+        <strong>P3</strong> 8–35d.
+      </div>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            fontSize: 13,
+            color: "var(--accent)",
+            background: "color-mix(in oklab, var(--accent) 10%, var(--surface))",
+            border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
+            borderRadius: 10,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: 24, color: "var(--ink-3)", fontSize: 13 }}>
+          Loading SKAN attribution…
+        </div>
+      ) : rows.length === 0 ? (
+        <SkanEmptyState />
+      ) : (
+        <SkanCampaignTable rows={rows} />
+      )}
+    </div>
+  );
+}
+
+// Honest empty state: the pipeline is live + verifying, but postbacks only
+// begin after the iOS endpoint ships and Apple's 24–72h delay elapses.
+function SkanEmptyState() {
+  return (
+    <div
+      style={{
+        padding: "20px 22px",
+        borderRadius: 14,
+        background: "var(--surface)",
+        border: "1px dashed var(--line)",
+        color: "var(--ink-2)",
+        fontSize: 13,
+        lineHeight: 1.6,
+      }}
+    >
+      <div className="serif" style={{ fontSize: 18, marginBottom: 6 }}>
+        Collector live · awaiting first postbacks
+      </div>
+      The endpoint is deployed and signature-verifying. Per-campaign rows light
+      up 24–72h after the iOS build that declares our attribution endpoint ships
+      (see <code>docs/skan-diy-attribution.md</code>). Until then, the blended
+      CAC and RevenueCat totals above are the live truth layer.
+    </div>
+  );
+}
+
+function SkanCampaignTable({ rows }: { rows: SkanCampaignEfficiencyRow[] }) {
+  // Distinguish a real 0 from a privacy-nulled value: null -> muted "—".
+  const cell = (v: number | null | undefined, render: (n: number) => string) =>
+    v == null ? (
+      <span style={{ color: "var(--ink-3)" }} title="below Apple's privacy threshold — not zero">
+        —
+      </span>
+    ) : (
+      render(v)
+    );
+  const spendOf = (r: SkanCampaignEfficiencyRow) => (r.spend == null ? null : num(r.spend));
+  const cptOf = (r: SkanCampaignEfficiencyRow) =>
+    r.cost_per_skan_trial == null ? null : num(r.cost_per_skan_trial);
+  const cpsOf = (r: SkanCampaignEfficiencyRow) =>
+    r.cost_per_skan_subscribe == null ? null : num(r.cost_per_skan_subscribe);
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--line)",
+        borderRadius: 14,
+        overflowX: "auto",
+        background: "var(--surface)",
+      }}
+    >
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr>
+            {[
+              "Campaign",
+              "Spend",
+              "SKAN trials",
+              "Cost / trial",
+              "SKAN subs",
+              "Cost / sub",
+              "Trials P1·P2·P3",
+            ].map((h, i) => (
+              <th
+                key={h}
+                style={{
+                  textAlign: i === 0 ? "left" : "right",
+                  padding: "11px 16px",
+                  fontSize: 10,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--ink-3)",
+                  borderBottom: "1px solid var(--line)",
+                  background: "var(--surface-2)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const unattributed = r.campaign_id == null;
+            const label =
+              r.campaign_name ??
+              (r.source_identifier
+                ? `Unattributed · src ${r.source_identifier}`
+                : "Unattributed");
+            return (
+              <tr key={r.campaign_key}>
+                <Td align="left">
+                  <span
+                    style={{
+                      color: unattributed ? "var(--ink-3)" : "var(--ink)",
+                      fontStyle: unattributed ? "italic" : "normal",
+                    }}
+                  >
+                    {label}
+                  </span>
+                </Td>
+                <Td>{cell(spendOf(r), fmtUSD)}</Td>
+                <Td>{num(r.skan_trials)}</Td>
+                <Td>{cell(cptOf(r), fmtUSD)}</Td>
+                <Td>{num(r.skan_subscribes)}</Td>
+                <Td>{cell(cpsOf(r), fmtUSD)}</Td>
+                <Td>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      color: "var(--ink-2)",
+                      fontSize: 12,
+                    }}
+                  >
+                    {num(r.trials_p1)}·{num(r.trials_p2)}·{num(r.trials_p3)}
+                  </span>
+                </Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

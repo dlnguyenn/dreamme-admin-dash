@@ -13,6 +13,8 @@ import type {
   ResourceRow,
   SavedCaption,
   SavedCaptionRow,
+  SkanCampaignEfficiencyRow,
+  SkanReconciliationRow,
   SpendLineItem,
   SpendLineItemRow,
 } from "./types";
@@ -455,6 +457,37 @@ export const API = {
       "blended_marketing_efficiency",
       `select=*&order=date.desc&limit=${days}`,
     );
+  },
+
+  /**
+   * Read the first-party SKAN/AdAttributionKit per-campaign efficiency view
+   * (public.skan_campaign_efficiency). Spend-ranked, newest postback first.
+   * Empty until the iOS endpoint ships and Apple postbacks start arriving.
+   */
+  async fetchSkanCampaignEfficiency(): Promise<SkanCampaignEfficiencyRow[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    return sbSelect<SkanCampaignEfficiencyRow>(
+      "skan_campaign_efficiency",
+      "select=*",
+    );
+  },
+
+  /** Read the single-row SKAN-vs-RevenueCat reconciliation (blended CAC + variance). */
+  async fetchSkanReconciliation(): Promise<SkanReconciliationRow | null> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<SkanReconciliationRow>(
+      "skan_reconciliation",
+      "select=*&limit=1",
+    );
+    return rows.length ? rows[0] : null;
   },
 
   async fetchFeatureRequests(): Promise<FeatureRequest[]> {
