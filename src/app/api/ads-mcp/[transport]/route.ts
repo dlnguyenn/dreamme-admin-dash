@@ -49,6 +49,11 @@ function acct(): string {
   return process.env.META_AD_ACCOUNT_ID || DEFAULT_ACCOUNT;
 }
 
+/** Normalize an ad account id to the act_ form. */
+function normAcct(id: string): string {
+  return id.startsWith("act_") ? id : `act_${id}`;
+}
+
 /**
  * Resolve the Meta token + ad account to use: prefer the OAuth-connected
  * account stored via the dashboard (the "Login with Facebook" flow), fall
@@ -263,23 +268,37 @@ const mcpHandler = createMcpHandler(
         level: z.enum(["campaign", "adset", "ad"]).default("campaign"),
         since: z.string().optional().describe("YYYY-MM-DD inclusive; defaults to 7 days ago"),
         until: z.string().optional().describe("YYYY-MM-DD inclusive; defaults to today"),
+        account_id: z.string().optional().describe("Target a specific connected ad account (act_… or numeric); defaults to the connection's default. See list_ad_accounts."),
       },
-      async ({ level, since, until }) => {
+      async ({ level, since, until, account_id }) => {
         const meta = await resolveMeta();
         if (!meta) return fail(NO_META);
+        const account = account_id ? normAcct(account_id) : meta.account;
         const range = defaultRange(since, until);
         try {
           const rows = await fetchAdInsightsWithCreative({
-            accountId: meta.account,
+            accountId: account,
             since: range.since,
             until: range.until,
             timeIncrement: "all_days",
             accessToken: meta.token,
           });
-          return json({ window: range, level, account: meta.account, rows: summarize(normLive(rows), level) });
+          return json({ window: range, level, account, rows: summarize(normLive(rows), level) });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }
+      },
+    );
+
+    // --- READ: connected ad accounts ------------------------------------
+    server.tool(
+      "list_ad_accounts",
+      "List the ad accounts available on the connected Meta account (captured at OAuth time), with the default. Use an id from here as the account_id arg in meta_ad_insights_live / batch_create_video_ads to target a non-default account.",
+      {},
+      async () => {
+        const conn = await getActiveConnection();
+        if (conn) return json({ default_ad_account_id: conn.default_ad_account_id, ad_accounts: conn.ad_accounts ?? [] });
+        return json({ default_ad_account_id: acct(), ad_accounts: [], note: "No OAuth connection — falling back to env META_AD_ACCOUNT_ID." });
       },
     );
 
@@ -641,6 +660,7 @@ const mcpHandler = createMcpHandler(
           .min(1)
           .max(10),
         adset_id: z.string().optional().describe("If set, also create a PAUSED ad per video in this ad set"),
+        account_id: z.string().optional().describe("Target ad account (defaults to the connection's default)"),
         message: z.string().optional().describe("Shared ad copy (per-video message overrides)"),
         headline: z.string().optional(),
         link: z.string().optional().describe("Destination link; defaults to the DreamMe App Store URL"),
@@ -660,6 +680,7 @@ const mcpHandler = createMcpHandler(
         if (!a.confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
         const meta = await resolveMeta();
         if (!meta) return fail(NO_META);
+        const account = a.account_id ? normAcct(a.account_id) : meta.account;
 
         const results: Array<Record<string, unknown>> = [];
         for (let i = 0; i < a.videos.length; i++) {
@@ -667,7 +688,7 @@ const mcpHandler = createMcpHandler(
           const name = v.name ?? `MCP video ${i + 1}`;
           try {
             if (!v.file_url && !v.video_id) throw new Error("each video needs file_url or video_id");
-            const videoId = v.video_id ?? (await uploadVideoByUrl({ accountId: meta.account, fileUrl: v.file_url!, name, accessToken: meta.token }));
+            const videoId = v.video_id ?? (await uploadVideoByUrl({ accountId: account, fileUrl: v.file_url!, name, accessToken: meta.token }));
             const ready = await waitForVideoReady({ videoId, accessToken: meta.token });
             if (ready === "error") throw new Error("Meta reported video processing error");
             if (ready === "processing") {
@@ -676,9 +697,9 @@ const mcpHandler = createMcpHandler(
             }
             const thumbUri = await getVideoThumbnail({ videoId, accessToken: meta.token });
             if (!thumbUri) throw new Error("no thumbnail available for video yet — retry shortly");
-            const imageHash = await uploadImageByUrl({ accountId: meta.account, imageUrl: thumbUri, accessToken: meta.token });
+            const imageHash = await uploadImageByUrl({ accountId: account, imageUrl: thumbUri, accessToken: meta.token });
             const creativeId = await createVideoCreative({
-              accountId: meta.account,
+              accountId: account,
               name,
               videoId,
               imageHash,
@@ -689,7 +710,7 @@ const mcpHandler = createMcpHandler(
             });
             let adId: string | undefined;
             if (a.adset_id) {
-              adId = await createAd({ accountId: meta.account, adsetId: a.adset_id, name, creativeId, status: a.status, accessToken: meta.token });
+              adId = await createAd({ accountId: account, adsetId: a.adset_id, name, creativeId, status: a.status, accessToken: meta.token });
             }
             results.push({ name, video_id: videoId, creative_id: creativeId, ad_id: adId, status: adId ? a.status : "creative-only", ok: true });
           } catch (e) {
