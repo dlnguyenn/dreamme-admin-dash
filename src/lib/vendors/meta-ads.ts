@@ -904,6 +904,35 @@ export async function createAd(params: {
 }
 
 /**
+ * Permanently delete an entity (campaign / ad set / ad / creative / video) by
+ * id via Graph HTTP DELETE. Irreversible. Token-injectable.
+ */
+export async function deleteEntity(params: {
+  id: string;
+  accessToken?: string;
+}): Promise<{ success: boolean }> {
+  const TOKEN = params.accessToken ?? getToken();
+  if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
+  const API_VERSION = getApiVersion();
+  const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${params.id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    cache: "no-store",
+  });
+  const j = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    error?: { code?: number; message?: string; error_user_msg?: string };
+  };
+  if (!res.ok) {
+    const e = j.error;
+    throw new Error(
+      `Meta API DELETE ${res.status}: ${e ? `${e.code ?? "?"} ${e.message ?? ""}${e.error_user_msg ? ` (${e.error_user_msg})` : ""}` : JSON.stringify(j).slice(0, 200)}`,
+    );
+  }
+  return { success: j.success ?? true };
+}
+
+/**
  * Add a list of custom-audience IDs to an existing ad set's targeting,
  * preserving all other targeting fields. Uses a POST with `targeting` field
  * (the Marketing API's standard "replace targeting" endpoint — we read

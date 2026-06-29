@@ -27,6 +27,7 @@ import {
   uploadImageByUrl,
   createVideoCreative,
   createAd,
+  deleteEntity,
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
 import { getActiveConnection } from "@/lib/meta-oauth";
@@ -719,6 +720,29 @@ const mcpHandler = createMcpHandler(
         }
         const ok = results.filter((x) => x.ok).length;
         return json({ created: ok, failed: results.length - ok, results, note: "New ads/creatives validate async — re-check in 1-2 min." });
+      },
+    );
+
+    // --- WRITE: delete --------------------------------------------------
+    server.tool(
+      "delete_entity",
+      "Permanently delete a Meta entity by id — campaign, ad set, ad, ad creative, or uploaded video. IRREVERSIBLE. Guarded: requires confirm:true (use dry_run:true to preview).",
+      {
+        id: z.string().describe("The campaign / ad set / ad / creative / video id to delete"),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async (a) => {
+        if (a.dry_run) return json({ dry_run: true, would_delete: a.id });
+        if (!a.confirm) return fail("Refusing to delete: pass confirm:true (or dry_run:true to preview). This is irreversible.");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        try {
+          const res = await deleteEntity({ id: a.id, accessToken: meta.token });
+          return json({ deleted: a.id, success: res.success });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
       },
     );
   },
