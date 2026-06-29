@@ -18,6 +18,9 @@ import {
   fetchAdInsightsWithCreative,
   updateEntityStatus,
   updateEntityDailyBudget,
+  copyCampaign,
+  copyAdSet,
+  copyAd,
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
 import { getActiveConnection } from "@/lib/meta-oauth";
@@ -477,6 +480,92 @@ const mcpHandler = createMcpHandler(
     }
     server.tool("set_adset_budget", "Set an ad set's daily budget. Guarded: requires confirm:true.", budgetShape, doBudget);
     server.tool("set_campaign_budget", "Set a campaign's daily budget (CBO). Guarded: requires confirm:true.", budgetShape, doBudget);
+
+    // --- WRITE: duplication (duplicate-to-graduate) ----------------------
+    const COPY_NOTE = "New objects validate async — effective_status may be IN_PROCESS; re-check with the get/insights tools in 1-2 min.";
+    const STATUS_OPT = z.enum(["ACTIVE", "PAUSED", "INHERITED_FROM_SOURCE"]).default("PAUSED");
+
+    server.tool(
+      "duplicate_campaign",
+      "Duplicate a campaign via Meta's /copies edge (deep_copy also clones its ad sets + ads). Defaults to PAUSED + ' - Copy' suffix so the copy never silently spends. Optionally set a new daily budget on the copy. Guarded: requires confirm:true.",
+      {
+        campaign_id: z.string(),
+        deep_copy: z.boolean().default(true),
+        status: STATUS_OPT,
+        rename_suffix: z.string().default(" - Copy"),
+        new_daily_budget_cents: z.number().int().min(100).optional(),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async (a) => {
+        if (a.dry_run) return json({ dry_run: true, would: { duplicate_campaign: a.campaign_id, deep_copy: a.deep_copy, status: a.status } });
+        if (!a.confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        try {
+          const res = await copyCampaign({ campaignId: a.campaign_id, deepCopy: a.deep_copy, statusOption: a.status, renameSuffix: a.rename_suffix, accessToken: meta.token });
+          let daily_budget_usd: number | undefined;
+          if (a.new_daily_budget_cents && res.copied_id) {
+            await updateEntityDailyBudget({ id: res.copied_id, dailyBudgetCents: a.new_daily_budget_cents, accessToken: meta.token });
+            daily_budget_usd = r(a.new_daily_budget_cents / 100);
+          }
+          return json({ applied: true, copied_campaign_id: res.copied_id, status: a.status, daily_budget_usd, note: COPY_NOTE });
+        } catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
+      },
+    );
+
+    server.tool(
+      "duplicate_adset",
+      "Duplicate an ad set via /copies (deep_copy also clones its ads). Optionally copy into another campaign (target_campaign_id) and/or set a new daily budget — the duplicate-to-graduate move. Defaults to PAUSED + ' - Copy'. Guarded: requires confirm:true.",
+      {
+        adset_id: z.string(),
+        target_campaign_id: z.string().optional(),
+        deep_copy: z.boolean().default(true),
+        status: STATUS_OPT,
+        rename_suffix: z.string().default(" - Copy"),
+        new_daily_budget_cents: z.number().int().min(100).optional(),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async (a) => {
+        if (a.dry_run) return json({ dry_run: true, would: { duplicate_adset: a.adset_id, into_campaign: a.target_campaign_id ?? "(same)", deep_copy: a.deep_copy, status: a.status } });
+        if (!a.confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        try {
+          const res = await copyAdSet({ adsetId: a.adset_id, targetCampaignId: a.target_campaign_id, deepCopy: a.deep_copy, statusOption: a.status, renameSuffix: a.rename_suffix, accessToken: meta.token });
+          let daily_budget_usd: number | undefined;
+          if (a.new_daily_budget_cents && res.copied_id) {
+            await updateEntityDailyBudget({ id: res.copied_id, dailyBudgetCents: a.new_daily_budget_cents, accessToken: meta.token });
+            daily_budget_usd = r(a.new_daily_budget_cents / 100);
+          }
+          return json({ applied: true, copied_adset_id: res.copied_id, status: a.status, daily_budget_usd, note: COPY_NOTE });
+        } catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
+      },
+    );
+
+    server.tool(
+      "duplicate_ad",
+      "Duplicate an ad via /copies, optionally into another ad set (target_adset_id). Defaults to PAUSED + ' - Copy'. Guarded: requires confirm:true.",
+      {
+        ad_id: z.string(),
+        target_adset_id: z.string().optional(),
+        status: STATUS_OPT,
+        rename_suffix: z.string().default(" - Copy"),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async (a) => {
+        if (a.dry_run) return json({ dry_run: true, would: { duplicate_ad: a.ad_id, into_adset: a.target_adset_id ?? "(same)", status: a.status } });
+        if (!a.confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        try {
+          const res = await copyAd({ adId: a.ad_id, targetAdsetId: a.target_adset_id, statusOption: a.status, renameSuffix: a.rename_suffix, accessToken: meta.token });
+          return json({ applied: true, copied_ad_id: res.copied_id, status: a.status, note: COPY_NOTE });
+        } catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
+      },
+    );
   },
   { serverInfo: { name: "dreamme-ads", version: "1.0.0" } },
   // SSE is deprecated (and needs Redis); Claude Code uses Streamable HTTP only.

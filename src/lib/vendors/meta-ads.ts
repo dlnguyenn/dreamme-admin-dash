@@ -619,6 +619,92 @@ export async function updateEntityDailyBudget(params: {
   return { success: true };
 }
 
+// ---------------------------------------------------------------------------
+// Duplication via the Graph /copies edge — "duplicate-to-graduate" winners.
+// Copies default to PAUSED so a duplicate never silently spends.
+// ---------------------------------------------------------------------------
+
+type CopyStatusOption = "ACTIVE" | "PAUSED" | "INHERITED_FROM_SOURCE";
+
+function renameOptions(suffix: string) {
+  return { rename_strategy: "DEEP_RENAME", rename_suffix: suffix };
+}
+
+export interface CopyResult {
+  copied_id: string;
+  raw: Record<string, unknown>;
+}
+
+/** Duplicate a campaign (optionally its ad sets + ads). */
+export async function copyCampaign(params: {
+  campaignId: string;
+  deepCopy?: boolean;
+  statusOption?: CopyStatusOption;
+  renameSuffix?: string;
+  accessToken?: string;
+}): Promise<CopyResult> {
+  const API_VERSION = getApiVersion();
+  const body = await metaPostJson<Record<string, unknown>>(
+    `https://graph.facebook.com/${API_VERSION}/${params.campaignId}/copies`,
+    {
+      deep_copy: params.deepCopy ?? true,
+      status_option: params.statusOption ?? "PAUSED",
+      rename_options: renameOptions(params.renameSuffix ?? " - Copy"),
+    },
+    4,
+    params.accessToken,
+  );
+  return { copied_id: String(body.copied_campaign_id ?? body.id ?? ""), raw: body };
+}
+
+/** Duplicate an ad set (optionally its ads), optionally into another campaign. */
+export async function copyAdSet(params: {
+  adsetId: string;
+  targetCampaignId?: string;
+  deepCopy?: boolean;
+  statusOption?: CopyStatusOption;
+  renameSuffix?: string;
+  accessToken?: string;
+}): Promise<CopyResult> {
+  const API_VERSION = getApiVersion();
+  const reqBody: Record<string, unknown> = {
+    deep_copy: params.deepCopy ?? true,
+    status_option: params.statusOption ?? "PAUSED",
+    rename_options: renameOptions(params.renameSuffix ?? " - Copy"),
+  };
+  if (params.targetCampaignId) reqBody.campaign_id = params.targetCampaignId;
+  const body = await metaPostJson<Record<string, unknown>>(
+    `https://graph.facebook.com/${API_VERSION}/${params.adsetId}/copies`,
+    reqBody,
+    4,
+    params.accessToken,
+  );
+  return { copied_id: String(body.copied_adset_id ?? body.id ?? ""), raw: body };
+}
+
+/** Duplicate an ad, optionally into another ad set. */
+export async function copyAd(params: {
+  adId: string;
+  targetAdsetId?: string;
+  statusOption?: CopyStatusOption;
+  renameSuffix?: string;
+  accessToken?: string;
+}): Promise<CopyResult> {
+  const API_VERSION = getApiVersion();
+  const reqBody: Record<string, unknown> = {
+    status_option: params.statusOption ?? "PAUSED",
+    rename_options: renameOptions(params.renameSuffix ?? " - Copy"),
+  };
+  if (params.targetAdsetId) reqBody.adset_id = params.targetAdsetId;
+  const body = await metaPostJson<Record<string, unknown>>(
+    `https://graph.facebook.com/${API_VERSION}/${params.adId}/copies`,
+    reqBody,
+    4,
+    params.accessToken,
+  );
+  return { copied_id: String(body.copied_ad_id ?? body.id ?? ""), raw: body };
+}
+
 /**
  * Add a list of custom-audience IDs to an existing ad set's targeting,
  * preserving all other targeting fields. Uses a POST with `targeting` field
