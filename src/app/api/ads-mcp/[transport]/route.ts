@@ -566,6 +566,55 @@ const mcpHandler = createMcpHandler(
         } catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
       },
     );
+
+    // --- WRITE: bulk operations -----------------------------------------
+    server.tool(
+      "bulk_update",
+      "Apply pause / activate / set-budget to many entities (campaigns, ad sets, or ads) in one call. Each op: {id, action: PAUSE|ACTIVATE|SET_BUDGET, daily_budget_cents?}. SET_BUDGET only applies to ad sets/campaigns. Runs sequentially and returns a per-op result. Guarded: requires confirm:true.",
+      {
+        operations: z
+          .array(
+            z.object({
+              id: z.string(),
+              action: z.enum(["PAUSE", "ACTIVATE", "SET_BUDGET"]),
+              daily_budget_cents: z.number().int().min(100).optional(),
+            }),
+          )
+          .min(1)
+          .max(100),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async ({ operations, confirm, dry_run }) => {
+        if (dry_run) {
+          return json({
+            dry_run: true,
+            count: operations.length,
+            would: operations.map((o) => ({ id: o.id, action: o.action, ...(o.action === "SET_BUDGET" ? { daily_budget_usd: o.daily_budget_cents ? r(o.daily_budget_cents / 100) : null } : {}) })),
+          });
+        }
+        if (!confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+
+        const results: Array<{ id: string; action: string; ok: boolean; error?: string }> = [];
+        for (const op of operations) {
+          try {
+            if (op.action === "SET_BUDGET") {
+              if (!op.daily_budget_cents) throw new Error("daily_budget_cents required for SET_BUDGET");
+              await updateEntityDailyBudget({ id: op.id, dailyBudgetCents: op.daily_budget_cents, accessToken: meta.token });
+            } else {
+              await updateEntityStatus({ id: op.id, status: op.action === "PAUSE" ? "PAUSED" : "ACTIVE", accessToken: meta.token });
+            }
+            results.push({ id: op.id, action: op.action, ok: true });
+          } catch (e) {
+            results.push({ id: op.id, action: op.action, ok: false, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        const applied = results.filter((x) => x.ok).length;
+        return json({ applied, failed: results.length - applied, results });
+      },
+    );
   },
   { serverInfo: { name: "dreamme-ads", version: "1.0.0" } },
   // SSE is deprecated (and needs Redis); Claude Code uses Streamable HTTP only.
