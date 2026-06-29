@@ -21,6 +21,12 @@ import {
   copyCampaign,
   copyAdSet,
   copyAd,
+  uploadVideoByUrl,
+  waitForVideoReady,
+  getVideoThumbnail,
+  uploadImageByUrl,
+  createVideoCreative,
+  createAd,
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
 import { getActiveConnection } from "@/lib/meta-oauth";
@@ -613,6 +619,85 @@ const mcpHandler = createMcpHandler(
         }
         const applied = results.filter((x) => x.ok).length;
         return json({ applied, failed: results.length - applied, results });
+      },
+    );
+
+    // --- WRITE: batch creative upload (video → ads) ---------------------
+    const DEFAULT_MSG = "Your GLP-1 journey, made simple. Track your progress and stay motivated with DreamMe.";
+    server.tool(
+      "batch_create_video_ads",
+      "Upload videos (by public file_url) and build app-install VIDEO creatives; optionally create PAUSED ads in a target ad set. Each video: {file_url? OR video_id?, name?, message?, headline?}. Google Drive share links do NOT work as file_url — use a direct/public URL or a pre-uploaded Meta video_id. Guarded: requires confirm:true.",
+      {
+        videos: z
+          .array(
+            z.object({
+              file_url: z.string().optional(),
+              video_id: z.string().optional(),
+              name: z.string().optional(),
+              message: z.string().optional(),
+              headline: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(10),
+        adset_id: z.string().optional().describe("If set, also create a PAUSED ad per video in this ad set"),
+        message: z.string().optional().describe("Shared ad copy (per-video message overrides)"),
+        headline: z.string().optional(),
+        link: z.string().optional().describe("Destination link; defaults to the DreamMe App Store URL"),
+        status: z.enum(["ACTIVE", "PAUSED"]).default("PAUSED"),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async (a) => {
+        if (a.dry_run) {
+          return json({
+            dry_run: true,
+            count: a.videos.length,
+            adset_id: a.adset_id ?? "(creatives only — no ads)",
+            would: a.videos.map((v, i) => ({ source: v.file_url ?? v.video_id ?? "(missing)", name: v.name ?? `MCP video ${i + 1}` })),
+          });
+        }
+        if (!a.confirm) return fail("Refusing to apply: pass confirm:true (or dry_run:true to preview).");
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+
+        const results: Array<Record<string, unknown>> = [];
+        for (let i = 0; i < a.videos.length; i++) {
+          const v = a.videos[i];
+          const name = v.name ?? `MCP video ${i + 1}`;
+          try {
+            if (!v.file_url && !v.video_id) throw new Error("each video needs file_url or video_id");
+            const videoId = v.video_id ?? (await uploadVideoByUrl({ accountId: meta.account, fileUrl: v.file_url!, name, accessToken: meta.token }));
+            const ready = await waitForVideoReady({ videoId, accessToken: meta.token });
+            if (ready === "error") throw new Error("Meta reported video processing error");
+            if (ready === "processing") {
+              results.push({ name, video_id: videoId, ok: false, status: "pending", error: "video still processing after timeout — re-run with this video_id later" });
+              continue;
+            }
+            const thumbUri = await getVideoThumbnail({ videoId, accessToken: meta.token });
+            if (!thumbUri) throw new Error("no thumbnail available for video yet — retry shortly");
+            const imageHash = await uploadImageByUrl({ accountId: meta.account, imageUrl: thumbUri, accessToken: meta.token });
+            const creativeId = await createVideoCreative({
+              accountId: meta.account,
+              name,
+              videoId,
+              imageHash,
+              message: v.message ?? a.message ?? DEFAULT_MSG,
+              headline: v.headline ?? a.headline ?? "Meet DreamMe",
+              link: a.link,
+              accessToken: meta.token,
+            });
+            let adId: string | undefined;
+            if (a.adset_id) {
+              adId = await createAd({ accountId: meta.account, adsetId: a.adset_id, name, creativeId, status: a.status, accessToken: meta.token });
+            }
+            results.push({ name, video_id: videoId, creative_id: creativeId, ad_id: adId, status: adId ? a.status : "creative-only", ok: true });
+          } catch (e) {
+            results.push({ name, ok: false, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        const ok = results.filter((x) => x.ok).length;
+        return json({ created: ok, failed: results.length - ok, results, note: "New ads/creatives validate async — re-check in 1-2 min." });
       },
     );
   },

@@ -463,13 +463,25 @@ async function metaPostJson<T>(
     let err = text;
     try {
       const j = JSON.parse(text) as {
-        error?: { message?: string; code?: number; type?: string };
+        error?: {
+          message?: string;
+          code?: number;
+          type?: string;
+          error_subcode?: number;
+          error_user_title?: string;
+          error_user_msg?: string;
+        };
       };
       if (j.error) {
         if (j.error.code === 190) {
           err = `Token expired/invalid (code 190): ${j.error.message ?? ""}.`;
         } else {
-          err = `${j.error.code ?? "?"} ${j.error.type ?? ""} ${j.error.message ?? ""}`.trim();
+          const detail = [
+            j.error.error_subcode ? `subcode ${j.error.error_subcode}` : "",
+            j.error.error_user_title ?? "",
+            j.error.error_user_msg ?? "",
+          ].filter(Boolean).join(" — ");
+          err = `${j.error.code ?? "?"} ${j.error.type ?? ""} ${j.error.message ?? ""}${detail ? ` (${detail})` : ""}`.trim();
         }
       }
     } catch {
@@ -703,6 +715,192 @@ export async function copyAd(params: {
     params.accessToken,
   );
   return { copied_id: String(body.copied_ad_id ?? body.id ?? ""), raw: body };
+}
+
+// ---------------------------------------------------------------------------
+// Creative building: upload a video, build an app-install VIDEO creative,
+// create an ad. Mirrors the app-install spec in scripts/push-creative-variants.ts
+// (which is image-based) but uses video_data. Used by batch_create_video_ads.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_PAGE_ID = "935570636301545";
+const DEFAULT_APP_LINK =
+  "https://itunes.apple.com/WebObjects/MZStore.woa/wa/redirectToContent?id=6755569693";
+
+const CREATIVE_FEATURES_OPT_OUT = {
+  ads_with_benefits: { enroll_status: "OPT_OUT" },
+  advantage_plus_creative: { enroll_status: "OPT_OUT" },
+  image_animation: { enroll_status: "OPT_OUT" },
+  image_templates: { enroll_status: "OPT_OUT" },
+  product_extensions: { enroll_status: "OPT_OUT" },
+  site_extensions: { enroll_status: "OPT_OUT" },
+  text_optimizations: { enroll_status: "OPT_OUT" },
+};
+
+/** Upload a video to the ad account by URL. Returns the new video id. */
+export async function uploadVideoByUrl(params: {
+  accountId: string;
+  fileUrl: string;
+  name?: string;
+  accessToken?: string;
+}): Promise<string> {
+  const API_VERSION = getApiVersion();
+  const body: Record<string, unknown> = { file_url: params.fileUrl };
+  if (params.name) body.name = params.name;
+  const res = await metaPostJson<{ id?: string }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/advideos`,
+    body,
+    4,
+    params.accessToken,
+  );
+  if (!res.id) throw new Error("No video id returned from advideos upload");
+  return res.id;
+}
+
+/** Poll a video until processing is ready (or errors / times out). */
+export async function waitForVideoReady(params: {
+  videoId: string;
+  accessToken?: string;
+  timeoutMs?: number;
+  pollMs?: number;
+}): Promise<"ready" | "error" | "processing"> {
+  const API_VERSION = getApiVersion();
+  const deadline = Date.now() + (params.timeoutMs ?? 180_000);
+  const poll = params.pollMs ?? 5_000;
+  while (Date.now() < deadline) {
+    const res = await metaFetchJson<{ status?: { video_status?: string } }>(
+      `https://graph.facebook.com/${API_VERSION}/${params.videoId}?fields=status`,
+      2,
+      params.accessToken,
+    );
+    const s = res.status?.video_status;
+    if (s === "ready") return "ready";
+    if (s === "error") return "error";
+    await sleep(poll);
+  }
+  return "processing"; // timed out, still processing
+}
+
+/** Best thumbnail URI for a processed video (preferred, else first). */
+export async function getVideoThumbnail(params: {
+  videoId: string;
+  accessToken?: string;
+}): Promise<string | null> {
+  const API_VERSION = getApiVersion();
+  try {
+    const res = await metaFetchJson<{ data?: Array<{ uri?: string; is_preferred?: boolean }> }>(
+      `https://graph.facebook.com/${API_VERSION}/${params.videoId}/thumbnails?fields=uri,is_preferred`,
+      2,
+      params.accessToken,
+    );
+    const thumbs = res.data ?? [];
+    return (thumbs.find((t) => t.is_preferred)?.uri ?? thumbs[0]?.uri) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch an image by URL and upload it to the ad account, returning its
+ * image_hash. Used to turn a video's auto-generated thumbnail into a hash that
+ * video_data accepts (Meta rejects a raw CDN thumbnail URL as image_url).
+ * Mirrors the adimages upload in scripts/push-creative-variants.ts.
+ */
+export async function uploadImageByUrl(params: {
+  accountId: string;
+  imageUrl: string;
+  accessToken?: string;
+}): Promise<string> {
+  const TOKEN = params.accessToken ?? getToken();
+  if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
+  const API_VERSION = getApiVersion();
+  const imgRes = await fetch(params.imageUrl, { cache: "no-store" });
+  if (!imgRes.ok) throw new Error(`thumbnail fetch failed: ${imgRes.status}`);
+  const bytes = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+  const form = new URLSearchParams({ bytes });
+  const res = await fetch(
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/adimages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      cache: "no-store",
+    },
+  );
+  const j = (await res.json()) as { images?: Record<string, { hash?: string }> };
+  if (!res.ok) throw new Error(`adimages upload failed: ${res.status} ${JSON.stringify(j).slice(0, 200)}`);
+  const hash = Object.values(j.images ?? {})[0]?.hash;
+  if (!hash) throw new Error("no image_hash returned from adimages");
+  return hash;
+}
+
+/**
+ * Build an app-install VIDEO creative. Returns the new creative id.
+ * Meta requires a thumbnail for video_data — pass an image_hash (from
+ * uploadImageByUrl on the video's auto thumbnail).
+ */
+export async function createVideoCreative(params: {
+  accountId: string;
+  name: string;
+  videoId: string;
+  imageHash: string;
+  message: string;
+  headline?: string;
+  link?: string;
+  pageId?: string;
+  accessToken?: string;
+}): Promise<string> {
+  const API_VERSION = getApiVersion();
+  const videoData: Record<string, unknown> = {
+    video_id: params.videoId,
+    image_hash: params.imageHash,
+    message: params.message,
+    call_to_action: {
+      type: "INSTALL_MOBILE_APP",
+      value: { link: params.link ?? DEFAULT_APP_LINK },
+    },
+  };
+  if (params.headline) videoData.title = params.headline;
+  const res = await metaPostJson<{ id?: string }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/adcreatives`,
+    {
+      name: params.name,
+      object_story_spec: { page_id: params.pageId ?? DEFAULT_PAGE_ID, video_data: videoData },
+      degrees_of_freedom_spec: { creative_features_spec: CREATIVE_FEATURES_OPT_OUT },
+    },
+    4,
+    params.accessToken,
+  );
+  if (!res.id) throw new Error("No creative id returned from adcreatives");
+  return res.id;
+}
+
+/** Create an ad in an ad set from an existing creative. Returns the new ad id. */
+export async function createAd(params: {
+  accountId: string;
+  adsetId: string;
+  name: string;
+  creativeId: string;
+  status?: "ACTIVE" | "PAUSED";
+  accessToken?: string;
+}): Promise<string> {
+  const API_VERSION = getApiVersion();
+  const res = await metaPostJson<{ id?: string }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/ads`,
+    {
+      name: params.name,
+      adset_id: params.adsetId,
+      creative: { creative_id: params.creativeId },
+      status: params.status ?? "PAUSED",
+    },
+    4,
+    params.accessToken,
+  );
+  if (!res.id) throw new Error("No ad id returned from ads create");
+  return res.id;
 }
 
 /**
