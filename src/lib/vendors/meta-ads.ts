@@ -41,6 +41,7 @@ export interface AdInsightRow {
   clicks: number;
   installs: number;
   startTrials: number;
+  storeVisits: number;
   raw_actions: AdInsightAction[];
 }
 
@@ -74,6 +75,10 @@ const PURCHASE_ACTION_TYPES = new Set([
 // the `actions` array. Hook rate = these ÷ impressions.
 const VIDEO_3SEC_ACTION_TYPES = new Set(["video_view"]);
 
+// App Store product-page views — the SKAN-neutral intent proxy. Meta reports
+// these as the `app_store_visit` action type. Cost-per-store-visit = spend ÷ this.
+const STORE_VISIT_ACTION_TYPES = new Set(["app_store_visit"]);
+
 function sumActions(
   actions: AdInsightAction[] | undefined,
   types: Set<string>,
@@ -89,8 +94,9 @@ function sumActions(
 async function metaFetchJson<T>(
   url: string,
   maxRetries: number,
+  token?: string,
 ): Promise<T> {
-  const TOKEN = getToken();
+  const TOKEN = token ?? getToken();
   if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
   const headers = { Authorization: `Bearer ${TOKEN}` };
   let attempt = 0;
@@ -131,8 +137,9 @@ export async function fetchAdInsights(params: {
   since: string; // YYYY-MM-DD (inclusive)
   until: string; // YYYY-MM-DD (inclusive)
   maxRetries?: number;
+  accessToken?: string; // overrides env META_ACCESS_TOKEN (e.g. OAuth connection)
 }): Promise<AdInsightRow[]> {
-  const TOKEN = getToken();
+  const TOKEN = params.accessToken ?? getToken();
   const API_VERSION = getApiVersion();
   if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
   const maxRetries = params.maxRetries ?? 4;
@@ -211,6 +218,7 @@ export async function fetchAdInsights(params: {
         clicks: Number(row.clicks ?? 0),
         installs: sumActions(actions, INSTALL_ACTION_TYPES),
         startTrials: sumActions(actions, START_TRIAL_ACTION_TYPES),
+        storeVisits: sumActions(actions, STORE_VISIT_ACTION_TYPES),
         raw_actions: actions,
       });
     }
@@ -296,6 +304,7 @@ export async function fetchAdInsightsWithCreative(params: {
   until: string;
   timeIncrement?: number | "all_days";
   maxRetries?: number;
+  accessToken?: string; // overrides env META_ACCESS_TOKEN (e.g. OAuth connection)
 }): Promise<AdInsightRowWithCreative[]> {
   const API_VERSION = getApiVersion();
   const maxRetries = params.maxRetries ?? 4;
@@ -339,7 +348,7 @@ export async function fetchAdInsightsWithCreative(params: {
   const adMetaMap = new Map<string, AdMetaRow>();
   let adsUrl = `https://graph.facebook.com/${API_VERSION}/${params.accountId}/ads?${adsQs.toString()}`;
   while (true) {
-    const body = await metaFetchJson<AdsResponse>(adsUrl, maxRetries);
+    const body = await metaFetchJson<AdsResponse>(adsUrl, maxRetries, params.accessToken);
     for (const ad of body.data ?? []) {
       if (ad.id) adMetaMap.set(ad.id, ad);
     }
@@ -353,7 +362,7 @@ export async function fetchAdInsightsWithCreative(params: {
     const body = await metaFetchJson<{
       data?: InsightsDailyRow[];
       paging?: { next?: string };
-    }>(insightsUrl, maxRetries);
+    }>(insightsUrl, maxRetries, params.accessToken);
 
     for (const row of body.data ?? []) {
       const adId = String(row.ad_id ?? "");
@@ -389,6 +398,7 @@ export async function fetchAdInsightsWithCreative(params: {
         startTrials: sumActions(actions, START_TRIAL_ACTION_TYPES),
         purchases: sumActions(actions, PURCHASE_ACTION_TYPES),
         purchase_value: sumActions(actionValues, PURCHASE_ACTION_TYPES),
+        storeVisits: sumActions(actions, STORE_VISIT_ACTION_TYPES),
         raw_actions: actions,
         date: String(row.date_start ?? ""),
         status: String(meta?.status ?? ""),
@@ -432,8 +442,9 @@ async function metaPostJson<T>(
   url: string,
   body: Record<string, unknown>,
   maxRetries = 4,
+  token?: string,
 ): Promise<T> {
-  const TOKEN = getToken();
+  const TOKEN = token ?? getToken();
   if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
   const headers = {
     Authorization: `Bearer ${TOKEN}`,
@@ -566,6 +577,45 @@ export async function updateAdStatus(params: {
   const API_VERSION = getApiVersion();
   const url = `https://graph.facebook.com/${API_VERSION}/${params.adId}`;
   await metaPostJson(url, { status: params.status });
+  return { success: true };
+}
+
+/**
+ * Pause / activate any entity (ad, ad set, or campaign) by id. Generic
+ * sibling of updateAdStatus — Meta accepts the same `status` field on all
+ * three node types. Used by the MCP write tools.
+ */
+export async function updateEntityStatus(params: {
+  id: string;
+  status: "ACTIVE" | "PAUSED";
+  accessToken?: string;
+}): Promise<{ success: true }> {
+  const API_VERSION = getApiVersion();
+  await metaPostJson(
+    `https://graph.facebook.com/${API_VERSION}/${params.id}`,
+    { status: params.status },
+    4,
+    params.accessToken,
+  );
+  return { success: true };
+}
+
+/**
+ * Set the daily budget on an ad set or campaign. Meta expects the budget in
+ * the account's minor currency unit (cents for USD), as a string.
+ */
+export async function updateEntityDailyBudget(params: {
+  id: string;
+  dailyBudgetCents: number;
+  accessToken?: string;
+}): Promise<{ success: true }> {
+  const API_VERSION = getApiVersion();
+  await metaPostJson(
+    `https://graph.facebook.com/${API_VERSION}/${params.id}`,
+    { daily_budget: String(Math.round(params.dailyBudgetCents)) },
+    4,
+    params.accessToken,
+  );
   return { success: true };
 }
 

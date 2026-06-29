@@ -22,6 +22,7 @@ import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
+import { Integrations } from "./Integrations";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -220,6 +221,10 @@ export function App() {
   } else if (current === "image-studio") {
     screen = role === "admin"
       ? <ImageStudio />
+      : <ComingSoon item={currentItem} />;
+  } else if (current === "integrations") {
+    screen = role === "admin"
+      ? <Integrations />
       : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;

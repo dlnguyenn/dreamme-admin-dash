@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dreamme-ads": {
+      "type": "http",
+      "url": "${ADS_MCP_URL:-http://localhost:3000/api/ads-mcp/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      }
+    }
+  }
+}
