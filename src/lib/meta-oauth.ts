@@ -257,6 +257,29 @@ export async function getActiveConnection(): Promise<MetaConnection | null> {
   }
 }
 
+const DEFAULT_AD_ACCOUNT = "act_1575502753719515"; // DreamMe primary
+
+/**
+ * Resolve the Meta access token + ad account for server-side calls (cron, MCP).
+ * Prefers the OAuth connection saved via the dashboard "Login with Facebook"
+ * flow (durable ~60d token); falls back to the META_ACCESS_TOKEN env var.
+ * Returns null if neither is available. Mirrors the MCP route's resolveMeta.
+ */
+export async function resolveMetaToken(): Promise<{ token: string; account: string } | null> {
+  const envAccount = process.env.META_AD_ACCOUNT_ID ?? DEFAULT_AD_ACCOUNT;
+  try {
+    const conn = await getActiveConnection();
+    if (conn?.access_token) {
+      return { token: conn.access_token, account: conn.default_ad_account_id || envAccount };
+    }
+  } catch {
+    // fall through to env
+  }
+  const envToken = process.env.META_ACCESS_TOKEN ?? "";
+  if (envToken) return { token: envToken, account: envAccount };
+  return null;
+}
+
 export async function getConnectionPublic(): Promise<MetaConnectionPublic> {
   const c = await getActiveConnection();
   if (!c) return { connected: false };

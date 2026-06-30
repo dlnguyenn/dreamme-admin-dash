@@ -509,29 +509,41 @@ export async function createCustomAudience(params: {
   accountId: string; // act_XXX
   name: string;
   description?: string;
+  accessToken?: string;
 }): Promise<CreateAudienceResult> {
   const API_VERSION = getApiVersion();
   const url = `https://graph.facebook.com/${API_VERSION}/${params.accountId}/customaudiences`;
-  return metaPostJson<CreateAudienceResult>(url, {
-    name: params.name,
-    description: params.description ?? "",
-    subtype: "CUSTOM",
-    customer_file_source: "USER_PROVIDED_ONLY",
-  });
+  return metaPostJson<CreateAudienceResult>(
+    url,
+    {
+      name: params.name,
+      description: params.description ?? "",
+      subtype: "CUSTOM",
+      customer_file_source: "USER_PROVIDED_ONLY",
+    },
+    4,
+    params.accessToken,
+  );
 }
 
 /**
  * Upload hashed user data to a Custom Audience. Meta's batch size limit is
  * 10,000 users per call; we chunk automatically.
  */
-export async function uploadEmailsToAudience(params: {
+/**
+ * Add already-hashed (SHA-256) emails to a Custom Audience. Core uploader — the
+ * audience-sync pipeline works in hashes (it only ever persists hashed emails,
+ * never raw PII). Chunked at Meta's 10k limit.
+ */
+export async function uploadEmailHashesToAudience(params: {
   audienceId: string;
-  emails: string[]; // raw (we hash inside)
+  hashes: string[]; // already SHA-256-hashed
   log?: (m: string) => void;
+  accessToken?: string;
 }): Promise<{ uploadedCount: number; batches: number }> {
   const API_VERSION = getApiVersion();
   const log = params.log ?? ((m) => process.stderr.write(m + "\n"));
-  const hashed = params.emails.map(hashEmailForMeta);
+  const hashed = params.hashes;
 
   const BATCH = 10_000;
   let uploaded = 0;
@@ -539,22 +551,39 @@ export async function uploadEmailsToAudience(params: {
   for (let i = 0; i < hashed.length; i += BATCH) {
     const chunk = hashed.slice(i, i + BATCH);
     const url = `https://graph.facebook.com/${API_VERSION}/${params.audienceId}/users`;
-    await metaPostJson(url, {
-      payload: {
-        schema: "EMAIL_SHA256",
-        data: chunk.map((h) => [h]),
+    await metaPostJson(
+      url,
+      {
+        payload: { schema: "EMAIL_SHA256", data: chunk.map((h) => [h]) },
+        session: {
+          session_id: Date.now() + batches,
+          batch_seq: batches + 1,
+          last_batch_flag: i + BATCH >= hashed.length,
+        },
       },
-      session: {
-        session_id: Date.now() + batches,
-        batch_seq: batches + 1,
-        last_batch_flag: i + BATCH >= hashed.length,
-      },
-    });
+      4,
+      params.accessToken,
+    );
     batches++;
     uploaded += chunk.length;
     log(`  uploaded batch ${batches}: ${uploaded}/${hashed.length}`);
   }
   return { uploadedCount: uploaded, batches };
+}
+
+/** Add raw emails to a Custom Audience (hashes, then delegates). */
+export async function uploadEmailsToAudience(params: {
+  audienceId: string;
+  emails: string[]; // raw (we hash inside)
+  log?: (m: string) => void;
+  accessToken?: string;
+}): Promise<{ uploadedCount: number; batches: number }> {
+  return uploadEmailHashesToAudience({
+    audienceId: params.audienceId,
+    hashes: params.emails.map(hashEmailForMeta),
+    log: params.log,
+    accessToken: params.accessToken,
+  });
 }
 
 /** Create a 1% Lookalike from a seed Custom Audience. */
@@ -564,19 +593,25 @@ export async function createLookalike(params: {
   name: string;
   ratio?: number; // 0.01 = 1%
   country?: string; // ISO 2-letter
+  accessToken?: string;
 }): Promise<CreateAudienceResult> {
   const API_VERSION = getApiVersion();
   const url = `https://graph.facebook.com/${API_VERSION}/${params.accountId}/customaudiences`;
-  return metaPostJson<CreateAudienceResult>(url, {
-    name: params.name,
-    subtype: "LOOKALIKE",
-    origin_audience_id: params.originAudienceId,
-    lookalike_spec: JSON.stringify({
-      type: "similarity",
-      country: params.country ?? "US",
-      ratio: params.ratio ?? 0.01,
-    }),
-  });
+  return metaPostJson<CreateAudienceResult>(
+    url,
+    {
+      name: params.name,
+      subtype: "LOOKALIKE",
+      origin_audience_id: params.originAudienceId,
+      lookalike_spec: JSON.stringify({
+        type: "similarity",
+        country: params.country ?? "US",
+        ratio: params.ratio ?? 0.01,
+      }),
+    },
+    4,
+    params.accessToken,
+  );
 }
 
 /**
@@ -941,6 +976,7 @@ export async function deleteEntity(params: {
 export async function addCustomAudiencesToAdSet(params: {
   adsetId: string;
   audienceIds: string[];
+  accessToken?: string;
 }): Promise<{ success: true }> {
   const API_VERSION = getApiVersion();
 
@@ -952,6 +988,7 @@ export async function addCustomAudiencesToAdSet(params: {
   }>(
     `https://graph.facebook.com/${API_VERSION}/${params.adsetId}?fields=targeting`,
     4,
+    params.accessToken,
   );
   const targeting = { ...(existing.targeting ?? {}) };
   const existingAudiences = Array.isArray(targeting.custom_audiences)
@@ -967,6 +1004,149 @@ export async function addCustomAudiencesToAdSet(params: {
 
   // 2. Write back
   const url = `https://graph.facebook.com/${API_VERSION}/${params.adsetId}`;
-  await metaPostJson(url, { targeting });
+  await metaPostJson(url, { targeting }, 4, params.accessToken);
   return { success: true };
+}
+
+/**
+ * Remove already-hashed emails from a Custom Audience (DELETE /{audience}/users).
+ * Core remover — keeps the suppression audience == current active subscribers
+ * (drop churned) and the win-back audience clean (drop re-activated). Chunked 10k.
+ */
+export async function removeEmailHashesFromAudience(params: {
+  audienceId: string;
+  hashes: string[]; // already SHA-256-hashed
+  log?: (m: string) => void;
+  accessToken?: string;
+}): Promise<{ removedCount: number; batches: number }> {
+  const API_VERSION = getApiVersion();
+  const log = params.log ?? ((m) => process.stderr.write(m + "\n"));
+  const TOKEN = params.accessToken ?? getToken();
+  if (!TOKEN) throw new Error("META_ACCESS_TOKEN not set");
+  const hashed = params.hashes;
+  const BATCH = 10_000;
+  let removed = 0;
+  let batches = 0;
+  for (let i = 0; i < hashed.length; i += BATCH) {
+    const chunk = hashed.slice(i, i + BATCH);
+    const url = `https://graph.facebook.com/${API_VERSION}/${params.audienceId}/users`;
+    const body = { payload: { schema: "EMAIL_SHA256", data: chunk.map((h) => [h]) } };
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`Meta audience user-remove ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+    batches++;
+    removed += chunk.length;
+    log(`  removed batch ${batches}: ${removed}/${hashed.length}`);
+  }
+  return { removedCount: removed, batches };
+}
+
+/** Remove raw emails from a Custom Audience (hashes, then delegates). */
+export async function removeEmailsFromAudience(params: {
+  audienceId: string;
+  emails: string[]; // raw (we hash inside)
+  log?: (m: string) => void;
+  accessToken?: string;
+}): Promise<{ removedCount: number; batches: number }> {
+  return removeEmailHashesFromAudience({
+    audienceId: params.audienceId,
+    hashes: params.emails.map(hashEmailForMeta),
+    log: params.log,
+    accessToken: params.accessToken,
+  });
+}
+
+/**
+ * Set (merge) excluded custom audiences on an ad set's targeting, preserving
+ * other targeting fields. This is the suppression attach — it stops prospecting
+ * from re-acquiring users already in the audience (e.g. current subscribers).
+ */
+export async function setExcludedAudiencesOnAdSet(params: {
+  adsetId: string;
+  excludedAudienceIds: string[];
+  accessToken?: string;
+}): Promise<{ success: true }> {
+  const API_VERSION = getApiVersion();
+  const existing = await metaFetchJson<{
+    targeting?: Record<string, unknown> & {
+      excluded_custom_audiences?: Array<{ id: string; name?: string }>;
+    };
+  }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.adsetId}?fields=targeting`,
+    4,
+    params.accessToken,
+  );
+  const targeting = { ...(existing.targeting ?? {}) };
+  const current = Array.isArray(targeting.excluded_custom_audiences)
+    ? targeting.excluded_custom_audiences
+    : [];
+  targeting.excluded_custom_audiences = [
+    ...current.filter((a) => !params.excludedAudienceIds.includes(a.id)),
+    ...params.excludedAudienceIds.map((id) => ({ id })),
+  ];
+  await metaPostJson(
+    `https://graph.facebook.com/${API_VERSION}/${params.adsetId}`,
+    { targeting },
+    4,
+    params.accessToken,
+  );
+  return { success: true };
+}
+
+export interface ProspectingAdSet {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+  objective: string;
+}
+
+// App-promotion objectives across ODAX + legacy naming.
+const APP_PROMO_OBJECTIVES = new Set([
+  "OUTCOME_APP_PROMOTION",
+  "APP_INSTALLS",
+  "MOBILE_APP_INSTALLS",
+]);
+
+/**
+ * Discover ACTIVE ad sets in ACTIVE app-promotion campaigns — the prospecting
+ * surface the suppression audience should be excluded from. (Best-effort: Meta
+ * doesn't expose a "prospecting" flag, so we approximate as active app-promo
+ * delivery.)
+ */
+export async function getActiveProspectingAdSets(params: {
+  accountId: string;
+  accessToken?: string;
+}): Promise<ProspectingAdSet[]> {
+  const API_VERSION = getApiVersion();
+  const out: ProspectingAdSet[] = [];
+  let url: string | null =
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/adsets` +
+    `?fields=id,name,effective_status,campaign{id,name,objective,effective_status}&limit=200`;
+  while (url) {
+    const page: {
+      data?: Array<{
+        id: string;
+        name: string;
+        effective_status: string;
+        campaign?: { id: string; name: string; objective: string; effective_status: string };
+      }>;
+      paging?: { next?: string };
+    } = await metaFetchJson(url, 4, params.accessToken);
+    for (const a of page.data ?? []) {
+      if (a.effective_status !== "ACTIVE") continue;
+      const c = a.campaign;
+      if (!c || c.effective_status !== "ACTIVE") continue;
+      if (!APP_PROMO_OBJECTIVES.has(c.objective)) continue;
+      out.push({ id: a.id, name: a.name, campaignId: c.id, campaignName: c.name, objective: c.objective });
+    }
+    url = page.paging?.next ?? null;
+  }
+  return out;
 }

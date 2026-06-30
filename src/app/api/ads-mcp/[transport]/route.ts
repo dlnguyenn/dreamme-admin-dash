@@ -31,6 +31,7 @@ import {
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
 import { getActiveConnection } from "@/lib/meta-oauth";
+import { attachSuppression, runAudienceSync } from "@/lib/audiences";
 import {
   fetchOverview,
   fetchChart,
@@ -740,6 +741,46 @@ const mcpHandler = createMcpHandler(
         try {
           const res = await deleteEntity({ id: a.id, accessToken: meta.token });
           return json({ deleted: a.id, success: res.success });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
+    // --- WRITE: audience sync (Module 4) --------------------------------
+    server.tool(
+      "sync_audiences",
+      "Run the RC→Meta audience sync: snapshot active payers, build/refresh the suppression + high-LTV lookalike + win-back audiences, and exclude suppression from active prospecting ad sets. Guarded: defaults to dry_run (no Meta writes — snapshot + read-only discovery only). To apply live, pass dry_run:false AND confirm:true.",
+      {
+        dry_run: z.boolean().default(true).describe("Default true — no Meta writes."),
+        confirm: z.boolean().default(false).describe("Required with dry_run:false to actually create/modify Meta audiences + ad sets."),
+        window_days: z.number().optional().describe("RC enumeration window in days (default 180)."),
+      },
+      async (a) => {
+        const live = a.dry_run === false;
+        if (live && !a.confirm) return fail("Refusing live audience sync: pass confirm:true (or leave dry_run:true to preview).");
+        try {
+          return json(await runAudienceSync({ dryRun: !live, windowDays: a.window_days }));
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
+    // --- WRITE: attach suppression to prospecting ad sets ---------------
+    server.tool(
+      "attach_suppression",
+      "Exclude the active-subscriber suppression audience from prospecting ad sets (auto-discovered active app-promo ad sets, or an explicit adset_ids list). Guarded: defaults to dry_run; to apply pass dry_run:false AND confirm:true.",
+      {
+        adset_ids: z.array(z.string()).optional().describe("Explicit ad set ids; omit to auto-discover active prospecting ad sets."),
+        dry_run: z.boolean().default(true),
+        confirm: z.boolean().default(false),
+      },
+      async (a) => {
+        const live = a.dry_run === false;
+        if (live && !a.confirm) return fail("Refusing live attach: pass confirm:true (or leave dry_run:true to preview).");
+        try {
+          return json(await attachSuppression({ dryRun: !live, adsetIds: a.adset_ids }));
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }
