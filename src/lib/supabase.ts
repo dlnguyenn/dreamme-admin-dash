@@ -13,6 +13,9 @@ import type {
   ResourceRow,
   SavedCaption,
   SavedCaptionRow,
+  CampaignLtvCohortRow,
+  CrossNetworkBlendedRow,
+  CrossNetworkCampaignRow,
   SkanCampaignEfficiencyRow,
   SkanReconciliationRow,
   SpendLineItem,
@@ -488,6 +491,49 @@ export const API = {
       "select=*&limit=1",
     );
     return rows.length ? rows[0] : null;
+  },
+
+  /**
+   * Module 1 — cross-network per-campaign cost/CAC/ROAS (35d), spend-ranked,
+   * unifying Meta + TikTok + manual channels. public.cross_network_campaign_efficiency.
+   */
+  async fetchCrossNetworkCampaigns(): Promise<CrossNetworkCampaignRow[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    return sbSelect<CrossNetworkCampaignRow>(
+      "cross_network_campaign_efficiency",
+      "select=*",
+    );
+  },
+
+  /** Module 1 — single-row blended truth (total spend ÷ RC economics). public.cross_network_blended. */
+  async fetchCrossNetworkBlended(): Promise<CrossNetworkBlendedRow | null> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    const rows = await sbSelect<CrossNetworkBlendedRow>(
+      "cross_network_blended",
+      "select=*&limit=1",
+    );
+    return rows.length ? rows[0] : null;
+  },
+
+  /**
+   * Module 2 — per-campaign LTV cohorts (35d), ranked by predicted LTV per trial.
+   * public.campaign_ltv_cohorts. Spend-driven + auto-enriching (see `source`).
+   */
+  async fetchCampaignLtvCohorts(): Promise<CampaignLtvCohortRow[]> {
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      throw new Error(
+        "Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      );
+    }
+    return sbSelect<CampaignLtvCohortRow>("campaign_ltv_cohorts", "select=*");
   },
 
   async fetchFeatureRequests(): Promise<FeatureRequest[]> {

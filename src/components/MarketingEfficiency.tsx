@@ -5,6 +5,9 @@ import { PageHeader } from "./Shell";
 import { API } from "@/lib/supabase";
 import type {
   BlendedEfficiencyRow,
+  CampaignLtvCohortRow,
+  CrossNetworkBlendedRow,
+  CrossNetworkCampaignRow,
   SkanCampaignEfficiencyRow,
   SkanReconciliationRow,
 } from "@/lib/types";
@@ -268,8 +271,388 @@ export function MarketingEfficiency() {
       </div>
 
       <div style={{ height: 36 }} />
+      <CrossNetworkCost />
+
+      <div style={{ height: 36 }} />
+      <LtvCohorts />
+
+      <div style={{ height: 36 }} />
       <SkanAttribution />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Module 2 — LTV / retention cohorts by acquisition source. Ranks campaigns by
+// predicted LTV per trial (trial->paid rate x LTV per payer), spend-driven and
+// auto-enriching as per-ad RC attribution / SKAN postbacks arrive. The `source`
+// badge shows the signal quality behind each row.
+// ---------------------------------------------------------------------------
+const LTV_SOURCE_LABEL: Record<CampaignLtvCohortRow["source"], { label: string; tone: string }> = {
+  rc_actual: { label: "RC actual", tone: "var(--p-olivia)" },
+  skan_proxy: { label: "SKAN proxy", tone: "var(--p-emma)" },
+  account_blended: { label: "Acct blended", tone: "var(--ink-3)" },
+};
+
+function LtvCohorts() {
+  const [rows, setRows] = React.useState<CampaignLtvCohortRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await API.fetchCampaignLtvCohorts();
+        if (alive) setRows(r);
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <div>
+      <SectionLabel>LTV cohorts by acquisition source · predicted LTV (35d)</SectionLabel>
+
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "12px 16px",
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          color: "var(--ink-3)",
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+          borderRadius: 12,
+        }}
+      >
+        <strong style={{ color: "var(--ink-2)" }}>
+          Rank campaigns by predicted LTV/trial = trial→paid rate × LTV/payer.
+        </strong>{" "}
+        The trial→paid rate ladders by signal quality:{" "}
+        <em>RC actual</em> (per-ad conversions) → <em>SKAN proxy</em> (day-7 conversion) →{" "}
+        <em>Acct blended</em> (account-level rate, used today until per-campaign conversion signal
+        matures — so most rows share the same rate for now). Per-campaign trial counts are an
+        attributed subset; for absolute cost use the blended CAC above.
+      </div>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            fontSize: 13,
+            color: "var(--accent)",
+            background: "color-mix(in oklab, var(--accent) 10%, var(--surface))",
+            border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
+            borderRadius: 10,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: 24, color: "var(--ink-3)", fontSize: 13 }}>Loading LTV cohorts…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: 20, color: "var(--ink-3)", fontSize: 13 }}>
+          No campaign spend in the last 35 days.
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 14,
+            overflowX: "auto",
+            background: "var(--surface)",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr>
+                {["Campaign", "Spend", "Trials", "Trial→paid", "LTV / payer", "Pred. LTV / trial", "Source"].map(
+                  (h, i) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: i === 0 ? "left" : i === 6 ? "center" : "right",
+                        padding: "11px 16px",
+                        fontSize: 10,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.1em",
+                        color: "var(--ink-3)",
+                        borderBottom: "1px solid var(--line)",
+                        background: "var(--surface-2)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const t2p = r.trial_to_paid == null ? null : num(r.trial_to_paid);
+                const predLtv = r.predicted_ltv_per_trial == null ? null : num(r.predicted_ltv_per_trial);
+                const badge = LTV_SOURCE_LABEL[r.source] ?? LTV_SOURCE_LABEL.account_blended;
+                return (
+                  <tr key={r.campaign_id ?? r.campaign_name ?? Math.random()}>
+                    <Td align="left">{r.campaign_name ?? r.campaign_id ?? "—"}</Td>
+                    <Td>{r.spend == null ? "—" : fmtUSD(num(r.spend))}</Td>
+                    <Td>{num(r.trials)}</Td>
+                    <Td>{t2p == null ? "—" : `${(t2p * 100).toFixed(1)}%`}</Td>
+                    <Td>{r.ltv_per_payer == null ? "—" : fmtUSD(num(r.ltv_per_payer))}</Td>
+                    <Td>
+                      {predLtv == null ? (
+                        <span style={{ color: "var(--ink-3)" }}>—</span>
+                      ) : (
+                        <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--ink)" }}>
+                          {fmtUSD(predLtv)}
+                        </span>
+                      )}
+                    </Td>
+                    <Td align="left">
+                      <span
+                        style={{
+                          display: "inline-block",
+                          fontSize: 10,
+                          fontFamily: "var(--font-geist-mono), monospace",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          padding: "2px 7px",
+                          borderRadius: 999,
+                          color: `color-mix(in oklab, ${badge.tone} 75%, var(--ink))`,
+                          background: `color-mix(in oklab, ${badge.tone} 14%, var(--surface))`,
+                          border: "1px solid var(--line)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {badge.label}
+                      </span>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Module 1 — Cross-Network Cost + Blended CAC. Unifies Meta + TikTok + manual
+// channels into one per-campaign cost/CAC/ROAS surface (35d), with a blended
+// row that uses RevenueCat as the truth denominator. Per-campaign counts are
+// network-reported and unreliable on iOS — for relative ranking only.
+// ---------------------------------------------------------------------------
+function CrossNetworkCost() {
+  const [rows, setRows] = React.useState<CrossNetworkCampaignRow[]>([]);
+  const [blended, setBlended] = React.useState<CrossNetworkBlendedRow | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [r, b] = await Promise.all([
+          API.fetchCrossNetworkCampaigns(),
+          API.fetchCrossNetworkBlended(),
+        ]);
+        if (!alive) return;
+        setRows(r);
+        setBlended(b);
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const cacTrial = blended?.blended_cac_per_trial_35d != null ? num(blended.blended_cac_per_trial_35d) : null;
+  const roas = blended?.blended_roas_35d != null ? num(blended.blended_roas_35d) : null;
+  const coverage = blended?.network_trial_coverage != null ? num(blended.network_trial_coverage) : null;
+  const channels = Array.from(new Set(rows.map((r) => r.channel)));
+
+  return (
+    <div>
+      <SectionLabel>Cross-network cost · blended CAC (35d)</SectionLabel>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 14,
+          marginBottom: 16,
+        }}
+      >
+        <HeadlineCard
+          label="Blended CAC / trial"
+          value={cacTrial != null ? fmtUSD(cacTrial) : "—"}
+          tone="ink"
+        />
+        <HeadlineCard
+          label="Cross-network spend"
+          value={blended?.total_spend_35d != null ? fmtUSD(num(blended.total_spend_35d)) : "—"}
+          tone="neutral"
+        />
+        <HeadlineCard
+          label="Blended ROAS"
+          value={roas != null ? `${roas.toFixed(2)}×` : "—"}
+          tone="neutral"
+        />
+        <HeadlineCard
+          label="Network trial coverage"
+          value={coverage != null ? `${(coverage * 100).toFixed(0)}%` : "—"}
+          tone="neutral"
+        />
+      </div>
+
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "12px 16px",
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          color: "var(--ink-3)",
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+          borderRadius: 12,
+        }}
+      >
+        <strong style={{ color: "var(--ink-2)" }}>Blended CAC (spend ÷ RevenueCat trials) is the truth.</strong>{" "}
+        Per-campaign trial / purchase / ROAS below are <em>network-reported</em> and unreliable on iOS —
+        the networks see only a fraction of real trials (coverage above is network ÷ RC). Use the
+        per-campaign rows to <em>rank</em> campaigns, not for absolute CAC.{" "}
+        {channels.length > 0 && (
+          <>Channels in view: {channels.join(", ")}.{" "}</>
+        )}
+        Hand-enter Apple Search Ads / influencer spend into <code>manual_channel_spend</code> to fold it in.
+      </div>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            fontSize: 13,
+            color: "var(--accent)",
+            background: "color-mix(in oklab, var(--accent) 10%, var(--surface))",
+            border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
+            borderRadius: 10,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: 24, color: "var(--ink-3)", fontSize: 13 }}>
+          Loading cross-network cost…
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: 20, color: "var(--ink-3)", fontSize: 13 }}>
+          No campaign spend in the last 35 days.
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 14,
+            overflowX: "auto",
+            background: "var(--surface)",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr>
+                {["Channel", "Campaign", "Spend", "Net trials", "Cost / trial", "Purch.", "ROAS"].map(
+                  (h, i) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: i <= 1 ? "left" : "right",
+                        padding: "11px 16px",
+                        fontSize: 10,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.1em",
+                        color: "var(--ink-3)",
+                        borderBottom: "1px solid var(--line)",
+                        background: "var(--surface-2)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const cpt = r.cost_per_trial == null ? null : num(r.cost_per_trial);
+                const roasR = r.roas == null ? null : num(r.roas);
+                return (
+                  <tr key={`${r.channel}:${r.campaign_id}`}>
+                    <Td align="left">
+                      <span
+                        style={{
+                          fontFamily: "var(--font-geist-mono), monospace",
+                          fontSize: 11,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          color: "var(--ink-3)",
+                        }}
+                      >
+                        {r.channel}
+                      </span>
+                    </Td>
+                    <Td align="left">{r.campaign_name ?? r.campaign_id}</Td>
+                    <Td>{r.spend == null ? "—" : fmtUSD(num(r.spend))}</Td>
+                    <Td>{num(r.network_trials)}</Td>
+                    <Td>
+                      {cpt == null ? (
+                        <span style={{ color: "var(--ink-3)" }} title="no network-reported trials">
+                          —
+                        </span>
+                      ) : (
+                        fmtUSD(cpt)
+                      )}
+                    </Td>
+                    <Td>{num(r.network_purchases)}</Td>
+                    <Td>
+                      {roasR == null ? (
+                        <span style={{ color: "var(--ink-3)" }}>—</span>
+                      ) : (
+                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+                          {roasR.toFixed(2)}×
+                        </span>
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

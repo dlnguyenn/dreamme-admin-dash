@@ -248,6 +248,57 @@ export interface SkanReconciliationRow {
   blended_cac_35d: string | number | null;
 }
 
+// Module 1 — Cross-Network Cost. One row per (channel, campaign) over 35d from
+// public.cross_network_campaign_efficiency. Trial/purchase/revenue counts are
+// NETWORK-REPORTED (unreliable on iOS — networks under-report); use for relative
+// ranking, not absolute CAC. Numeric columns arrive from PostgREST as strings.
+export interface CrossNetworkCampaignRow {
+  channel: string; // 'meta' | 'tiktok' | manual channel name
+  campaign_id: string;
+  campaign_name: string | null;
+  spend: string | number | null;
+  installs: number;
+  network_trials: number;
+  network_purchases: number;
+  network_revenue: string | number | null;
+  cost_per_trial: string | number | null;
+  cac: string | number | null;
+  roas: string | number | null;
+}
+
+// Single-row blended truth: total cross-network spend ÷ RevenueCat economics.
+// public.cross_network_blended. network_trial_coverage = network ÷ RC trials
+// (how small a fraction of real trials the networks actually report on iOS).
+export interface CrossNetworkBlendedRow {
+  total_spend_35d: string | number | null;
+  network_trials_35d: number;
+  rc_trials_35d: number;
+  rc_subscribes_35d: number;
+  rc_revenue_35d: string | number | null;
+  blended_cac_per_trial_35d: string | number | null;
+  blended_cac_per_sub_35d: string | number | null;
+  blended_roas_35d: string | number | null;
+  network_trial_coverage: string | number | null;
+}
+
+// Module 2 — LTV / retention cohort per campaign (35d) from
+// public.campaign_ltv_cohorts. `source` says where the trial->paid rate came
+// from: 'rc_actual' (per-ad RC with conversions) > 'skan_proxy' (SKAN P2) >
+// 'account_blended' (account-level fallback, used today). The view auto-enriches
+// to better sources with no code change. Per-campaign trial counts are an
+// attributed subset — rank by predicted LTV, not absolute CAC.
+export interface CampaignLtvCohortRow {
+  campaign_id: string | null;
+  campaign_name: string | null;
+  spend: string | number | null;
+  trials: number;
+  trial_to_paid: string | number | null;
+  ltv_per_payer: string | number | null;
+  predicted_ltv_per_trial: string | number | null;
+  cost_per_trial: string | number | null;
+  source: "rc_actual" | "skan_proxy" | "account_blended";
+}
+
 export type ResourceKind = "image" | "link";
 
 export interface ReferenceSlide {
