@@ -258,6 +258,59 @@ returns `"stored":"duplicate"`.
 
 ---
 
+## Module 3 — Engaged-trial conversion-value modeling (`trial_engaged`)
+
+Feed Meta a higher-quality signal than "any trial": a trial whose user **logged a
+weight / meal / dose in the first 24h** — the strongest trial→paid predictor for a
+health app, and almost all of it happens inside SKAN's Postback-1 (0–2d) window.
+
+**Architecture — Meta-managed CV (no native SKAN code).** The iOS app fires a new
+on-device Facebook event `trial_engaged`; Meta assigns it a SKAN fine value from
+its Events-Manager ladder; Apple's postback comes to our collector; the collector
+decodes that value via `skan_cv_schema` — exactly the existing pipeline, plus one
+schema row.
+
+**Dashboard side (done, migration `0035`):**
+- `skan_cv_schema` row `(0, fine, 59, trial_engaged)` — the collector decodes
+  fine-value 59 → `trial_engaged` automatically (data-driven, no code change).
+- View `engaged_trial_lift` — per campaign: `trials_plain`, `trials_engaged`,
+  `trials_total`, `subscribes`, `engaged_share`, `subscribe_rate`. (Empty until
+  postbacks flow + Meta assigns the 59 value.)
+
+**iOS side (done in `ios-repo`, ship via EAS):**
+- `lib/facebook.ts` → `logTrialEngaged(...)` (event `trial_engaged`,
+  `fb_order_id = ${originalTransactionId}_engaged`).
+- `lib/trialEngagement.ts` → `attemptTrialEngagedFire(...)` (AsyncStorage ledger
+  `@dreamme_trial_engaged_v1`, re-checks `willRenew`; clone of `trialQualification.ts`).
+- `utils/notificationHandler.ts` → handles silent push `type:'trial_engaged'`
+  (background + foreground), routes to the new ledger.
+- `app.json` → adds `NSAdvertisingAttributionReportEndpoint` + `AttributionCopyEndpoint`
+  (the same keys the SKAN collector needs — folds the unmerged SKAN-build diff in here).
+
+**Dan-only, to go live:**
+1. **n8n — add the 24h engagement pass.** Extend the trial-qualification workflow
+   (`wEZAcV8qNd0OTUBQ`) or add a sibling: ~24h after trial start, check `willRenew`
+   AND query Supabase for any engagement row for that user in the first 24h —
+   `injection_logs` (dose), `body_log` (weight), or meals/`activity_log` — within
+   `[trial_start, trial_start + 24h]`. If both true, send a silent push
+   `{ type:'trial_engaged', originalTransactionId, productId, priceUsd }`.
+   **Join-key caveat:** engagement tables key on auth `user_id`; the qualification
+   flow keys on `originalTransactionId` / RC `app_user_id`. The 2h workflow already
+   resolves the user, so the mapping exists there — confirm `app_user_id == auth user_id`.
+2. **Meta Events Manager** — register `trial_engaged` and assign it **fine value 59**
+   in the SKAN conversion-value ladder (so what Meta sends matches what we decode),
+   ranked above `trial_started` in bid priority. (Re-editing the fine ladder pauses
+   ads ~72h — same caveat as the original schema apply.)
+3. **EAS build** with the iOS changes; needs the SKAN collector deployed first.
+
+**Measuring lift.** `engaged_trial_lift` gives the cohort-level (anonymous) view:
+does a higher `engaged_share` track a higher `subscribe_rate` across campaigns?
+For the **high-confidence, un-anonymized** check, join the Supabase engagement
+tables → RC trial→paid outcomes per `user_id` server-side (engaged-in-24h vs not).
+SKAN is the optimization signal; the server-side join is the truth.
+
+---
+
 ## Hard caveats (do not over-promise)
 
 - We **cannot** beat Apple's privacy threshold — low-volume campaigns return
