@@ -61,6 +61,11 @@ export interface BatchItemInput {
   referenceImageUrl?: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
+  /** Avatar slug for download naming; round-trips through the batch's
+   *  `items` jsonb and lands on each generated row. */
+  avatar?: string | null;
+  /** Pose slug for download naming. */
+  pose?: string | null;
 }
 
 export interface BatchItemResult {
@@ -526,6 +531,8 @@ export async function getImageBatch(params: {
         reference_urls: itemReferenceUrls(item).length
           ? itemReferenceUrls(item)
           : null,
+        avatar: item.avatar ?? null,
+        pose: item.pose ?? null,
       });
       results.push({
         prompt: item.prompt,

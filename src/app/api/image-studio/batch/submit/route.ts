@@ -50,6 +50,11 @@ const Item = z.object({
 const Body = z.object({
   items: z.array(Item).min(1).max(100),
   displayName: z.string().max(200).optional(),
+  // Avatar/pose slugs chosen in the UI, shared across every item in the
+  // batch (the form has one selection). Persisted per generated row for
+  // `avatar_pose_###` download naming.
+  avatar: z.string().max(64).optional(),
+  pose: z.string().max(64).optional(),
   // Shared reference fan-out. The dashboard sends the heavy base64 once
   // here instead of duplicating it per item, so the payload doesn't blow
   // past the serverless body-size cap when count > 1. The server expands
@@ -107,6 +112,8 @@ export async function POST(req: Request) {
         referenceImageUrl: it.referenceImageUrl,
         referenceImageBase64: it.referenceImageBase64,
         referenceImageMimeType: it.referenceImageMimeType,
+        avatar: parsed.avatar ?? null,
+        pose: parsed.pose ?? null,
       };
     });
     const summary = await submitImageBatch({

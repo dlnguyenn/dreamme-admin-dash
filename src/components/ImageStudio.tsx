@@ -41,6 +41,8 @@ interface ImageGenerationRow {
   source: string | null;
   created_at: string;
   reference_urls: string[] | null;
+  avatar?: string | null;
+  pose?: string | null;
 }
 
 type BatchStatus =
@@ -433,6 +435,8 @@ export function ImageStudio() {
           prompt: prompt.trim(),
           aspectRatio,
           referenceImages: referenceImages.length ? referenceImages : undefined,
+          avatar: selectedAvatar ?? undefined,
+          pose: selectedPose ?? undefined,
           count: count > 1 ? count : undefined,
         }),
       });
@@ -468,6 +472,8 @@ export function ImageStudio() {
         createdAt: string;
         referenceImageUrl: string | null;
         referenceImageUrls?: string[];
+        avatar?: string | null;
+        pose?: string | null;
       }>;
       const rows: ImageGenerationRow[] = results.map((r) => ({
         id: r.id,
@@ -483,6 +489,8 @@ export function ImageStudio() {
             : r.referenceImageUrl
               ? [r.referenceImageUrl]
               : null,
+        avatar: r.avatar ?? null,
+        pose: r.pose ?? null,
       }));
       setLatest(rows);
       if (errors.length > 0) {
@@ -526,6 +534,8 @@ export function ImageStudio() {
       sharedReferenceImages: referenceImages.length
         ? referenceImages
         : undefined,
+      avatar: selectedAvatar ?? undefined,
+      pose: selectedPose ?? undefined,
     };
     setGenerating(true);
     try {
@@ -590,6 +600,37 @@ export function ImageStudio() {
     });
   };
 
+  // Build the download stem. When the generation recorded an avatar
+  // reference, follow the `avatar_pose_###` convention (pose omitted for
+  // avatar-only gens); the ### is the row's 1-based ordinal within its
+  // (avatar, pose) group, fetched from /api/image-studio/seq. Falls back
+  // to the legacy opaque `dreamme-{id}` stem for non-reference gens or if
+  // the sequence lookup fails.
+  const buildDownloadStem = async (
+    row: ImageGenerationRow,
+  ): Promise<string> => {
+    if (!row.avatar) return `dreamme-${row.id.slice(0, 8)}`;
+    let seq = 1;
+    try {
+      const params = new URLSearchParams({
+        avatar: row.avatar,
+        before: row.created_at,
+      });
+      if (row.pose) params.set("pose", row.pose);
+      const res = await fetch(`/api/image-studio/seq?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.ok && Number.isFinite(json.seq)) seq = json.seq;
+      }
+    } catch {
+      // Non-fatal — fall back to seq 1 so the download still proceeds.
+    }
+    const seq3 = String(seq).padStart(3, "0");
+    return row.pose
+      ? `${row.avatar}_${row.pose}_${seq3}`
+      : `${row.avatar}_${seq3}`;
+  };
+
   const downloadOne = async (row: ImageGenerationRow) => {
     // Fetch as blob and trigger an anchor download. Going through a
     // blob URL means cross-origin Supabase Storage URLs respect the
@@ -601,8 +642,7 @@ export function ImageStudio() {
     }
     const blob = await res.blob();
     const ext = (row.image_url.split(".").pop() || "png").split("?")[0];
-    const safeStem = row.id.slice(0, 8);
-    const filename = `dreamme-${safeStem}.${ext}`;
+    const filename = `${await buildDownloadStem(row)}.${ext}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
