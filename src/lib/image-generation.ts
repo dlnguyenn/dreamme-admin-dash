@@ -431,6 +431,10 @@ export async function insertRow(row: {
   gemini_model: string;
   source: "mcp" | "dashboard";
   reference_urls: string[] | null;
+  /** Avatar (identity reference) slug this generation used, if any. */
+  avatar?: string | null;
+  /** Pose reference slug this generation used, if any. */
+  pose?: string | null;
 }): Promise<{ id: string; created_at: string }> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/image_generations`, {
     method: "POST",
@@ -463,6 +467,10 @@ export interface GenerateImageResult {
   referenceImageUrl: string | null;
   /** All url-type references for this generation (base64 refs are inline-only). */
   referenceImageUrls: string[];
+  /** Avatar slug used, echoed back so the client can name downloads. */
+  avatar: string | null;
+  /** Pose slug used, echoed back so the client can name downloads. */
+  pose: string | null;
 }
 
 /**
@@ -526,6 +534,10 @@ export async function generateImage(params: {
   referenceImageBase64?: string;
   /** mimeType for referenceImageBase64. Defaults to "image/png". */
   referenceImageMimeType?: string;
+  /** Avatar (identity reference) slug used, persisted for download naming. */
+  avatar?: string | null;
+  /** Pose reference slug used, persisted for download naming. */
+  pose?: string | null;
   source: "mcp" | "dashboard";
   /** Per-attempt timeout in ms. Default 60s — Gemini image gen is usually 5-25s. */
   timeoutMs?: number;
@@ -613,6 +625,8 @@ export async function generateImage(params: {
     gemini_model: MODEL,
     source: params.source,
     reference_urls: referenceUrls.length > 0 ? referenceUrls : null,
+    avatar: params.avatar ?? null,
+    pose: params.pose ?? null,
   });
 
   const usage = gen.usage ?? {};
@@ -645,6 +659,8 @@ export async function generateImage(params: {
     createdAt: inserted.created_at,
     referenceImageUrl: referenceUrls[0] ?? null,
     referenceImageUrls: referenceUrls,
+    avatar: params.avatar ?? null,
+    pose: params.pose ?? null,
   };
 }
 
@@ -674,6 +690,8 @@ export async function generateImageBatch(params: {
   referenceImageUrl?: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
+  avatar?: string | null;
+  pose?: string | null;
   source: "mcp" | "dashboard";
   count: number;
   timeoutMs?: number;
@@ -698,6 +716,8 @@ export async function generateImageBatch(params: {
         referenceImageUrl: params.referenceImageUrl,
         referenceImageBase64: params.referenceImageBase64,
         referenceImageMimeType: params.referenceImageMimeType,
+        avatar: params.avatar,
+        pose: params.pose,
         source: params.source,
         timeoutMs: params.timeoutMs,
         _skipRateLimit: true,
@@ -740,6 +760,8 @@ export interface ImageGenerationRow {
   source: string | null;
   created_at: string;
   reference_urls: string[] | null;
+  avatar: string | null;
+  pose: string | null;
 }
 
 export async function listImageGenerations(params: {
@@ -748,7 +770,7 @@ export async function listImageGenerations(params: {
 }): Promise<ImageGenerationRow[]> {
   const limit = Math.min(Math.max(params.limit ?? 24, 1), 100);
   const offset = Math.max(params.offset ?? 0, 0);
-  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at,reference_urls&order=created_at.desc&limit=${limit}&offset=${offset}`;
+  const url = `${SUPABASE_URL}/rest/v1/image_generations?select=id,prompt,aspect_ratio,image_url,gemini_model,source,created_at,reference_urls,avatar,pose&order=created_at.desc&limit=${limit}&offset=${offset}`;
   const res = await fetch(url, {
     headers: {
       apikey: SERVICE_ROLE || SUPABASE_ANON,
@@ -762,6 +784,44 @@ export async function listImageGenerations(params: {
     );
   }
   return res.json();
+}
+
+/**
+ * 1-based ordinal of a generation within its (avatar, pose) group,
+ * ordered by created_at. Used to build the `avatar_pose_###` download
+ * filename: the count of same-(avatar,pose) rows created at or before
+ * `beforeIso` is exactly this row's sequence number. `pose` null matches
+ * rows with a null pose (avatar-only generations). Returns 1 as a safe
+ * floor if the count can't be read.
+ */
+export async function avatarPoseSequence(params: {
+  avatar: string;
+  pose: string | null;
+  beforeIso: string;
+}): Promise<number> {
+  const poseFilter =
+    params.pose == null
+      ? `pose=is.null`
+      : `pose=eq.${encodeURIComponent(params.pose)}`;
+  const url =
+    `${SUPABASE_URL}/rest/v1/image_generations?select=id` +
+    `&avatar=eq.${encodeURIComponent(params.avatar)}` +
+    `&${poseFilter}` +
+    `&created_at=lte.${encodeURIComponent(params.beforeIso)}`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: SERVICE_ROLE || SUPABASE_ANON,
+      Authorization: `Bearer ${SERVICE_ROLE || SUPABASE_ANON}`,
+      Prefer: "count=exact",
+      Range: "0-0",
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) return 1;
+  const range = res.headers.get("content-range") ?? "";
+  const match = /\/(\d+)$/.exec(range);
+  const count = match ? Number(match[1]) : 0;
+  return count > 0 ? count : 1;
 }
 
 /**

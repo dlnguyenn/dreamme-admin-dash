@@ -51,6 +51,12 @@ const Body = z.object({
   referenceImageMimeType: z
     .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
     .optional(),
+  // Slugs of the avatar (identity) and pose references chosen in the UI.
+  // Persisted so downloads can be named `avatar_pose_###`. Free-form
+  // (validated only for length) so new avatar/pose slots don't need a
+  // schema bump here.
+  avatar: z.string().max(64).optional(),
+  pose: z.string().max(64).optional(),
   count: z.number().int().min(1).max(8).optional(),
 });
 
@@ -89,6 +95,8 @@ export async function POST(req: Request) {
         referenceImageUrl: parsed.referenceImageUrl,
         referenceImageBase64: parsed.referenceImageBase64,
         referenceImageMimeType: parsed.referenceImageMimeType,
+        avatar: parsed.avatar,
+        pose: parsed.pose,
         source: "dashboard",
         timeoutMs: PER_ITEM_TIMEOUT_MS,
       });
@@ -103,6 +111,8 @@ export async function POST(req: Request) {
       referenceImageUrl: parsed.referenceImageUrl,
       referenceImageBase64: parsed.referenceImageBase64,
       referenceImageMimeType: parsed.referenceImageMimeType,
+      avatar: parsed.avatar,
+      pose: parsed.pose,
       source: "dashboard",
       count,
       timeoutMs: PER_ITEM_TIMEOUT_MS,
