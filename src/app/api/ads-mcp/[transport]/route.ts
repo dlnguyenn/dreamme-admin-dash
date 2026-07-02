@@ -30,6 +30,7 @@ import {
   deleteEntity,
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
+import { resolveMeta, normAcct, NO_META, defaultAccount } from "@/lib/meta-resolve";
 import { getActiveConnection } from "@/lib/meta-oauth";
 import { attachSuppression, runAudienceSync } from "@/lib/audiences";
 import {
@@ -44,39 +45,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const DEFAULT_ACCOUNT = "act_1575502753719515";
 const DEFAULT_DATASET = "1777837186267557";
 
-function acct(): string {
-  return process.env.META_AD_ACCOUNT_ID || DEFAULT_ACCOUNT;
-}
-
-/** Normalize an ad account id to the act_ form. */
-function normAcct(id: string): string {
-  return id.startsWith("act_") ? id : `act_${id}`;
-}
-
-/**
- * Resolve the Meta token + ad account to use: prefer the OAuth-connected
- * account stored via the dashboard (the "Login with Facebook" flow), fall
- * back to the META_ACCESS_TOKEN env var. Returns null if neither exists.
- */
-async function resolveMeta(): Promise<{ token: string; account: string } | null> {
-  try {
-    const conn = await getActiveConnection();
-    if (conn?.access_token) {
-      return { token: conn.access_token, account: conn.default_ad_account_id || acct() };
-    }
-  } catch {
-    // fall through to env
-  }
-  const envTok = process.env.META_ACCESS_TOKEN ?? "";
-  if (envTok) return { token: envTok, account: acct() };
-  return null;
-}
-
-const NO_META =
-  "No Meta connection — connect an account in the dashboard Integrations panel (or set META_ACCESS_TOKEN).";
+// resolveMeta / normAcct / NO_META live in @/lib/meta-resolve (shared with
+// /api/growth/act). `acct` keeps the local name used throughout this file.
+const acct = defaultAccount;
 
 // --- small helpers ---------------------------------------------------------
 function ymd(d: Date): string {

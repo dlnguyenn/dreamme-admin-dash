@@ -10,6 +10,7 @@ import * as React from "react";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MODELS, MODEL_LABELS, type ModelId } from "@/lib/models";
 import { type GrowthData, aggregateAds, daysAgoISO } from "./data";
+import { ActionCard, actionDetail, type ChatAction, type ActionState } from "./ActionCard";
 import {
   fmtUSD,
   fmtInt,
@@ -35,6 +36,8 @@ interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   steps?: AgentStep[];
+  /** Confirm-gated action proposals attached to this assistant turn. */
+  actions?: ChatAction[];
 }
 
 interface RecapPerformer {
@@ -82,6 +85,11 @@ interface RecapResponse {
     ads_this_week: RecapStatsAd[];
   };
   recap: RecapDoc;
+  /** Present on DB-persisted rows (history). */
+  id?: string;
+  week_start?: string;
+  source?: "manual" | "cron";
+  sent_at?: string | null;
 }
 
 const THOUGHT_STARTERS = [
@@ -175,11 +183,21 @@ export function GrowthAnalyst({
             messages: nextMessages.slice(-16).map((m) => ({ role: m.role, content: m.content })),
           }),
         });
-        const body = (await res.json()) as { reply?: string; steps?: AgentStep[]; error?: string };
+        const body = (await res.json()) as {
+          reply?: string;
+          steps?: AgentStep[];
+          proposals?: Array<Omit<ChatAction, "state">>;
+          error?: string;
+        };
         if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
         setMessages((cur) => [
           ...cur,
-          { role: "assistant", content: body.reply ?? "(empty reply)", steps: body.steps ?? [] },
+          {
+            role: "assistant",
+            content: body.reply ?? "(empty reply)",
+            steps: body.steps ?? [],
+            actions: (body.proposals ?? []).map((p) => ({ ...p, state: "proposed" as const })),
+          },
         ]);
       } catch (e) {
         setError((e as Error).message);
@@ -199,6 +217,37 @@ export function GrowthAnalyst({
       void send(prefill);
     }
   }, [prefill, hydrated, onPrefillConsumed, send]);
+
+  /**
+   * Settle an ActionCard. State persists on the message (so reloads can't
+   * re-execute), and applied/failed outcomes append a plain status line so
+   * later model turns see what actually happened.
+   */
+  const resolveAction = React.useCallback(
+    (msgIdx: number, actionIdx: number, state: ActionState, resultNote?: string) => {
+      setMessages((cur) => {
+        const next = cur.map((m, i) => {
+          if (i !== msgIdx || !m.actions) return m;
+          const actions = m.actions.map((a, ai) =>
+            ai === actionIdx ? { ...a, state, resultNote } : a,
+          );
+          return { ...m, actions };
+        });
+        const action = cur[msgIdx]?.actions?.[actionIdx];
+        if (action && (state === "applied" || state === "failed")) {
+          next.push({
+            role: "assistant",
+            content:
+              state === "applied"
+                ? `✅ [user confirmed: ${resultNote ?? actionDetail(action)} — applied to Meta]`
+                : `⚠️ [action failed: ${resultNote ?? "unknown error"} — nothing was changed]`,
+          });
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const empty = messages.length === 0;
 
@@ -272,16 +321,41 @@ export function GrowthAnalyst({
 
         <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: isMobile ? 14 : 22 }}>
           {empty ? (
-            <div style={{ padding: isMobile ? "26px 4px" : "48px 24px", textAlign: "center" }}>
+            <div
+              style={{
+                padding: isMobile ? "26px 14px" : "44px 28px",
+                textAlign: "center",
+                borderRadius: 16,
+                background:
+                  "linear-gradient(160deg, color-mix(in oklab, var(--p-hailey) 22%, var(--surface)), color-mix(in oklab, var(--p-olivia) 15%, var(--surface)) 55%, color-mix(in oklab, var(--p-emma) 14%, var(--surface)))",
+                border: "1px solid var(--line)",
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  margin: "0 auto 14px",
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, var(--p-andrea), var(--p-emma), var(--p-olivia))",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 6px 18px color-mix(in oklab, var(--p-emma) 35%, transparent)",
+                }}
+              >
+                <span className="serif" style={{ color: "white", fontSize: 21, fontStyle: "italic" }}>g</span>
+              </div>
               <div
                 className="serif"
                 style={{ fontSize: isMobile ? 24 : 30, letterSpacing: "-0.02em", marginBottom: 8 }}
               >
                 DreamMe, meet your <em>growth brain</em>.
               </div>
-              <p style={{ fontSize: 13.5, color: "var(--ink-3)", margin: "0 auto 24px", maxWidth: 420, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 13.5, color: "var(--ink-2)", margin: "0 auto 24px", maxWidth: 420, lineHeight: 1.55 }}>
                 Ask anything about your paid social. It pulls the live numbers first — Meta creatives,
-                RevenueCat trials, blended efficiency — then answers like a media buyer.
+                RevenueCat trials, blended efficiency — then answers like a media buyer. It can even
+                propose pauses and budget moves for you to approve.
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 520, margin: "0 auto" }}>
                 {THOUGHT_STARTERS.map((s) => (
@@ -295,7 +369,7 @@ export function GrowthAnalyst({
                       lineHeight: 1.45,
                       borderRadius: 12,
                       border: "1px solid var(--line)",
-                      background: "var(--surface-2)",
+                      background: "color-mix(in oklab, var(--surface) 80%, transparent)",
                       color: "var(--ink-2)",
                       cursor: "pointer",
                     }}
@@ -337,6 +411,17 @@ export function GrowthAnalyst({
                     >
                       <MarkdownLite text={m.content} />
                     </div>
+                    {m.actions && m.actions.length > 0 && (
+                      <div style={{ display: "grid", gap: 8, marginLeft: 16 }}>
+                        {m.actions.map((a, ai) => (
+                          <ActionCard
+                            key={ai}
+                            action={a}
+                            onResolve={(state, resultNote) => resolveAction(i, ai, state, resultNote)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ),
               )}
@@ -550,14 +635,34 @@ function ThinkingRow() {
 // ---------------------------------------------------------------------------
 
 function RecapRail({ data }: { data: GrowthData }) {
-  const [recap, setRecap] = React.useState<RecapResponse | null>(null);
+  const [history, setHistory] = React.useState<RecapResponse[]>([]);
+  const [selectedIdx, setSelectedIdx] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [loadingLine, setLoadingLine] = React.useState(RECAP_LOADING_LINES[0]);
 
+  const recap = history[selectedIdx] ?? null;
+
+  // DB history first; the pre-history localStorage copy is the fallback.
   React.useEffect(() => {
-    const saved = loadJSON<RecapResponse>(RECAP_KEY);
-    if (saved) setRecap(saved);
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/growth/recap");
+        const body = (await res.json()) as { recaps?: RecapResponse[] };
+        if (alive && res.ok && body.recaps?.length) {
+          setHistory(body.recaps);
+          return;
+        }
+      } catch {}
+      if (alive) {
+        const saved = loadJSON<RecapResponse>(RECAP_KEY);
+        if (saved) setHistory([saved]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   React.useEffect(() => {
@@ -588,7 +693,8 @@ function RecapRail({ data }: { data: GrowthData }) {
       });
       const body = (await res.json()) as RecapResponse & { error?: string };
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
-      setRecap(body);
+      setHistory((cur) => [body, ...cur]);
+      setSelectedIdx(0);
       saveJSON(RECAP_KEY, body);
     } catch (e) {
       setError((e as Error).message);
@@ -670,6 +776,40 @@ function RecapRail({ data }: { data: GrowthData }) {
         )}
       </div>
 
+      {history.length > 1 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {history.map((h, i) => {
+            const active = i === selectedIdx;
+            const label = h.week_start
+              ? new Date(`${h.week_start}T00:00:00Z`).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  timeZone: "UTC",
+                })
+              : timeAgo(h.generated_at);
+            return (
+              <button
+                key={h.id ?? i}
+                onClick={() => setSelectedIdx(i)}
+                style={{
+                  padding: "4px 11px",
+                  fontSize: 11.5,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  borderRadius: 999,
+                  border: "1px solid",
+                  borderColor: active ? "var(--ink)" : "var(--line)",
+                  background: active ? "var(--ink)" : "var(--surface)",
+                  color: active ? "var(--surface)" : "var(--ink-3)",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {recap && (
         <div
           style={{
@@ -682,6 +822,42 @@ function RecapRail({ data }: { data: GrowthData }) {
             gap: 14,
           }}
         >
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {recap.source === "cron" && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  color: "var(--ink-3)",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--line)",
+                }}
+              >
+                auto · Monday cron
+              </span>
+            )}
+            {recap.sent_at && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  color: "color-mix(in oklab, var(--accent-2) 80%, var(--ink))",
+                  background: "color-mix(in oklab, var(--accent-2) 14%, var(--surface))",
+                  border: "1px solid color-mix(in oklab, var(--accent-2) 30%, var(--line))",
+                }}
+              >
+                ✉ emailed
+              </span>
+            )}
+          </div>
           <div className="serif" style={{ fontSize: 17, lineHeight: 1.3, letterSpacing: "-0.01em" }}>
             {recap.recap.headline}
           </div>

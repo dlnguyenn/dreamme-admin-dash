@@ -553,6 +553,329 @@ export const GROWTH_TOOLS: ToolDef[] = [
       };
     },
   },
+  {
+    name: "alerts_digest",
+    description:
+      "Unresolved anomaly alerts from the daily z-score monitor (marketing_alerts): spend/CPT/CTR spikes and drops at account or campaign scope, with severity. Use for 'anything weird?' / 'what should I look at?' questions.",
+    input_schema: {
+      type: "object",
+      properties: { days: { type: "number", description: "1-30, default 7" } },
+    },
+    run: async (input) => {
+      const days = clampDays(input.days, 7, 30);
+      const rows = await sbSelect<Record<string, unknown>>(
+        `marketing_alerts?select=*&alert_date=gte.${daysAgo(days - 1)}&resolved_at=is.null&order=alert_date.desc&limit=50`,
+      );
+      const bySeverity: Record<string, number> = {};
+      for (const x of rows) {
+        const s = String(x.severity ?? "info");
+        bySeverity[s] = (bySeverity[s] ?? 0) + 1;
+      }
+      return {
+        window_days: days,
+        count: rows.length,
+        by_severity: bySeverity,
+        alerts: rows.map((x) => ({
+          date: String(x.alert_date ?? ""),
+          scope: String(x.scope ?? ""),
+          campaign_name: x.campaign_name ?? null,
+          metric: String(x.metric ?? ""),
+          direction: String(x.direction ?? ""),
+          severity: String(x.severity ?? ""),
+          value: num(x.value),
+          baseline: num(x.baseline),
+          z: r(num(x.z), 1),
+          message: String(x.message ?? ""),
+        })),
+      };
+    },
+  },
+  {
+    name: "payback_ltv",
+    description:
+      "Unit economics: the payback_summary view (30d LTV per payer ÷ blended CAC per sub over 35d → LTV:CAC ratio + payback verdict) plus per-campaign predicted LTV per trial from campaign_ltv_cohorts (signal ladder: rc_actual > skan_proxy > account_blended). Use for 'is paid worth it long-term' / 'which campaigns produce valuable users'.",
+    input_schema: { type: "object", properties: {} },
+    run: async () => {
+      const [payback, cohorts] = await Promise.all([
+        sbSelect<Record<string, unknown>>(`payback_summary?select=*&limit=1`),
+        sbSelect<Record<string, unknown>>(
+          `campaign_ltv_cohorts?select=*&order=spend.desc&limit=15`,
+        ),
+      ]);
+      return {
+        payback: payback[0] ?? null,
+        note: "Per-campaign trial counts are attributed subsets; the `source` column shows signal quality (rc_actual best, account_blended = shared account-level rate).",
+        campaigns: cohorts,
+      };
+    },
+  },
+  {
+    name: "retention_cohorts",
+    description:
+      "Weekly payer retention cohorts (payer_retention_cohorts view): payers by first-active week, how many are still active vs lapsed, retention rate, average tenure days. Use for retention / churn / cohort-quality questions.",
+    input_schema: { type: "object", properties: {} },
+    run: async () => {
+      const rows = await sbSelect<Record<string, unknown>>(
+        `payer_retention_cohorts?select=*&order=cohort_week.desc&limit=12`,
+      );
+      return { cohorts: rows };
+    },
+  },
+  {
+    name: "skan_health",
+    description:
+      "SKAN postback pipeline health (skan_health view: signature validity, redownload rate, click- vs view-through) plus reconciliation vs RevenueCat truth (skan_reconciliation: SKAN trials vs RC trials vs blended CAC). Use when asked about attribution coverage or whether SKAN data can be trusted.",
+    input_schema: { type: "object", properties: {} },
+    run: async () => {
+      const [health, recon] = await Promise.all([
+        sbSelect<Record<string, unknown>>(`skan_health?select=*&limit=1`),
+        sbSelect<Record<string, unknown>>(`skan_reconciliation?select=*&limit=1`),
+      ]);
+      return { health: health[0] ?? null, reconciliation: recon[0] ?? null };
+    },
+  },
+  {
+    name: "creative_tags",
+    description:
+      "AI creative-tag rollups (ad_creative_tags joined to the last 56d of performance): group by messaging_theme, visual_format, or audience to see spend, trials, cost/trial, hook rate, and hit rate per group — or group_by 'none' for per-ad tags. THE tool for 'what themes/formats/angles are working'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        group_by: {
+          type: "string",
+          enum: ["messaging_theme", "visual_format", "audience", "none"],
+          description: "Default messaging_theme.",
+        },
+        days: { type: "number", description: "Performance window 1-56, default 56." },
+      },
+    },
+    run: async (input) => {
+      const days = clampDays(input.days, 56);
+      const groupBy =
+        input.group_by === "visual_format" || input.group_by === "audience" || input.group_by === "none"
+          ? input.group_by
+          : "messaging_theme";
+      const [tagRows, adRows] = await Promise.all([
+        sbSelect<Record<string, unknown>>(`ad_creative_tags?select=*&limit=5000`),
+        readAds(daysAgo(days - 1), ymd(new Date())),
+      ]);
+      const aggs = aggregateAds(adRows);
+      const tagByAd = new Map(tagRows.map((t) => [String(t.ad_id), t]));
+
+      if (groupBy === "none") {
+        return {
+          window_days: days,
+          ads: aggs
+            .filter((a) => tagByAd.has(a.ad_id))
+            .slice(0, 60)
+            .map((a) => {
+              const t = tagByAd.get(a.ad_id)!;
+              return {
+                ad_id: a.ad_id,
+                ad_name: a.ad_name,
+                visual_format: t.visual_format,
+                messaging_theme: t.messaging_theme,
+                audience: t.audience,
+                hook_type: t.hook_type,
+                spend: r(a.spend),
+                trial_starts: a.trial_starts,
+                cost_per_trial: div(a.spend, a.trial_starts),
+              };
+            }),
+        };
+      }
+
+      // account median CPT among ads with trials (hit-rate baseline)
+      const cpts = aggs
+        .filter((a) => a.trial_starts >= 1 && a.spend > 0)
+        .map((a) => a.spend / a.trial_starts)
+        .sort((a, b) => a - b);
+      const median =
+        cpts.length === 0
+          ? null
+          : cpts.length % 2
+            ? cpts[Math.floor(cpts.length / 2)]
+            : (cpts[cpts.length / 2 - 1] + cpts[cpts.length / 2]) / 2;
+
+      interface Group {
+        key: string;
+        description?: string;
+        ads: number;
+        active: number;
+        spend: number;
+        impressions: number;
+        clicks: number;
+        v3: number;
+        trials: number;
+        qualified: number;
+        hits: number;
+      }
+      const groups = new Map<string, Group>();
+      for (const a of aggs) {
+        const t = tagByAd.get(a.ad_id);
+        if (!t) continue;
+        const key = String(t[groupBy] ?? "(untagged)");
+        let g = groups.get(key);
+        if (!g) {
+          g = {
+            key,
+            description: groupBy === "messaging_theme" ? String(t.theme_description ?? "") : undefined,
+            ads: 0,
+            active: 0,
+            spend: 0,
+            impressions: 0,
+            clicks: 0,
+            v3: 0,
+            trials: 0,
+            qualified: 0,
+            hits: 0,
+          };
+          groups.set(key, g);
+        }
+        g.ads++;
+        if (a.effective_status === "ACTIVE") g.active++;
+        g.spend += a.spend;
+        g.impressions += a.impressions;
+        g.clicks += a.clicks;
+        g.v3 += a.v3;
+        g.trials += a.trial_starts;
+        if (a.spend >= 30) {
+          g.qualified++;
+          const cpt = a.trial_starts >= 1 ? a.spend / a.trial_starts : null;
+          if (cpt != null && (median == null || cpt <= median * 1.2)) g.hits++;
+        }
+      }
+      return {
+        window_days: days,
+        group_by: groupBy,
+        account_median_cpt: median != null ? r(median) : null,
+        groups: [...groups.values()]
+          .sort((a, b) => b.spend - a.spend)
+          .map((g) => ({
+            [groupBy]: g.key,
+            ...(g.description ? { description: g.description } : {}),
+            ads: g.ads,
+            active: g.active,
+            spend: r(g.spend),
+            trials: g.trials,
+            cost_per_trial: div(g.spend, g.trials),
+            hook_rate_pct: div(g.v3 * 100, g.impressions),
+            ctr_pct: div(g.clicks * 100, g.impressions),
+            hit_rate_pct: g.qualified > 0 ? r((g.hits / g.qualified) * 100, 0) : null,
+            qualified_ads: g.qualified,
+          })),
+      };
+    },
+  },
+  {
+    name: "fatigue_check",
+    description:
+      "Detect fatiguing ads: ACTIVE ads with ≥$50 spend/14d where trailing-7d CTR or hook rate fell ≥25% vs the prior week while spend held (≥0.8×, min 1k impressions/week), OR cost/trial rose two consecutive weeks. Use for 'which ads are getting tired' / refresh planning.",
+    input_schema: { type: "object", properties: {} },
+    run: async () => {
+      // Mirrors the client detector in src/components/growth/data.ts — keep
+      // thresholds in sync.
+      const rows = await readAds(daysAgo(20), ymd(new Date()));
+      const cur = aggregateAds(rows.filter((x) => x.date >= daysAgo(6)));
+      const prev = aggregateAds(rows.filter((x) => x.date >= daysAgo(13) && x.date < daysAgo(6)));
+      const w2 = aggregateAds(rows.filter((x) => x.date >= daysAgo(20) && x.date < daysAgo(13)));
+      const last14 = aggregateAds(rows.filter((x) => x.date >= daysAgo(13)));
+      const prevById = new Map(prev.map((a) => [a.ad_id, a]));
+      const w2ById = new Map(w2.map((a) => [a.ad_id, a]));
+      const last14ById = new Map(last14.map((a) => [a.ad_id, a]));
+
+      const out: Array<Record<string, unknown>> = [];
+      for (const a of cur) {
+        const base = last14ById.get(a.ad_id);
+        if (!base || base.effective_status !== "ACTIVE" || base.spend < 50) continue;
+        const p = prevById.get(a.ad_id);
+        if (p && a.impressions >= 1000 && p.impressions >= 1000 && a.spend >= p.spend * 0.8) {
+          const ctrCur = a.clicks / a.impressions;
+          const ctrPrev = p.clicks / p.impressions;
+          const hookCur = a.v3 / a.impressions;
+          const hookPrev = p.v3 / p.impressions;
+          if ((ctrPrev > 0 && ctrCur <= ctrPrev * 0.75) || (hookPrev > 0 && hookCur <= hookPrev * 0.75)) {
+            out.push({
+              ad_id: a.ad_id,
+              ad_name: a.ad_name,
+              signal: "attention_decay",
+              spend_7d: r(a.spend),
+              spend_prev_7d: r(p.spend),
+              ctr_pct: div(a.clicks * 100, a.impressions),
+              ctr_prev_pct: div(p.clicks * 100, p.impressions),
+              hook_rate_pct: div(a.v3 * 100, a.impressions),
+              hook_prev_pct: div(p.v3 * 100, p.impressions),
+            });
+            continue;
+          }
+        }
+        const p2 = w2ById.get(a.ad_id);
+        if (p && p2 && a.trial_starts >= 1 && p.trial_starts >= 1 && p2.trial_starts >= 1) {
+          const c0 = a.spend / a.trial_starts;
+          const c1 = p.spend / p.trial_starts;
+          const c2 = p2.spend / p2.trial_starts;
+          if (c0 > c1 && c1 > c2) {
+            out.push({
+              ad_id: a.ad_id,
+              ad_name: a.ad_name,
+              signal: "cpt_rising",
+              cpt_by_week: [r(c2), r(c1), r(c0)],
+              spend_7d: r(a.spend),
+            });
+          }
+        }
+      }
+      return { fatiguing: out, checked_active_ads: [...last14ById.values()].filter((a) => a.effective_status === "ACTIVE" && a.spend >= 50).length };
+    },
+  },
+  {
+    name: "propose_action",
+    description:
+      "Propose a Meta Ads change for the user to confirm — pause/activate an ad, set an ad set or campaign daily budget, or duplicate an ad set. This NEVER executes anything: it renders a confirmation card in the dashboard that the user must explicitly approve. Only propose after the data justifies it, cite the numbers in `reason`, and propose at most one action per distinct change. Never claim a change was made.",
+    input_schema: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["pause_ad", "activate_ad", "set_adset_budget", "set_campaign_budget", "duplicate_adset"],
+        },
+        target_id: { type: "string", description: "The Meta id of the ad / ad set / campaign." },
+        target_name: { type: "string", description: "Human name of the target." },
+        params: {
+          type: "object",
+          properties: {
+            daily_budget_cents: { type: "number", description: "For set_*_budget: new daily budget in cents (e.g. 5000 = $50)." },
+            target_campaign_id: { type: "string", description: "For duplicate_adset: optional destination campaign." },
+          },
+        },
+        reason: { type: "string", description: "One sentence citing the evidence, e.g. '$521 spend, 0 trials, hook 46% but CTR 1.2% — creative isn't converting.'" },
+      },
+      required: ["kind", "target_id", "target_name", "reason"],
+    },
+    run: async (input) => {
+      const kind = String(input.kind ?? "");
+      const validKinds = ["pause_ad", "activate_ad", "set_adset_budget", "set_campaign_budget", "duplicate_adset"];
+      if (!validKinds.includes(kind)) throw new Error(`invalid kind: ${kind}`);
+      const targetId = String(input.target_id ?? "").trim();
+      if (!targetId) throw new Error("target_id required");
+      const params = (input.params ?? {}) as Record<string, unknown>;
+      if ((kind === "set_adset_budget" || kind === "set_campaign_budget") && !(num(params.daily_budget_cents) >= 100)) {
+        throw new Error("set_*_budget needs params.daily_budget_cents ≥ 100");
+      }
+      return {
+        proposed: true,
+        note: "Rendered as a confirmation card — the user must approve before anything is applied. Do not claim the change happened.",
+        kind,
+        target_id: targetId,
+        target_name: String(input.target_name ?? ""),
+        params: {
+          ...(params.daily_budget_cents != null ? { daily_budget_cents: Math.floor(num(params.daily_budget_cents)) } : {}),
+          ...(params.target_campaign_id ? { target_campaign_id: String(params.target_campaign_id) } : {}),
+        },
+        reason: String(input.reason ?? ""),
+      };
+    },
+  },
 ];
 
 // --- the agent loop ---------------------------------------------------------
@@ -572,6 +895,12 @@ export const GROWTH_SYSTEM_PROMPT = `You are the DreamMe Growth AI — the marke
 
 ## How to answer
 - ALWAYS pull data with tools before answering anything quantitative. Start with week_over_week for "how are we doing" questions; use ad_performance / creative_attention for creative questions; blended_efficiency + rc_snapshot for efficiency/LTV questions.
+- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check.
+
+## Actions (propose_action)
+- You can PROPOSE Meta changes — pause/activate an ad, set an ad set/campaign daily budget, duplicate an ad set — via the propose_action tool. It never executes; the user sees a confirmation card and must approve.
+- Only propose when the evidence clearly justifies it, cite the numbers in the reason field, and propose at most one action per distinct change (no duplicates across turns unless asked again).
+- After proposing, tell the user the action is awaiting their confirmation. NEVER state or imply a change was applied — you will see "[user confirmed: ...]" or "[user dismissed: ...]" in the transcript if they acted on it.
 - Lead with the answer in one or two sentences, then evidence, then actions.
 - Recommendations follow the pattern: WHY (evidence from the data — name ads, cite $ and %), then WHAT NEXT (a specific action: cut / scale / iterate, with concrete budget or creative direction).
 - Be direct and specific. "$905 spend at $12.93/trial — scale it" beats hedging. If sample sizes are small (a few trials), say so and be appropriately humble.
@@ -596,9 +925,25 @@ export interface AgentStep {
   summary: string;
 }
 
+export type ActionKind =
+  | "pause_ad"
+  | "activate_ad"
+  | "set_adset_budget"
+  | "set_campaign_budget"
+  | "duplicate_adset";
+
+export interface ProposedAction {
+  kind: ActionKind;
+  target_id: string;
+  target_name: string;
+  params: { daily_budget_cents?: number; target_campaign_id?: string };
+  reason: string;
+}
+
 export interface AgentResult {
   reply: string;
   steps: AgentStep[];
+  proposals: ProposedAction[];
   usage: { input_tokens: number; output_tokens: number };
 }
 
@@ -671,6 +1016,7 @@ export async function runGrowthAgent(params: {
   );
 
   const steps: AgentStep[] = [];
+  const proposals: ProposedAction[] = [];
   const usage = { input_tokens: 0, output_tokens: 0 };
   const maxTurns = params.maxTurns ?? 8;
 
@@ -692,7 +1038,7 @@ export async function runGrowthAgent(params: {
         .map((b) => b.text ?? "")
         .join("\n")
         .trim();
-      return { reply, steps, usage };
+      return { reply, steps, proposals, usage };
     }
 
     messages.push({ role: "assistant", content: res.content });
@@ -704,6 +1050,16 @@ export async function runGrowthAgent(params: {
         if (!tool) throw new Error(`unknown tool ${tu.name}`);
         const out = await tool.run(input);
         steps.push({ tool: tu.name ?? "", input, ok: true, summary: summarizeToolResult(tu.name ?? "", out) });
+        if (tu.name === "propose_action") {
+          const o = out as ProposedAction & { proposed: boolean };
+          proposals.push({
+            kind: o.kind,
+            target_id: o.target_id,
+            target_name: o.target_name,
+            params: o.params ?? {},
+            reason: o.reason,
+          });
+        }
         results.push({
           type: "tool_result",
           tool_use_id: tu.id ?? "",
@@ -727,6 +1083,7 @@ export async function runGrowthAgent(params: {
     reply:
       "I hit my tool-call budget before finishing. Here's what I gathered so far — ask me to continue for the rest.",
     steps,
+    proposals,
     usage,
   };
 }

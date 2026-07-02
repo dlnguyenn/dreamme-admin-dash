@@ -22,8 +22,11 @@ import {
   SectionLabel,
   DeltaChip,
   StatusDot,
+  TagChip,
   Thumb,
   ErrorBanner,
+  EmptyState,
+  adsManagerAdUrl,
 } from "./shared";
 
 const RANGES = [7, 14, 30] as const;
@@ -36,8 +39,6 @@ const SORTS = [
   { id: "hook", label: "Hook rate" },
 ] as const;
 type SortId = (typeof SORTS)[number]["id"];
-
-const ACCOUNT_ID = process.env.NEXT_PUBLIC_META_AD_ACCOUNT_ID ?? "act_1575502753719515";
 
 interface LeaderRow {
   agg: AdAgg;
@@ -52,9 +53,11 @@ interface LeaderRow {
 export function GrowthLeaderboard({
   data,
   onAsk,
+  onOpenAd,
 }: {
   data: GrowthData;
   onAsk: (prompt: string) => void;
+  onOpenAd: (adId: string) => void;
 }) {
   const isMobile = useIsMobile();
   const [range, setRange] = React.useState<RangeDays>(7);
@@ -149,21 +152,9 @@ export function GrowthLeaderboard({
       </SectionLabel>
 
       {leaders.length === 0 ? (
-        <div
-          style={{
-            padding: "26px 24px",
-            borderRadius: 14,
-            border: "1px dashed var(--line)",
-            background: "var(--surface)",
-            color: "var(--ink-3)",
-            fontSize: 13,
-          }}
-        >
-          <span className="serif" style={{ fontStyle: "italic", fontSize: 17, marginRight: 8 }}>
-            No creatives in this window.
-          </span>
+        <EmptyState title="No creatives in this window.">
           Adjust the filters, or run /api/cron/sync-ad-insights to backfill.
-        </div>
+        </EmptyState>
       ) : (
         <div
           style={{
@@ -202,7 +193,14 @@ export function GrowthLeaderboard({
             </thead>
             <tbody>
               {leaders.map((row, i) => (
-                <LeaderTr key={row.agg.ad_id} row={row} rank={i + 1} onAsk={onAsk} />
+                <LeaderTr
+                  key={row.agg.ad_id}
+                  row={row}
+                  rank={i + 1}
+                  theme={data.tags.get(row.agg.ad_id)?.messaging_theme ?? null}
+                  onAsk={onAsk}
+                  onOpenAd={onOpenAd}
+                />
               ))}
             </tbody>
           </table>
@@ -218,18 +216,36 @@ export function GrowthLeaderboard({
   );
 }
 
-function LeaderTr({ row, rank, onAsk }: { row: LeaderRow; rank: number; onAsk: (p: string) => void }) {
+function LeaderTr({
+  row,
+  rank,
+  theme,
+  onAsk,
+  onOpenAd,
+}: {
+  row: LeaderRow;
+  rank: number;
+  theme: string | null;
+  onAsk: (p: string) => void;
+  onOpenAd: (adId: string) => void;
+}) {
   const { agg } = row;
-  const adsManager = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ACCOUNT_ID.replace(/^act_/, "")}&selected_ad_ids=${agg.ad_id}`;
+  const adsManager = adsManagerAdUrl(agg.ad_id);
   const td = (align: "left" | "right" | "center" = "right"): React.CSSProperties => ({
     textAlign: align,
-    padding: "10px 14px",
+    padding: "9px 14px",
     borderBottom: "1px solid var(--line)",
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
   });
   return (
-    <tr>
+    <tr
+      onClick={() => onOpenAd(agg.ad_id)}
+      title="Open creative details"
+      style={{ cursor: "pointer", transition: "background 120ms ease" }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
       <td style={{ ...td("left"), width: 34 }}>
         <span
           className="serif"
@@ -256,17 +272,28 @@ function LeaderTr({ row, rank, onAsk }: { row: LeaderRow; rank: number; onAsk: (
               {agg.ad_name || agg.ad_id}
             </div>
             <div
-              title={agg.campaign_name}
               style={{
-                fontSize: 11,
-                color: "var(--ink-4)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: 260,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 1,
+                minWidth: 0,
               }}
             >
-              {agg.campaign_name}
+              <span
+                title={agg.campaign_name}
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-4)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: theme ? 140 : 260,
+                }}
+              >
+                {agg.campaign_name}
+              </span>
+              {theme && <TagChip kind="theme">{theme}</TagChip>}
             </div>
           </div>
         </div>
@@ -296,11 +323,12 @@ function LeaderTr({ row, rank, onAsk }: { row: LeaderRow; rank: number; onAsk: (
         <div style={{ display: "inline-flex", gap: 6 }}>
           <button
             title="Ask the AI analyst about this ad"
-            onClick={() =>
+            onClick={(e) => {
+              e.stopPropagation();
               onAsk(
                 `Analyze the ad "${agg.ad_name}" (ad_id ${agg.ad_id}) over the last 14 days — performance vs the account, where it loses people (hook/hold/click), and what to do next.`,
-              )
-            }
+              );
+            }}
             style={{
               fontSize: 11,
               padding: "4px 10px",
@@ -319,6 +347,7 @@ function LeaderTr({ row, rank, onAsk }: { row: LeaderRow; rank: number; onAsk: (
             href={adsManager}
             target="_blank"
             rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
             style={{
               fontSize: 11,
               padding: "4px 8px",

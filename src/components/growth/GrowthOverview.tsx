@@ -39,12 +39,14 @@ function pctDelta(cur: number, prev: number): number | null {
 export function GrowthOverview({
   data,
   onAsk,
+  onOpenAd,
 }: {
   data: GrowthData;
   onAsk: (prompt: string) => void;
+  onOpenAd: (adId: string) => void;
 }) {
   const isMobile = useIsMobile();
-  const { rows, rcRows, blended, firstSeen, error } = data;
+  const { rows, rcRows, blended, firstSeen, alerts, payback, error } = data;
 
   const weekly = React.useMemo(() => {
     const { cur, prev } = sliceWindows(rows, 7);
@@ -84,6 +86,7 @@ export function GrowthOverview({
   const shiftOrder: Array<{ id: ShiftKind; label: string }> = [
     { id: "scaling", label: "Scaling" },
     { id: "declining", label: "Declining" },
+    { id: "fatiguing", label: "Fatiguing" },
     { id: "new", label: "Newly launched" },
     { id: "paused", label: "Recently paused" },
   ];
@@ -118,6 +121,8 @@ export function GrowthOverview({
     <div>
       {error && <ErrorBanner>{error}</ErrorBanner>}
 
+      {alerts.length > 0 && <AlertsStrip alerts={alerts} onAsk={onAsk} />}
+
       {/* ---- KPI glance ---- */}
       <SectionLabel
         right={
@@ -129,12 +134,23 @@ export function GrowthOverview({
         This week at a glance
       </SectionLabel>
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: 14,
-          marginBottom: 28,
-        }}
+        style={
+          isMobile
+            ? {
+                display: "flex",
+                gap: 12,
+                overflowX: "auto",
+                scrollSnapType: "x mandatory",
+                margin: "0 -16px 24px",
+                padding: "0 16px 6px",
+              }
+            : {
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: 14,
+                marginBottom: 28,
+              }
+        }
       >
         <KpiCard hero label="Total spend" value={fmtUSD(weekly.spend)} delta={weekly.spendDelta} goodWhen="up" />
         <KpiCard
@@ -162,6 +178,13 @@ export function GrowthOverview({
           value={fmtInt(weekly.launched)}
           sub={`${weekly.activeAds} ads live`}
         />
+        {payback && payback.ltv30_to_cac != null && (
+          <KpiCard
+            label="LTV : CAC · 35d"
+            value={fmtX(num(payback.ltv30_to_cac))}
+            sub={payback.payback_verdict ?? "30d LTV ÷ blended CAC/sub"}
+          />
+        )}
       </div>
 
       {/* ---- spend vs trials chart ---- */}
@@ -253,8 +276,15 @@ export function GrowthOverview({
             marginBottom: 28,
           }}
         >
-          {shifts[shiftTab].slice(0, 8).map(({ agg, deltaPct }) => (
-            <ShiftCard key={agg.ad_id} agg={agg} deltaPct={deltaPct} onAsk={onAsk} />
+          {shifts[shiftTab].slice(0, 8).map(({ agg, deltaPct, note }) => (
+            <ShiftCard
+              key={agg.ad_id}
+              agg={agg}
+              deltaPct={deltaPct}
+              note={note}
+              onAsk={onAsk}
+              onOpenAd={onOpenAd}
+            />
           ))}
         </div>
       )}
@@ -263,9 +293,89 @@ export function GrowthOverview({
       {topCreative && (
         <>
           <SectionLabel>This week&rsquo;s top spending creative</SectionLabel>
-          <TopCreativeCard agg={topCreative} onAsk={onAsk} isMobile={isMobile} />
+          <TopCreativeCard agg={topCreative} onAsk={onAsk} onOpenAd={onOpenAd} isMobile={isMobile} />
         </>
       )}
+    </div>
+  );
+}
+
+function AlertsStrip({
+  alerts,
+  onAsk,
+}: {
+  alerts: GrowthData["alerts"];
+  onAsk: (prompt: string) => void;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const visible = expanded ? alerts : alerts.slice(0, 4);
+  const toneOf = (sev: string) =>
+    sev === "critical" ? "var(--accent)" : sev === "warn" ? "var(--p-sarah)" : "var(--ink-4)";
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <SectionLabel
+        right={
+          alerts.length > 4 ? (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              style={{
+                fontSize: 11,
+                border: "none",
+                background: "transparent",
+                color: "var(--ink-3)",
+                cursor: "pointer",
+                fontFamily: "var(--font-geist-mono), monospace",
+              }}
+            >
+              {expanded ? "collapse" : `show all ${alerts.length}`}
+            </button>
+          ) : undefined
+        }
+      >
+        Alerts · last 7 days
+      </SectionLabel>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {visible.map((a) => {
+          const tone = toneOf(a.severity);
+          return (
+            <button
+              key={a.id}
+              onClick={() =>
+                onAsk(
+                  `Investigate this alert from ${a.alert_date}: "${a.message}". What caused it and what should we do?`,
+                )
+              }
+              title="Ask the AI analyst to investigate"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "7px 12px",
+                fontSize: 12,
+                borderRadius: 999,
+                border: `1px solid color-mix(in oklab, ${tone} 35%, var(--line))`,
+                background: `color-mix(in oklab, ${tone} 10%, var(--surface))`,
+                color: "var(--ink-2)",
+                cursor: "pointer",
+                maxWidth: 480,
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: tone,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {a.message}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -290,11 +400,13 @@ function LegendSwatch({ color, label, square }: { color: string; label: string; 
 function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: number; trials: number }> }) {
   const W = 720;
   const H = 200;
-  const padL = 4;
+  const padL = 40;
   const padR = 4;
   const padB = 22;
   const innerW = W - padL - padR;
   const innerH = H - padB;
+  const [hover, setHover] = React.useState<number | null>(null);
+  const svgRef = React.useRef<SVGSVGElement>(null);
 
   if (daily.length === 0) {
     return (
@@ -318,25 +430,46 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
     })
     .join(" ");
 
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.min(n - 1, Math.max(0, Math.floor((x - padL) / slot)));
+    setHover(idx);
+  };
+  const hovered = hover != null ? daily[hover] : null;
+
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${W} ${H}`}
       style={{ width: "100%", height: "auto", display: "block" }}
       role="img"
       aria-label="Daily Meta spend (bars) vs RevenueCat trials (line)"
+      onMouseMove={onMove}
+      onMouseLeave={() => setHover(null)}
     >
-      {/* gridlines */}
-      {[0.25, 0.5, 0.75].map((f) => (
-        <line
-          key={f}
-          x1={padL}
-          x2={W - padR}
-          y1={innerH * f}
-          y2={innerH * f}
-          stroke="var(--line)"
-          strokeWidth={1}
-          strokeDasharray="3 5"
-        />
+      {/* gridlines + y-axis spend labels */}
+      {[0, 0.5, 1].map((f) => (
+        <g key={f}>
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={innerH - f * (innerH - 10)}
+            y2={innerH - f * (innerH - 10)}
+            stroke="var(--line)"
+            strokeWidth={1}
+            strokeDasharray={f === 0 ? undefined : "3 5"}
+          />
+          <text
+            x={padL - 6}
+            y={innerH - f * (innerH - 10) + 3}
+            textAnchor="end"
+            style={{ fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", fill: "var(--ink-4)" }}
+          >
+            ${Math.round(maxSpend * f)}
+          </text>
+        </g>
       ))}
       {/* spend bars */}
       {daily.map((d, i) => {
@@ -393,6 +526,39 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
           </text>
         ) : null,
       )}
+      {/* hover: vertical rule + tooltip */}
+      {hovered && hover != null && (
+        <g pointerEvents="none">
+          <line
+            x1={padL + hover * slot + slot / 2}
+            x2={padL + hover * slot + slot / 2}
+            y1={4}
+            y2={innerH}
+            stroke="var(--ink-3)"
+            strokeWidth={1}
+            strokeDasharray="2 3"
+          />
+          {(() => {
+            const boxW = 148;
+            const rawX = padL + hover * slot + slot / 2 + 8;
+            const x = rawX + boxW > W - padR ? rawX - boxW - 16 : rawX;
+            return (
+              <g>
+                <rect x={x} y={8} width={boxW} height={52} rx={8} fill="var(--ink)" opacity={0.92} />
+                <text x={x + 10} y={24} style={{ fontSize: 10, fontFamily: "var(--font-geist-mono), monospace", fill: "var(--surface)", opacity: 0.7 }}>
+                  {hovered.date}
+                </text>
+                <text x={x + 10} y={40} style={{ fontSize: 12, fontWeight: 600, fill: "var(--surface)" }}>
+                  {fmtUSD(hovered.spend)} spend
+                </text>
+                <text x={x + 10} y={54} style={{ fontSize: 11, fill: "var(--surface)", opacity: 0.85 }}>
+                  {hovered.trials} RC trials
+                </text>
+              </g>
+            );
+          })()}
+        </g>
+      )}
     </svg>
   );
 }
@@ -400,11 +566,15 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
 function ShiftCard({
   agg,
   deltaPct,
+  note,
   onAsk,
+  onOpenAd,
 }: {
   agg: AdAgg;
   deltaPct: number | null;
+  note?: string;
   onAsk: (prompt: string) => void;
+  onOpenAd: (adId: string) => void;
 }) {
   const cpt = safeDiv(agg.spend, agg.trial_starts);
   return (
@@ -419,7 +589,11 @@ function ShiftCard({
         flexDirection: "column",
       }}
     >
-      <div style={{ position: "relative", aspectRatio: "5 / 4", background: "var(--surface-2)" }}>
+      <div
+        onClick={() => onOpenAd(agg.ad_id)}
+        title="Open creative details"
+        style={{ position: "relative", aspectRatio: "5 / 4", background: "var(--surface-2)", cursor: "pointer" }}
+      >
         {agg.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -461,6 +635,21 @@ function ShiftCard({
         >
           {agg.ad_name || agg.ad_id}
         </div>
+        {note && (
+          <div
+            style={{
+              fontSize: 10.5,
+              color: "var(--accent)",
+              fontFamily: "var(--font-geist-mono), monospace",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={note}
+          >
+            {note}
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
             {fmtUSD(agg.spend)}
@@ -498,10 +687,12 @@ function ShiftCard({
 function TopCreativeCard({
   agg,
   onAsk,
+  onOpenAd,
   isMobile,
 }: {
   agg: AdAgg;
   onAsk: (prompt: string) => void;
+  onOpenAd: (adId: string) => void;
   isMobile: boolean;
 }) {
   const cpt = safeDiv(agg.spend, agg.trial_starts);
@@ -528,7 +719,9 @@ function TopCreativeCard({
         alignItems: isMobile ? "stretch" : "flex-start",
       }}
     >
-      <Thumb src={agg.thumbnail} name={agg.ad_name} size={isMobile ? 120 : 168} radius={12} />
+      <div onClick={() => onOpenAd(agg.ad_id)} style={{ cursor: "pointer" }} title="Open creative details">
+        <Thumb src={agg.thumbnail} name={agg.ad_name} size={isMobile ? 120 : 168} radius={12} />
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div className="serif" style={{ fontSize: isMobile ? 19 : 23, letterSpacing: "-0.02em" }}>

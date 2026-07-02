@@ -144,6 +144,11 @@ export function KpiCard({
         color: hero ? "var(--surface)" : "var(--ink)",
         border: hero ? "1px solid var(--ink)" : "1px solid var(--line)",
         boxShadow: "var(--shadow-sm)",
+        // In the mobile horizontal-scroll KPI rail these keep cards readable;
+        // in the desktop grid they're inert.
+        minWidth: 150,
+        scrollSnapAlign: "start",
+        flexShrink: 0,
       }}
     >
       <div
@@ -279,6 +284,117 @@ export function Thumb({
       }}
     />
   );
+}
+
+const TAG_TONES: Record<string, string> = {
+  format: "var(--p-emma)",
+  theme: "var(--p-sydney)",
+  audience: "var(--p-olivia)",
+  hook: "var(--p-abby)",
+};
+
+/** Motion-style colored tag chip. kind picks the tone family. */
+export function TagChip({
+  kind,
+  children,
+  title,
+}: {
+  kind: "format" | "theme" | "audience" | "hook";
+  children: React.ReactNode;
+  title?: string;
+}) {
+  const tone = TAG_TONES[kind];
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-block",
+        fontSize: 10.5,
+        fontWeight: 500,
+        padding: "3px 9px",
+        borderRadius: 999,
+        color: `color-mix(in oklab, ${tone} 45%, var(--ink))`,
+        background: `color-mix(in oklab, ${tone} 16%, var(--surface))`,
+        border: `1px solid color-mix(in oklab, ${tone} 28%, var(--line))`,
+        whiteSpace: "nowrap",
+        maxWidth: 180,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        verticalAlign: "middle",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Dashed-border empty state (Resources pattern). */
+export function EmptyState({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: "26px 24px",
+        borderRadius: 14,
+        border: "1px dashed var(--line)",
+        background: "var(--surface)",
+        color: "var(--ink-3)",
+        fontSize: 13,
+        lineHeight: 1.6,
+      }}
+    >
+      <div className="serif" style={{ fontStyle: "italic", fontSize: 17, marginBottom: 4, color: "var(--ink-2)" }}>
+        {title}
+      </div>
+      {children}
+      {action && <div style={{ marginTop: 12 }}>{action}</div>}
+    </div>
+  );
+}
+
+/** Shimmer skeleton block for loading states. */
+export function Skeleton({
+  w = "100%",
+  h = 16,
+  radius = 8,
+  style,
+}: {
+  w?: number | string;
+  h?: number | string;
+  radius?: number;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <>
+      <div
+        style={{
+          width: w,
+          height: h,
+          borderRadius: radius,
+          background:
+            "linear-gradient(90deg, var(--surface-2) 25%, color-mix(in oklab, var(--line) 45%, var(--surface-2)) 50%, var(--surface-2) 75%)",
+          backgroundSize: "200% 100%",
+          animation: "gwShimmer 1.4s ease-in-out infinite",
+          ...style,
+        }}
+      />
+      <style>{`@keyframes gwShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+    </>
+  );
+}
+
+export const ACCOUNT_ID =
+  process.env.NEXT_PUBLIC_META_AD_ACCOUNT_ID ?? "act_1575502753719515";
+
+export function adsManagerAdUrl(adId: string): string {
+  return `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ACCOUNT_ID.replace(/^act_/, "")}&selected_ad_ids=${adId}`;
 }
 
 // --- markdown-lite renderer ----------------------------------------------

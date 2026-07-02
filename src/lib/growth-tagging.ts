@@ -22,37 +22,8 @@ const SERVICE_ROLE =
 
 export const TAGGER_MODEL_DEFAULT = "claude-haiku-4-5-20251001";
 
-export const VISUAL_FORMATS = [
-  "ugc_talking_head",
-  "screen_recording",
-  "greenscreen",
-  "post_it",
-  "letter_text",
-  "montage",
-  "testimonial",
-  "comment_response",
-  "static_illustration",
-  "static_photo",
-  "meme",
-  "other",
-] as const;
-
-export type VisualFormat = (typeof VISUAL_FORMATS)[number];
-
-export const VISUAL_FORMAT_LABELS: Record<VisualFormat, string> = {
-  ugc_talking_head: "UGC Talking Head",
-  screen_recording: "Screen Recording",
-  greenscreen: "Greenscreen",
-  post_it: "Post-It",
-  letter_text: "Letter / Text",
-  montage: "Montage",
-  testimonial: "Testimonial",
-  comment_response: "Comment Response",
-  static_illustration: "Static Illustration",
-  static_photo: "Static Photo",
-  meme: "Meme",
-  other: "Other",
-};
+export { VISUAL_FORMATS, VISUAL_FORMAT_LABELS, type VisualFormat } from "@/lib/growth-tagging-shared";
+import { VISUAL_FORMATS, type VisualFormat } from "@/lib/growth-tagging-shared";
 
 const HOOK_TYPES = ["question", "confession", "stat", "demo", "pov", "story", "other"] as const;
 
@@ -235,7 +206,9 @@ const TAG_TOOL_SCHEMA: Record<string, unknown> = {
 
 const TAGGER_SYSTEM = `You tag Meta ad creatives for DreamMe, a GLP-1 companion iOS app (self-care Tamagotchi: shot logging, protein/fiber tracking, virtual pet fish). You will get one creative at a time: an image (full creative for statics, a thumbnail frame for videos) plus the ad's name, headline, and primary text.
 
-Emit tags via the emit_tags tool. Be decisive; the taxonomy descriptions are in the tool schema. For video ads the image is only a thumbnail — weigh the ad name and copy heavily. Themes are about the PERSUASION ANGLE (what belief the ad sells), not the format.`;
+Emit tags via the emit_tags tool. Be decisive; the taxonomy descriptions are in the tool schema. For video ads the image is only a thumbnail — weigh the ad name and copy heavily.
+
+Messaging themes are about the PERSUASION ANGLE (the specific belief the ad sells), and they must be GRANULAR: a healthy account runs 4-10 distinct themes, not one umbrella theme. Reuse a registry label only when the ad's PRIMARY angle is genuinely the same; distinct angles deserve distinct labels. Calibration examples of well-scoped theme labels for this product: "Support System" (fills the support gap doctors leave), "Accountability" (keeps you on track), "Incorrect Tracking" (red flags of tracking wrong), "Take Control" (solves late-night anxiety/overwhelm), "Gamification" (pet/streak rewards drive habits), "Instant Insights" (instant GLP-1 meal score), "Makes Life Easier" (all-in-one simplicity). Do NOT default everything into one catch-all label.`;
 
 function isVisualFormat(v: unknown): v is VisualFormat {
   return typeof v === "string" && (VISUAL_FORMATS as readonly string[]).includes(v);
