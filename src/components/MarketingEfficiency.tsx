@@ -8,7 +8,11 @@ import type {
   CampaignLtvCohortRow,
   CrossNetworkBlendedRow,
   CrossNetworkCampaignRow,
+  MarketingAlertRow,
+  PaybackSummaryRow,
+  PayerRetentionCohortRow,
   SkanCampaignEfficiencyRow,
+  SkanHealthRow,
   SkanReconciliationRow,
 } from "@/lib/types";
 
@@ -181,6 +185,8 @@ export function MarketingEfficiency() {
         </div>
       )}
 
+      <MarketingAlerts />
+
       <ActiveExperiments />
 
       <div
@@ -275,6 +281,9 @@ export function MarketingEfficiency() {
 
       <div style={{ height: 36 }} />
       <LtvCohorts />
+
+      <div style={{ height: 36 }} />
+      <PayerRetentionCohorts />
 
       <div style={{ height: 36 }} />
       <SkanAttribution />
@@ -459,6 +468,7 @@ function LtvCohorts() {
 function CrossNetworkCost() {
   const [rows, setRows] = React.useState<CrossNetworkCampaignRow[]>([]);
   const [blended, setBlended] = React.useState<CrossNetworkBlendedRow | null>(null);
+  const [payback, setPayback] = React.useState<PaybackSummaryRow | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -466,13 +476,15 @@ function CrossNetworkCost() {
     let alive = true;
     (async () => {
       try {
-        const [r, b] = await Promise.all([
+        const [r, b, p] = await Promise.all([
           API.fetchCrossNetworkCampaigns(),
           API.fetchCrossNetworkBlended(),
+          API.fetchPaybackSummary().catch(() => null),
         ]);
         if (!alive) return;
         setRows(r);
         setBlended(b);
+        setPayback(p);
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
@@ -485,6 +497,7 @@ function CrossNetworkCost() {
   }, []);
 
   const cacTrial = blended?.blended_cac_per_trial_35d != null ? num(blended.blended_cac_per_trial_35d) : null;
+  const cacSub = blended?.blended_cac_per_sub_35d != null ? num(blended.blended_cac_per_sub_35d) : null;
   const roas = blended?.blended_roas_35d != null ? num(blended.blended_roas_35d) : null;
   const coverage = blended?.network_trial_coverage != null ? num(blended.network_trial_coverage) : null;
   const channels = Array.from(new Set(rows.map((r) => r.channel)));
@@ -505,6 +518,25 @@ function CrossNetworkCost() {
           label="Blended CAC / trial"
           value={cacTrial != null ? fmtUSD(cacTrial) : "—"}
           tone="ink"
+        />
+        <HeadlineCard
+          label="Blended CAC / subscription"
+          value={cacSub != null ? fmtUSD(cacSub) : "—"}
+          tone="ink"
+        />
+        <HeadlineCard
+          label="LTV:CAC (30d LTV)"
+          value={
+            payback?.ltv30_to_cac != null
+              ? `${num(payback.ltv30_to_cac).toFixed(2)}×`
+              : "—"
+          }
+          tone={num(payback?.ltv30_to_cac) >= 1 ? "ink" : "neutral"}
+        />
+        <HeadlineCard
+          label="Payback"
+          value={payback?.payback_verdict ?? "—"}
+          tone="neutral"
         />
         <HeadlineCard
           label="Cross-network spend"
@@ -665,6 +697,7 @@ function CrossNetworkCost() {
 function SkanAttribution() {
   const [rows, setRows] = React.useState<SkanCampaignEfficiencyRow[]>([]);
   const [recon, setRecon] = React.useState<SkanReconciliationRow | null>(null);
+  const [health, setHealth] = React.useState<SkanHealthRow | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -672,13 +705,15 @@ function SkanAttribution() {
     let alive = true;
     (async () => {
       try {
-        const [r, rc] = await Promise.all([
+        const [r, rc, h] = await Promise.all([
           API.fetchSkanCampaignEfficiency(),
           API.fetchSkanReconciliation(),
+          API.fetchSkanHealth().catch(() => null),
         ]);
         if (!alive) return;
         setRows(r);
         setRecon(rc);
+        setHealth(h);
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
@@ -731,6 +766,45 @@ function SkanAttribution() {
           tone="neutral"
         />
       </div>
+
+      {/* Protect360-lite — postback integrity at a glance. Only meaningful once
+          postbacks land; until then everything reads 0. */}
+      {health != null && health.postbacks_total > 0 && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 16px",
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--line)",
+            borderRadius: 12,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px 18px",
+          }}
+        >
+          <span>
+            <strong>Postback health:</strong> {health.postbacks_total} received
+          </span>
+          <span>
+            {health.sig_valid} valid sig
+            {health.sig_invalid_or_unverified > 0 && (
+              <strong style={{ color: "var(--accent)" }}>
+                {" "}· {health.sig_invalid_or_unverified} invalid/unverified
+              </strong>
+            )}
+          </span>
+          <span>
+            redownloads {health.redownloads}
+            {health.redownload_rate != null &&
+              ` (${(num(health.redownload_rate) * 100).toFixed(0)}%)`}
+          </span>
+          <span>
+            {health.click_through} click / {health.view_through} view
+          </span>
+        </div>
+      )}
 
       {/* Limitations disclosure — required: never over-promise SKAN. */}
       <div
@@ -1000,6 +1074,166 @@ function ActiveExperiments() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Anomaly alerts (Singular-style). Unresolved spend/CPI/CTR/CPM anomalies from
+// the last 3 days, written daily by /api/cron/marketing-alerts. Renders nothing
+// when all-clear so the page stays quiet by default.
+// ---------------------------------------------------------------------------
+function MarketingAlerts() {
+  const [alerts, setAlerts] = React.useState<MarketingAlertRow[]>([]);
+
+  React.useEffect(() => {
+    let alive = true;
+    API.fetchMarketingAlerts(3)
+      .then((a) => {
+        if (alive) setAlerts(a);
+      })
+      .catch(() => {
+        /* table may not exist yet on older deploys — stay quiet */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!alerts.length) return null;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <SectionLabel>Anomaly alerts (last 3 days)</SectionLabel>
+      <div style={{ display: "grid", gap: 8 }}>
+        {alerts.map((a) => (
+          <div
+            key={a.id}
+            style={{
+              padding: "10px 14px",
+              fontSize: 13,
+              borderRadius: 10,
+              border: "1px solid var(--line)",
+              borderLeft: `4px solid ${
+                a.severity === "critical" ? "var(--accent)" : "var(--p-emma)"
+              }`,
+              background: "var(--surface-2)",
+              color: "var(--ink-2)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <span>{a.message}</span>
+            <span style={{ color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+              {fmtDate(a.alert_date)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payer retention cohorts (AppsFlyer-style cohort report). Weekly cohorts by
+// first_active_at from rc_customer_snapshot — fills after the first
+// audience-sync run populates the snapshot; silent until then.
+// ---------------------------------------------------------------------------
+function PayerRetentionCohorts() {
+  const [rows, setRows] = React.useState<PayerRetentionCohortRow[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    API.fetchPayerRetentionCohorts()
+      .then((r) => {
+        if (alive) setRows(r);
+      })
+      .catch((e) => {
+        if (alive) setError((e as Error).message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <div>
+      <SectionLabel>Payer retention cohorts · weekly</SectionLabel>
+      {error && (
+        <div style={{ color: "var(--accent)", fontSize: 13, marginBottom: 8 }}>{error}</div>
+      )}
+      {rows.length === 0 ? (
+        <div
+          style={{
+            padding: "14px 16px",
+            fontSize: 13,
+            color: "var(--ink-3)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--line)",
+            borderRadius: 12,
+          }}
+        >
+          No cohort data yet — fills automatically after the weekly audience-sync
+          cron snapshots RevenueCat payers (Mondays 08:00 UTC, or trigger{" "}
+          <code>/api/cron/refresh-audiences</code> manually).
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 14,
+            overflow: "hidden",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--surface-2)", color: "var(--ink-3)" }}>
+                <Td align="left">Cohort week</Td>
+                <Td>Payers</Td>
+                <Td>Active now</Td>
+                <Td>Lapsed</Td>
+                <Td>Retention</Td>
+                <Td>Avg tenure</Td>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const ret = r.retention_rate != null ? num(r.retention_rate) : null;
+                return (
+                  <tr key={r.cohort_week} style={{ borderTop: "1px solid var(--line)" }}>
+                    <Td align="left">{fmtDate(r.cohort_week)}</Td>
+                    <Td>{r.payers}</Td>
+                    <Td>{r.active_now}</Td>
+                    <Td>{r.lapsed}</Td>
+                    <Td>
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color:
+                            ret == null
+                              ? "var(--ink-3)"
+                              : ret >= 0.8
+                                ? "color-mix(in oklab, var(--p-olivia) 70%, var(--ink))"
+                                : ret < 0.5
+                                  ? "var(--accent)"
+                                  : "var(--ink-2)",
+                        }}
+                      >
+                        {ret != null ? `${(ret * 100).toFixed(0)}%` : "—"}
+                      </span>
+                    </Td>
+                    <Td>
+                      {r.avg_tenure_days != null ? `${num(r.avg_tenure_days).toFixed(0)}d` : "—"}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

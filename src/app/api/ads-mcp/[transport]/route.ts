@@ -448,7 +448,9 @@ const mcpHandler = createMcpHandler(
         const ver = process.env.META_API_VERSION ?? "v22.0";
         const id = dataset_id || DEFAULT_DATASET;
         try {
-          const url = `https://graph.facebook.com/${ver}/${id}?fields=name,is_active,last_fired_time,server_last_fired_time`;
+          // NOTE: `is_active` is not a valid field on the dataset/pixel node
+          // (Graph returns "(#100) nonexisting field") — request only real ones.
+          const url = `https://graph.facebook.com/${ver}/${id}?fields=name,last_fired_time,server_last_fired_time`;
           const res = await fetch(url, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
@@ -456,6 +458,83 @@ const mcpHandler = createMcpHandler(
           const body = await res.json();
           if (!res.ok) return fail(`Meta dataset read failed: ${res.status} ${JSON.stringify(body)}`);
           return json(body);
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
+    // --- READ: SKAN overview (first-party MMP status) ---------------------
+    // One-call answer to "are SKAN trials landing, and what do they cost?".
+    // Reads the anon-readable aggregate views (the raw skan_postbacks table is
+    // service-role only); rows with campaign_key 'src:NNNN' are postbacks whose
+    // source_identifier has no row in skan_campaign_mapping yet.
+    server.tool(
+      "skan_overview",
+      "First-party SKAN MMP status: total postbacks + per-campaign SKAN trials/subscribes with cost_per_skan_trial / cost_per_skan_subscribe (skan_campaign_efficiency), reconciliation vs RevenueCat truth (skan_reconciliation), and blended CAC per trial/subscription (cross_network_blended). Unmapped source ids show as campaign_key 'src:NNNN' — add them to skan_campaign_mapping.",
+      {},
+      async () => {
+        if (!SUPABASE_URL || !SUPABASE_ANON) {
+          return fail("Supabase not configured (NEXT_PUBLIC_SUPABASE_URL / ANON_KEY).");
+        }
+        const readView = async (view: string) => {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/${view}?select=*`, {
+            headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(`Supabase ${view} read failed: ${res.status}`);
+          return (await res.json()) as Array<Record<string, unknown>>;
+        };
+        try {
+          const [efficiency, reconciliation, blended, health, payback] = await Promise.all([
+            readView("skan_campaign_efficiency"),
+            readView("skan_reconciliation"),
+            readView("cross_network_blended"),
+            readView("skan_health").catch(() => []),
+            readView("payback_summary").catch(() => []),
+          ]);
+          const unmapped = efficiency
+            .map((r) => r.campaign_key)
+            .filter((k): k is string => typeof k === "string" && k.startsWith("src:"));
+          return json({
+            reconciliation: reconciliation[0] ?? null,
+            blended: blended[0] ?? null,
+            payback: payback[0] ?? null,
+            health: health[0] ?? null,
+            campaigns: efficiency,
+            unmapped_source_ids: unmapped,
+            note:
+              unmapped.length > 0
+                ? "Unmapped SKAN source ids present — insert rows into skan_campaign_mapping to attribute them."
+                : "No unmapped source ids.",
+          });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
+    // --- READ: anomaly alerts (Singular-style) ----------------------------
+    server.tool(
+      "marketing_alerts",
+      "Unresolved marketing anomaly alerts from the last N days (spend/CPI/CTR/CPM z-score anomalies per campaign + account, written daily by the marketing-alerts cron).",
+      { days: z.number().int().min(1).max(30).default(3) },
+      async ({ days }) => {
+        if (!SUPABASE_URL || !SUPABASE_ANON) {
+          return fail("Supabase not configured (NEXT_PUBLIC_SUPABASE_URL / ANON_KEY).");
+        }
+        try {
+          const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+          const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/marketing_alerts?select=*&alert_date=gte.${since}&resolved_at=is.null&order=alert_date.desc,severity.desc`,
+            {
+              headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
+              cache: "no-store",
+            },
+          );
+          if (!res.ok) return fail(`marketing_alerts read failed: ${res.status}`);
+          const alerts = (await res.json()) as Array<Record<string, unknown>>;
+          return json({ days, count: alerts.length, alerts });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }

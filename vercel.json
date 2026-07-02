@@ -13,6 +13,7 @@
     { "path": "/api/cron/sync-revenuecat", "schedule": "30 7 * * *" },
     { "path": "/api/cron/sync-tiktok-ads", "schedule": "15 7 * * *" },
     { "path": "/api/cron/refresh-audiences", "schedule": "0 8 * * 1" },
+    { "path": "/api/cron/marketing-alerts", "schedule": "45 7 * * *" },
     { "path": "/api/cron/cull-variants", "schedule": "0 14 * * *" }
   ]
 }
