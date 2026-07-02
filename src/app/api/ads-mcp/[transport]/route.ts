@@ -541,6 +541,118 @@ const mcpHandler = createMcpHandler(
       },
     );
 
+    // --- WRITE: URL tags (per-ad UTM attribution) --------------------------
+    // url_tags lives on the AdCreative and is immutable after creation, so this
+    // creates a sibling creative that reuses the SAME underlying post
+    // (effective_object_story_id → social proof preserved) with url_tags set,
+    // then points the ad at it. NOTE: swapping an ad's creative counts as a
+    // significant edit → re-review + learning reset on that ad.
+    const DEFAULT_URL_TAGS =
+      "utm_source=facebook&utm_campaign={{campaign.name}}&utm_medium={{adset.name}}&utm_content={{ad.name}}";
+    server.tool(
+      "set_url_tags",
+      "Add UTM url_tags to ads so the app's deferred-deep-link resolver can pipe per-ad attribution into RevenueCat (media_source/campaign/ad). Creates a url_tags-bearing copy of each ad's creative (same post — keeps social proof) and swaps the ad onto it. Skips ads that already carry the tags; only_active (default) skips non-ACTIVE ads. Significant edit: re-review + learning reset per ad. Guarded: requires confirm:true.",
+      {
+        ad_ids: z.array(z.string()).min(1).max(50),
+        url_tags: z.string().default(DEFAULT_URL_TAGS),
+        only_active: z.boolean().default(true),
+        confirm: z.boolean().default(false).describe("Must be true to actually apply the change"),
+        dry_run: z.boolean().default(false),
+      },
+      async ({ ad_ids, url_tags, only_active, confirm, dry_run }) => {
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        const ver = process.env.META_API_VERSION ?? "v22.0";
+        const account = meta.account.startsWith("act_") ? meta.account : `act_${meta.account}`;
+        const G = `https://graph.facebook.com/${ver}`;
+        const auth = { Authorization: `Bearer ${meta.token}` };
+
+        type AdInfo = {
+          id: string;
+          name?: string;
+          effective_status?: string;
+          creative?: {
+            id: string;
+            name?: string;
+            url_tags?: string;
+            effective_object_story_id?: string;
+            object_story_spec?: Record<string, unknown>;
+          };
+        };
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const adId of ad_ids) {
+          try {
+            const infoRes = await fetch(
+              `${G}/${adId}?fields=name,effective_status,creative{id,name,url_tags,effective_object_story_id,object_story_spec}`,
+              { headers: auth, cache: "no-store" },
+            );
+            const info = (await infoRes.json()) as AdInfo & { error?: { message: string } };
+            if (!infoRes.ok) {
+              results.push({ ad_id: adId, status: "error", error: info.error?.message ?? `HTTP ${infoRes.status}` });
+              continue;
+            }
+            if (only_active && info.effective_status !== "ACTIVE") {
+              results.push({ ad_id: adId, ad_name: info.name, status: "skipped_not_active", effective_status: info.effective_status });
+              continue;
+            }
+            if (info.creative?.url_tags === url_tags) {
+              results.push({ ad_id: adId, ad_name: info.name, status: "already_tagged" });
+              continue;
+            }
+            if (dry_run || !confirm) {
+              results.push({
+                ad_id: adId,
+                ad_name: info.name,
+                status: dry_run ? "dry_run_would_tag" : "needs_confirm",
+                current_url_tags: info.creative?.url_tags ?? null,
+                via: info.creative?.effective_object_story_id ? "object_story_id" : "object_story_spec",
+              });
+              continue;
+            }
+
+            // Build the replacement creative.
+            const body: Record<string, string> = {
+              name: `${info.creative?.name ?? info.name ?? adId} +utm`,
+              url_tags,
+            };
+            if (info.creative?.effective_object_story_id) {
+              body.object_story_id = info.creative.effective_object_story_id;
+            } else if (info.creative?.object_story_spec) {
+              body.object_story_spec = JSON.stringify(info.creative.object_story_spec);
+            } else {
+              results.push({ ad_id: adId, ad_name: info.name, status: "error", error: "creative has neither effective_object_story_id nor object_story_spec" });
+              continue;
+            }
+            const createRes = await fetch(`${G}/${account}/adcreatives`, {
+              method: "POST",
+              headers: { ...auth, "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams(body).toString(),
+            });
+            const created = (await createRes.json()) as { id?: string; error?: { message: string } };
+            if (!createRes.ok || !created.id) {
+              results.push({ ad_id: adId, ad_name: info.name, status: "error", error: created.error?.message ?? `creative create HTTP ${createRes.status}` });
+              continue;
+            }
+            const swapRes = await fetch(`${G}/${adId}`, {
+              method: "POST",
+              headers: { ...auth, "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ creative: JSON.stringify({ creative_id: created.id }) }).toString(),
+            });
+            const swapped = (await swapRes.json()) as { success?: boolean; error?: { message: string } };
+            if (!swapRes.ok) {
+              results.push({ ad_id: adId, ad_name: info.name, status: "error", error: swapped.error?.message ?? `creative swap HTTP ${swapRes.status}`, orphan_creative_id: created.id });
+              continue;
+            }
+            results.push({ ad_id: adId, ad_name: info.name, status: "tagged", new_creative_id: created.id });
+          } catch (e) {
+            results.push({ ad_id: adId, status: "error", error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        return json({ url_tags, applied: confirm && !dry_run, results });
+      },
+    );
+
     // --- WRITE: status (pause/activate) ----------------------------------
     const statusShape = {
       id: z.string().describe("Ad, ad set, or campaign id"),
