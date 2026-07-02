@@ -485,6 +485,7 @@ function CrossNetworkCost() {
   }, []);
 
   const cacTrial = blended?.blended_cac_per_trial_35d != null ? num(blended.blended_cac_per_trial_35d) : null;
+  const cacSub = blended?.blended_cac_per_sub_35d != null ? num(blended.blended_cac_per_sub_35d) : null;
   const roas = blended?.blended_roas_35d != null ? num(blended.blended_roas_35d) : null;
   const coverage = blended?.network_trial_coverage != null ? num(blended.network_trial_coverage) : null;
   const channels = Array.from(new Set(rows.map((r) => r.channel)));
@@ -504,6 +505,11 @@ function CrossNetworkCost() {
         <HeadlineCard
           label="Blended CAC / trial"
           value={cacTrial != null ? fmtUSD(cacTrial) : "—"}
+          tone="ink"
+        />
+        <HeadlineCard
+          label="Blended CAC / subscription"
+          value={cacSub != null ? fmtUSD(cacSub) : "—"}
           tone="ink"
         />
         <HeadlineCard
