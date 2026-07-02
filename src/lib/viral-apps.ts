@@ -37,7 +37,10 @@ export const VIRAL_FLOOR = 50_000;
 const HAIKU = "claude-haiku-4-5-20251001";
 const PROFILE_RESULTS = 12;
 const HASHTAG_RESULTS = 30;
-const SCRAPE_CONCURRENCY = 4;
+// Apify sync runs are ~30s each and purely I/O-bound — 8 in flight keeps a
+// 34-account watchlist around ~2.5min (the 300s route budget bit us at 4).
+const SCRAPE_CONCURRENCY = 8;
+const CLASSIFY_CONCURRENCY = 3;
 /** Hard cap on new-post classifications per run (cost guard). */
 const MAX_CLASSIFY_PER_RUN = 60;
 
@@ -152,7 +155,11 @@ const CLASSIFY_SCHEMA: Record<string, unknown> = {
       type: "boolean",
       description: "True if the post is about a mobile app or SaaS product (promoting, demoing, reviewing, or clearly made by an app brand).",
     },
-    app_name: { type: "string", description: "The app/product name if identifiable, else empty string." },
+    app_name: {
+      type: "string",
+      description:
+        "The app/product name if the post centers on ONE identifiable app. Use 'Multiple (listicle)' when it rounds up several apps. Empty string only when truly unidentifiable.",
+    },
     app_category: {
       type: "string",
       description: "Short category: health_fitness, glp1, wellness, productivity, finance, social, education, design, saas, consumer, other.",
@@ -346,37 +353,42 @@ export async function scrapeViralApps(opts?: {
     });
   }
 
-  // 5) upsert: refresh existing, classify + insert new
-  const seenThisRun = new Set<string>();
-  let classified = 0;
+  // 5) upsert: refresh existing, classify + insert new (both pooled — the
+  //    classify pass is the long pole on cold runs)
+  const unique = new Map<string, Candidate>();
   for (const c of candidates) {
     const url = c.item.webVideoUrl!;
-    if (seenThisRun.has(url)) continue;
-    seenThisRun.add(url);
+    if (!unique.has(url)) unique.set(url, c);
+  }
+  const all = [...unique.entries()];
+  const toRefresh = all.filter(([url]) => existingByUrl.has(url));
+  let toClassify = all.filter(([url]) => !existingByUrl.has(url));
+  if (toClassify.length > MAX_CLASSIFY_PER_RUN) {
+    summary.classify_capped = toClassify.length - MAX_CLASSIFY_PER_RUN;
+    toClassify = toClassify.slice(0, MAX_CLASSIFY_PER_RUN);
+  }
 
+  await pool(toRefresh, 6, async ([url, c]) => {
     try {
-      const existingId = existingByUrl.get(url);
-      if (existingId) {
-        await sbWrite("PATCH", `viral_app_posts?id=eq.${existingId}`, {
-          view_count: c.item.playCount ?? 0,
-          like_count: c.item.diggCount ?? 0,
-          comment_count: c.item.commentCount ?? 0,
-          share_count: c.item.shareCount ?? 0,
-          last_scraped_at: new Date().toISOString(),
-        });
-        summary.refreshed++;
-        continue;
-      }
+      await sbWrite("PATCH", `viral_app_posts?id=eq.${existingByUrl.get(url)}`, {
+        view_count: c.item.playCount ?? 0,
+        like_count: c.item.diggCount ?? 0,
+        comment_count: c.item.commentCount ?? 0,
+        share_count: c.item.shareCount ?? 0,
+        last_scraped_at: new Date().toISOString(),
+      });
+      summary.refreshed++;
+    } catch (e) {
+      summary.errors.push({ post_url: url, error: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
-      if (classified >= MAX_CLASSIFY_PER_RUN) {
-        summary.classify_capped++;
-        continue;
-      }
-      classified++;
+  await pool(toClassify, CLASSIFY_CONCURRENCY, async ([url, c]) => {
+    try {
       const tags = await classifyPost({ item: c.item, handle: c.handle, known: c.known });
       if (!tags.is_app_content) {
         summary.rejected_not_app++;
-        continue;
+        return;
       }
 
       // Re-host the cover so the feed doesn't depend on TikTok CDN expiry.
@@ -414,12 +426,11 @@ export async function scrapeViralApps(opts?: {
         why_it_hit: tags.why_it_hit || null,
         is_confirmed_app: true,
       });
-      existingByUrl.set(url, "new");
       summary.new_posts++;
     } catch (e) {
       summary.errors.push({ post_url: url, error: e instanceof Error ? e.message : String(e) });
     }
-  }
+  });
 
   return summary;
 }
