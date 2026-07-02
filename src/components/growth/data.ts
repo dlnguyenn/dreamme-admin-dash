@@ -32,6 +32,41 @@ export interface GrowthAdRow {
   video_id: string | null;
   video_3sec_views: number | null;
   video_thruplays: number | null;
+  message: string | null;
+  headline: string | null;
+}
+
+export interface CreativeTag {
+  ad_id: string;
+  visual_format: string;
+  messaging_theme: string;
+  theme_description: string | null;
+  audience: string | null;
+  hook_type: string | null;
+  confidence: number | null;
+}
+
+export interface MarketingAlert {
+  id: string;
+  alert_date: string;
+  scope: string;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  metric: string;
+  value: string | number | null;
+  baseline: string | number | null;
+  z: string | number | null;
+  direction: "spike" | "drop";
+  severity: "info" | "warn" | "critical";
+  message: string;
+}
+
+export interface PaybackSummary {
+  blended_cac_per_trial_35d: string | number | null;
+  blended_cac_per_sub_35d: string | number | null;
+  ltv_30d_per_payer: string | number | null;
+  ltv30_to_cac: string | number | null;
+  payback_verdict: string | null;
 }
 
 export interface GrowthRcRow {
@@ -100,7 +135,7 @@ async function sbSelect<T>(path: string): Promise<T[]> {
 const AD_COLS =
   "ad_id,date,ad_name,adset_name,campaign_id,campaign_name,effective_status," +
   "spend,impressions,clicks,installs,trial_starts,purchases,purchase_value," +
-  "thumbnail_url,image_url,video_id,video_3sec_views,video_thruplays";
+  "thumbnail_url,image_url,video_id,video_3sec_views,video_thruplays,message,headline";
 
 /** Aggregate raw daily rows (already date-filtered by caller) per ad. */
 export function aggregateAds(rows: GrowthAdRow[]): Map<string, AdAgg> {
@@ -159,6 +194,12 @@ export interface GrowthData {
   rows: GrowthAdRow[];
   rcRows: GrowthRcRow[];
   blended: BlendedRow[];
+  /** Motion-style AI tags keyed by ad_id (empty until the tagger runs). */
+  tags: Map<string, CreativeTag>;
+  /** Unresolved anomaly alerts from the last 7 days, severity-sorted. */
+  alerts: MarketingAlert[];
+  /** LTV:CAC payback snapshot (single row) or null. */
+  payback: PaybackSummary | null;
   /** first_seen per ad across the FULL 56d window (for "weeks on board"). */
   firstSeen: Map<string, string>;
   loading: boolean;
@@ -166,10 +207,15 @@ export interface GrowthData {
   refresh: () => void;
 }
 
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, warn: 1, info: 2 };
+
 export function useGrowthData(): GrowthData {
   const [rows, setRows] = React.useState<GrowthAdRow[]>([]);
   const [rcRows, setRcRows] = React.useState<GrowthRcRow[]>([]);
   const [blended, setBlended] = React.useState<BlendedRow[]>([]);
+  const [tags, setTags] = React.useState<Map<string, CreativeTag>>(new Map());
+  const [alerts, setAlerts] = React.useState<MarketingAlert[]>([]);
+  const [payback, setPayback] = React.useState<PaybackSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [tick, setTick] = React.useState(0);
@@ -181,7 +227,11 @@ export function useGrowthData(): GrowthData {
         setError(null);
         const since = daysAgoISO(WINDOW_DAYS - 1);
         const until = utcDate(new Date());
-        const [ads, rc, bl] = await Promise.all([
+        // Tags / alerts / payback tables ship after the core ones — treat
+        // their failures as soft (empty result) so the tab still renders
+        // if the 0039 migration hasn't landed yet.
+        const soft = <T,>(p: Promise<T[]>): Promise<T[]> => p.catch(() => [] as T[]);
+        const [ads, rc, bl, tagRows, alertRows, paybackRows] = await Promise.all([
           sbSelect<GrowthAdRow>(
             `ad_insights_daily?select=${AD_COLS}&date=gte.${since}&date=lte.${until}&limit=20000`,
           ),
@@ -191,11 +241,31 @@ export function useGrowthData(): GrowthData {
           sbSelect<BlendedRow>(
             `blended_marketing_efficiency?select=*&order=date.desc&limit=30`,
           ),
+          soft(
+            sbSelect<CreativeTag>(
+              `ad_creative_tags?select=ad_id,visual_format,messaging_theme,theme_description,audience,hook_type,confidence&limit=5000`,
+            ),
+          ),
+          soft(
+            sbSelect<MarketingAlert>(
+              `marketing_alerts?select=*&alert_date=gte.${daysAgoISO(6)}&resolved_at=is.null&order=alert_date.desc&limit=30`,
+            ),
+          ),
+          soft(sbSelect<PaybackSummary>(`payback_summary?select=*&limit=1`)),
         ]);
         if (!alive) return;
         setRows(ads);
         setRcRows(rc);
         setBlended(bl);
+        setTags(new Map(tagRows.map((t) => [t.ad_id, t])));
+        setAlerts(
+          [...alertRows].sort(
+            (a, b) =>
+              (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3) ||
+              (a.alert_date < b.alert_date ? 1 : -1),
+          ),
+        );
+        setPayback(paybackRows[0] ?? null);
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
@@ -221,7 +291,7 @@ export function useGrowthData(): GrowthData {
     setTick((t) => t + 1);
   }, []);
 
-  return { rows, rcRows, blended, firstSeen, loading, error, refresh };
+  return { rows, rcRows, blended, tags, alerts, payback, firstSeen, loading, error, refresh };
 }
 
 // --- window slicing helpers used by Overview + Leaderboard ------------------
@@ -242,11 +312,79 @@ export function sliceWindows(rows: GrowthAdRow[], days: number): WindowSlices {
   return { cur: aggregateAds(curRows), prev: aggregateAds(prevRows), curRows, since };
 }
 
-export type ShiftKind = "scaling" | "declining" | "new" | "paused";
+export type ShiftKind = "scaling" | "declining" | "fatiguing" | "new" | "paused";
 
 export interface ShiftAd {
   agg: AdAgg;
   deltaPct: number | null;
+  /** Short human note, e.g. "hook −31% WoW, spend flat" (fatigue only). */
+  note?: string;
+}
+
+// --- fatigue detection -------------------------------------------------------
+// An ad is "fatiguing" when it keeps delivering but attention decays:
+//   (a) trailing-7d CTR or hook_rate ≤ 0.75× the prior 7d while spend held
+//       (≥ 0.8× prior week), min 1,000 impressions in each week; or
+//   (b) cost per trial rose two consecutive weeks (each week ≥ 1 trial).
+// Only ACTIVE ads with ≥ $50 spend over the last 14d are considered.
+// NOTE: mirrored server-side in src/lib/growth-tools.ts (fatigue_check tool)
+// — keep the thresholds in sync.
+
+export interface FatigueInfo {
+  ad_id: string;
+  note: string;
+}
+
+export function detectFatigue(rows: GrowthAdRow[]): Map<string, FatigueInfo> {
+  const w0 = sliceWindows(rows, 7); // cur = last 7d, prev = 7d before
+  const w2rows = rows.filter((x) => x.date >= daysAgoISO(20) && x.date < daysAgoISO(13));
+  const w2 = aggregateAds(w2rows);
+  const last14 = aggregateAds(rows.filter((x) => x.date >= daysAgoISO(13)));
+
+  const out = new Map<string, FatigueInfo>();
+  for (const cur of w0.cur.values()) {
+    const base = last14.get(cur.ad_id);
+    if (!base || base.effective_status !== "ACTIVE" || base.spend < 50) continue;
+    const prev = w0.prev.get(cur.ad_id);
+
+    // (a) attention decay while delivery holds
+    if (prev && cur.impressions >= 1000 && prev.impressions >= 1000 && cur.spend >= prev.spend * 0.8) {
+      const ctrCur = safeDiv(cur.clicks, cur.impressions);
+      const ctrPrev = safeDiv(prev.clicks, prev.impressions);
+      const hookCur = safeDiv(cur.v3, cur.impressions);
+      const hookPrev = safeDiv(prev.v3, prev.impressions);
+      const ctrDrop = Number.isFinite(ctrCur) && Number.isFinite(ctrPrev) && ctrPrev > 0 && ctrCur <= ctrPrev * 0.75;
+      const hookDrop =
+        Number.isFinite(hookCur) && Number.isFinite(hookPrev) && hookPrev > 0 && hookCur <= hookPrev * 0.75;
+      if (ctrDrop || hookDrop) {
+        const which = hookDrop ? "hook" : "CTR";
+        const pct = hookDrop
+          ? Math.round((hookCur / hookPrev - 1) * 100)
+          : Math.round((ctrCur / ctrPrev - 1) * 100);
+        out.set(cur.ad_id, {
+          ad_id: cur.ad_id,
+          note: `${which} ${pct}% WoW, spend held`,
+        });
+        continue;
+      }
+    }
+
+    // (b) CPT rising two consecutive weeks
+    const p1 = w0.prev.get(cur.ad_id);
+    const p2 = w2.get(cur.ad_id);
+    if (p1 && p2 && cur.trial_starts >= 1 && p1.trial_starts >= 1 && p2.trial_starts >= 1) {
+      const c0 = cur.spend / cur.trial_starts;
+      const c1 = p1.spend / p1.trial_starts;
+      const c2 = p2.spend / p2.trial_starts;
+      if (c0 > c1 && c1 > c2) {
+        out.set(cur.ad_id, {
+          ad_id: cur.ad_id,
+          note: `CPT rising 2 wks ($${c2.toFixed(0)}→$${c1.toFixed(0)}→$${c0.toFixed(0)})`,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export function classifyShifts(rows: GrowthAdRow[]): Record<ShiftKind, ShiftAd[]> {
@@ -278,10 +416,24 @@ export function classifyShifts(rows: GrowthAdRow[]): Record<ShiftKind, ShiftAd[]
     .filter((a) => a.effective_status !== "ACTIVE" && a.spend > 0)
     .map((a) => ({ agg: a, deltaPct: null }));
 
+  // fatiguing: attention decaying while delivery holds (see detectFatigue)
+  const fatigue = detectFatigue(rows);
+  const fatiguing: ShiftAd[] = [...cur.values()]
+    .filter((a) => fatigue.has(a.ad_id))
+    .map((a) => {
+      const p = prev.get(a.ad_id);
+      return {
+        agg: a,
+        deltaPct: p && p.spend > 0 ? ((a.spend - p.spend) / p.spend) * 100 : null,
+        note: fatigue.get(a.ad_id)!.note,
+      };
+    });
+
   const bySpend = (x: ShiftAd[]) => x.sort((a, b) => b.agg.spend - a.agg.spend);
   return {
     scaling: bySpend(scaling),
     declining: bySpend(declining),
+    fatiguing: bySpend(fatiguing),
     new: bySpend(fresh),
     paused: bySpend(paused),
   };

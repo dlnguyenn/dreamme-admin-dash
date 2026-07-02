@@ -731,11 +731,15 @@ export async function runGrowthAgent(params: {
   };
 }
 
-/** Single forced-tool call that returns validated structured output. */
+/**
+ * Single forced-tool call that returns validated structured output.
+ * `user` accepts plain text or an array of content blocks (e.g. image +
+ * text for the creative tagger).
+ */
 export async function structuredCall<T>(params: {
   model: string;
   system: string;
-  user: string;
+  user: string | Array<Record<string, unknown>>;
   toolName: string;
   toolDescription: string;
   schema: Record<string, unknown>;
