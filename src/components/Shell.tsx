@@ -14,6 +14,7 @@ export type DashId =
   | "poster"
   | "resources"
   | "spend"
+  | "growth"
   | "marketing"
   | "creatives"
   | "requests"
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
   { id: "spend", label: "Spend", icon: "Chart", status: "live", desc: "AI + business expenses", adminOnly: true },
+  { id: "growth", label: "Growth AI", icon: "Sparkles", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
   { id: "marketing", label: "Marketing Efficiency", icon: "Chart", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
   { id: "creatives", label: "Creatives", icon: "Image", status: "live", desc: "Meta ad performance + qualified CPA", adminOnly: true },
   { id: "requests", label: "Feature Requests", icon: "Bookmark", status: "live", desc: "User-submitted product asks", adminOnly: true },

@@ -16,6 +16,7 @@ import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
 import { SpyTool } from "./SpyTool";
 import { SpendDashboard } from "./SpendDashboard";
+import { GrowthAI } from "./GrowthAI";
 import { MarketingEfficiency } from "./MarketingEfficiency";
 import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
@@ -203,6 +204,11 @@ export function App() {
     screen = <SpyTool />;
   } else if (current === "spend") {
     screen = <SpendDashboard />;
+  } else if (current === "growth") {
+    // Admin-only surface (same defense-in-depth as SynthID/ImageStudio):
+    // nav hides it for non-admins, but the dash id persists in localStorage
+    // so re-check the role at render time.
+    screen = role === "admin" ? <GrowthAI /> : <ComingSoon item={currentItem} />;
   } else if (current === "marketing") {
     screen = <MarketingEfficiency />;
   } else if (current === "creatives") {
