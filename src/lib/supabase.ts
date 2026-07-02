@@ -16,7 +16,11 @@ import type {
   CampaignLtvCohortRow,
   CrossNetworkBlendedRow,
   CrossNetworkCampaignRow,
+  MarketingAlertRow,
+  PaybackSummaryRow,
+  PayerRetentionCohortRow,
   SkanCampaignEfficiencyRow,
+  SkanHealthRow,
   SkanReconciliationRow,
   SpendLineItem,
   SpendLineItemRow,
@@ -518,6 +522,40 @@ export const API = {
     }
     const rows = await sbSelect<CrossNetworkBlendedRow>(
       "cross_network_blended",
+      "select=*&limit=1",
+    );
+    return rows.length ? rows[0] : null;
+  },
+
+  /** Unresolved anomaly alerts from the last N days. public.marketing_alerts. */
+  async fetchMarketingAlerts(days = 3): Promise<MarketingAlertRow[]> {
+    const since = new Date(Date.now() - days * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+    return sbSelect<MarketingAlertRow>(
+      "marketing_alerts",
+      `select=*&alert_date=gte.${since}&resolved_at=is.null&order=alert_date.desc,severity.desc`,
+    );
+  },
+
+  /** Weekly payer retention cohorts. public.payer_retention_cohorts. */
+  async fetchPayerRetentionCohorts(): Promise<PayerRetentionCohortRow[]> {
+    return sbSelect<PayerRetentionCohortRow>(
+      "payer_retention_cohorts",
+      "select=*&limit=26",
+    );
+  },
+
+  /** Postback health (Protect360-lite). public.skan_health. */
+  async fetchSkanHealth(): Promise<SkanHealthRow | null> {
+    const rows = await sbSelect<SkanHealthRow>("skan_health", "select=*&limit=1");
+    return rows.length ? rows[0] : null;
+  },
+
+  /** LTV:CAC payback verdict. public.payback_summary. */
+  async fetchPaybackSummary(): Promise<PaybackSummaryRow | null> {
+    const rows = await sbSelect<PaybackSummaryRow>(
+      "payback_summary",
       "select=*&limit=1",
     );
     return rows.length ? rows[0] : null;

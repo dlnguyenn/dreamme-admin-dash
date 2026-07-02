@@ -486,10 +486,12 @@ const mcpHandler = createMcpHandler(
           return (await res.json()) as Array<Record<string, unknown>>;
         };
         try {
-          const [efficiency, reconciliation, blended] = await Promise.all([
+          const [efficiency, reconciliation, blended, health, payback] = await Promise.all([
             readView("skan_campaign_efficiency"),
             readView("skan_reconciliation"),
             readView("cross_network_blended"),
+            readView("skan_health").catch(() => []),
+            readView("payback_summary").catch(() => []),
           ]);
           const unmapped = efficiency
             .map((r) => r.campaign_key)
@@ -497,6 +499,8 @@ const mcpHandler = createMcpHandler(
           return json({
             reconciliation: reconciliation[0] ?? null,
             blended: blended[0] ?? null,
+            payback: payback[0] ?? null,
+            health: health[0] ?? null,
             campaigns: efficiency,
             unmapped_source_ids: unmapped,
             note:
@@ -504,6 +508,33 @@ const mcpHandler = createMcpHandler(
                 ? "Unmapped SKAN source ids present — insert rows into skan_campaign_mapping to attribute them."
                 : "No unmapped source ids.",
           });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
+    // --- READ: anomaly alerts (Singular-style) ----------------------------
+    server.tool(
+      "marketing_alerts",
+      "Unresolved marketing anomaly alerts from the last N days (spend/CPI/CTR/CPM z-score anomalies per campaign + account, written daily by the marketing-alerts cron).",
+      { days: z.number().int().min(1).max(30).default(3) },
+      async ({ days }) => {
+        if (!SUPABASE_URL || !SUPABASE_ANON) {
+          return fail("Supabase not configured (NEXT_PUBLIC_SUPABASE_URL / ANON_KEY).");
+        }
+        try {
+          const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+          const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/marketing_alerts?select=*&alert_date=gte.${since}&resolved_at=is.null&order=alert_date.desc,severity.desc`,
+            {
+              headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
+              cache: "no-store",
+            },
+          );
+          if (!res.ok) return fail(`marketing_alerts read failed: ${res.status}`);
+          const alerts = (await res.json()) as Array<Record<string, unknown>>;
+          return json({ days, count: alerts.length, alerts });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }

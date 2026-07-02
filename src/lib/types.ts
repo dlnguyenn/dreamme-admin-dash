@@ -248,6 +248,61 @@ export interface SkanReconciliationRow {
   blended_cac_35d: string | number | null;
 }
 
+// Anomaly alerts from public.marketing_alerts (written daily by
+// /api/cron/marketing-alerts — Singular-style spend/CPI/CTR/CPM anomalies).
+export interface MarketingAlertRow {
+  id: string;
+  alert_date: string;
+  scope: "account" | "campaign";
+  campaign_id: string | null;
+  campaign_name: string | null;
+  metric: string;
+  value: string | number | null;
+  baseline: string | number | null;
+  z: string | number | null;
+  direction: "spike" | "drop" | null;
+  severity: "info" | "warn" | "critical";
+  message: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+// AppsFlyer-style weekly payer retention cohorts from
+// public.payer_retention_cohorts (fed by rc_customer_snapshot; empty until the
+// first audience-sync run populates the snapshot).
+export interface PayerRetentionCohortRow {
+  cohort_week: string;
+  payers: number;
+  active_now: number;
+  lapsed: number;
+  retention_rate: string | number | null;
+  avg_tenure_days: string | number | null;
+}
+
+// Protect360-lite postback health from public.skan_health.
+export interface SkanHealthRow {
+  postbacks_total: number;
+  sig_valid: number;
+  sig_invalid_or_unverified: number;
+  did_not_win: number;
+  redownloads: number;
+  redownload_rate: string | number | null;
+  click_through: number;
+  view_through: number;
+  first_postback_at: string | null;
+  last_postback_at: string | null;
+}
+
+// LTV:CAC payback verdict from public.payback_summary (30d LTV — conservative
+// vs lifetime).
+export interface PaybackSummaryRow {
+  blended_cac_per_trial_35d: string | number | null;
+  blended_cac_per_sub_35d: string | number | null;
+  ltv_30d_per_payer: string | number | null;
+  ltv30_to_cac: string | number | null;
+  payback_verdict: string | null;
+}
+
 // Module 1 — Cross-Network Cost. One row per (channel, campaign) over 35d from
 // public.cross_network_campaign_efficiency. Trial/purchase/revenue counts are
 // NETWORK-REPORTED (unreliable on iOS — networks under-report); use for relative
