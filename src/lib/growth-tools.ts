@@ -829,6 +829,77 @@ export const GROWTH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "viral_app_inspo",
+    description:
+      "Viral organic content from OTHER apps (SaaS + consumer) on TikTok/Instagram — the inspo feed scraped 2x/week (≥50k views, AI-tagged with format, hook type, on-screen hook text, and why-it-hit). Use for 'what's going viral for other apps', competitive creative research, and adapting winning hooks/formats for DreamMe. Returns posts plus a trending-apps rollup.",
+    input_schema: {
+      type: "object",
+      properties: {
+        platform: { type: "string", enum: ["tiktok", "instagram", "all"], description: "Default all." },
+        category: { type: "string", description: "Filter by app category, e.g. health_fitness, wellness, productivity, finance." },
+        app_name: { type: "string", description: "Filter to one app (exact name, e.g. 'Duolingo')." },
+        min_views: { type: "number", description: "View floor. Default 50000." },
+        days: { type: "number", description: "Only posts published in the last N days (1-365). Default: no limit." },
+        limit: { type: "number", description: "Max posts returned (1-40). Default 20." },
+      },
+    },
+    run: async (input) => {
+      const filters = ["select=*", "is_confirmed_app=eq.true"];
+      if (input.platform === "tiktok" || input.platform === "instagram") {
+        filters.push(`platform=eq.${input.platform}`);
+      }
+      if (typeof input.category === "string" && input.category) {
+        filters.push(`app_category=eq.${encodeURIComponent(input.category)}`);
+      }
+      if (typeof input.app_name === "string" && input.app_name) {
+        filters.push(`app_name=eq.${encodeURIComponent(input.app_name)}`);
+      }
+      const minViews = Math.max(0, Math.floor(num(input.min_views))) || 50_000;
+      filters.push(`view_count=gte.${minViews}`);
+      const days = Math.floor(num(input.days));
+      if (days >= 1 && days <= 365) {
+        filters.push(`posted_at=gte.${daysAgo(days - 1)}`);
+      }
+      const limit = Math.max(1, Math.min(40, Math.floor(num(input.limit)) || 20));
+      filters.push(`order=view_count.desc`, `limit=${limit}`);
+      const rows = await sbSelect<Record<string, unknown>>(`viral_app_posts?${filters.join("&")}`);
+
+      // trending rollup over the same filter set (minus the row limit)
+      const byApp = new Map<string, { app: string; posts: number; views: number }>();
+      for (const p of rows) {
+        const app = String(p.app_name ?? "");
+        if (!app || app === "Multiple (listicle)") continue;
+        let t = byApp.get(app);
+        if (!t) {
+          t = { app, posts: 0, views: 0 };
+          byApp.set(app, t);
+        }
+        t.posts++;
+        t.views += num(p.view_count);
+      }
+      return {
+        floor: minViews,
+        trending_apps: [...byApp.values()].sort((a, b) => b.views - a.views).slice(0, 10),
+        posts: rows.map((p) => ({
+          platform: p.platform,
+          app_name: p.app_name,
+          app_category: p.app_category,
+          by_brand: p.by_brand,
+          author: p.author_handle,
+          views: num(p.view_count),
+          likes: num(p.like_count),
+          posted_at: p.posted_at,
+          format: p.format,
+          hook_type: p.hook_type,
+          hook_text: p.hook_text,
+          why_it_hit: p.why_it_hit,
+          caption_excerpt: String(p.caption ?? "").slice(0, 200),
+          url: p.post_url,
+        })),
+      };
+    },
+  },
+  {
     name: "propose_action",
     description:
       "Propose a Meta Ads change for the user to confirm — pause/activate an ad, set an ad set or campaign daily budget, or duplicate an ad set. This NEVER executes anything: it renders a confirmation card in the dashboard that the user must explicitly approve. Only propose after the data justifies it, cite the numbers in `reason`, and propose at most one action per distinct change. Never claim a change was made.",
@@ -895,7 +966,7 @@ export const GROWTH_SYSTEM_PROMPT = `You are the DreamMe Growth AI — the marke
 
 ## How to answer
 - ALWAYS pull data with tools before answering anything quantitative. Start with week_over_week for "how are we doing" questions; use ad_performance / creative_attention for creative questions; blended_efficiency + rc_snapshot for efficiency/LTV questions.
-- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check.
+- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend / competitive creative research" → viral_app_inspo.
 
 ## Actions (propose_action)
 - You can PROPOSE Meta changes — pause/activate an ad, set an ad set/campaign daily budget, duplicate an ad set — via the propose_action tool. It never executes; the user sees a confirmation card and must approve.

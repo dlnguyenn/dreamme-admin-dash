@@ -14,6 +14,7 @@ import { ActionCard, actionDetail, type ChatAction, type ActionState } from "./A
 import {
   fmtUSD,
   fmtInt,
+  fmtCompact,
   timeAgo,
   SectionLabel,
   DeltaChip,
@@ -66,11 +67,22 @@ interface RecapStatsAd {
   ctr_pct: number | null;
 }
 
+interface AppWorldItem {
+  app_name: string | null;
+  platform: string;
+  views: number;
+  hook_text: string | null;
+  why_it_hit: string | null;
+  format: string | null;
+  url: string;
+}
+
 interface RecapResponse {
   generated_at: string;
   model: string;
   stats: {
     window: { since: string; until: string };
+    app_world?: AppWorldItem[];
     totals: {
       spend: number;
       spend_delta_pct: number | null;
@@ -922,6 +934,57 @@ function RecapRail({ data }: { data: GrowthData }) {
                           <span style={{ color: "var(--ink-3)" }}>{a.detail}</span>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recap.stats.app_world && recap.stats.app_world.length > 0 && (
+                <div>
+                  <SectionLabel>📱 From the app world</SectionLabel>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {recap.stats.app_world.map((p, i) => (
+                      <a
+                        key={i}
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: "block",
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          border: "1px solid var(--line)",
+                          borderLeft: "3px solid var(--p-sydney)",
+                          background: "var(--surface)",
+                          textDecoration: "none",
+                          color: "inherit",
+                        }}
+                      >
+                        <div style={{ fontSize: 12.5, fontWeight: 600 }}>
+                          {p.app_name ?? "Unknown app"}
+                          <span
+                            style={{
+                              fontWeight: 400,
+                              color: "var(--ink-3)",
+                              fontFamily: "var(--font-geist-mono), monospace",
+                              fontSize: 10.5,
+                              marginLeft: 8,
+                            }}
+                          >
+                            {p.platform === "tiktok" ? "TikTok" : "IG"} · {fmtCompact(p.views)} views
+                          </span>
+                        </div>
+                        {p.hook_text && (
+                          <div style={{ fontSize: 12, color: "var(--ink-2)", fontStyle: "italic", marginTop: 2 }}>
+                            “{p.hook_text}”
+                          </div>
+                        )}
+                        {p.why_it_hit && (
+                          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, lineHeight: 1.45 }}>
+                            {p.why_it_hit}
+                          </div>
+                        )}
+                      </a>
                     ))}
                   </div>
                 </div>

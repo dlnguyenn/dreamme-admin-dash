@@ -11,7 +11,8 @@ and an auto-generated weekly recap.
 | Overview | Alerts strip (marketing_alerts), weekly KPI glance w/ WoW deltas + LTV:CAC payback card, spend-vs-trials chart (hover tooltip), performance shifts incl. **Fatiguing**, top spending creative + AI thought starters |
 | Creatives | Leaderboard (thumbnails, theme tags, WoW deltas, hook/hold/CTR) + **New launches** sprint view (weekly cadence vs target, goal chips) |
 | Insights | Messaging Themes wall (AI-tag driven: spend, hit rate, Testing/Scaling/Proven/Declining) + compare-by-dimension bars + "formats you haven't tried" |
-| AI Analyst | Tool-use chat over live data (13 tools), **propose_action** confirmation cards, weekly recap panel w/ DB history |
+| Inspo | Viral app content from TikTok + IG (`viral_app_posts`, scraped Tue/Fri, ≥50k views): trending-apps strip, filterable grid, post drawer w/ why-it-hit + "Adapt for DreamMe", watchlist manager |
+| AI Analyst | Tool-use chat over live data (14 tools incl. `viral_app_inspo`), **propose_action** confirmation cards, weekly recap panel w/ DB history + "From the app world" section |
 
 Everything opens the shared **AdDrawer** (tags + re-tag, copy, daily
 sparkline, attention funnel, WoW strip, confirm-gated pause/resume).

@@ -126,19 +126,71 @@ export const RECAP_TOOL_SCHEMA: Record<string, unknown> = {
 
 // --- generation --------------------------------------------------------------
 
+/** Deterministic "From the app world" item (viral_app_posts, no AI). */
+export interface AppWorldItem {
+  app_name: string | null;
+  platform: string;
+  views: number;
+  hook_text: string | null;
+  why_it_hit: string | null;
+  format: string | null;
+  url: string;
+}
+
+/** Recap stats carry an optional app-world section alongside the ad stats. */
+export type RecapStats = WeeklyStats & { app_world?: AppWorldItem[] };
+
 export interface RecapRow {
   id?: string;
   week_start: string;
   generated_at?: string;
   model: string;
-  stats: WeeklyStats;
+  stats: RecapStats;
   recap: WeeklyRecap;
   source?: "manual" | "cron";
   sent_at?: string | null;
 }
 
+/**
+ * Top fresh viral app posts for the recap: prefers posts that surfaced in
+ * the last 7 days; falls back to the all-time top when the week was quiet.
+ */
+async function fetchAppWorld(limit = 5): Promise<AppWorldItem[]> {
+  if (!SUPABASE_URL || !SUPABASE_ANON) return [];
+  const select = "select=app_name,platform,view_count,hook_text,why_it_hit,format,post_url";
+  const get = async (extra: string): Promise<AppWorldItem[]> => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/viral_app_posts?${select}&${extra}&order=view_count.desc&limit=${limit}`,
+        {
+          headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` },
+          cache: "no-store",
+        },
+      );
+      if (!res.ok) return [];
+      const rows = (await res.json()) as Array<Record<string, unknown>>;
+      return rows.map((p) => ({
+        app_name: (p.app_name as string) ?? null,
+        platform: String(p.platform ?? ""),
+        views: Number(p.view_count) || 0,
+        hook_text: (p.hook_text as string) ?? null,
+        why_it_hit: (p.why_it_hit as string) ?? null,
+        format: (p.format as string) ?? null,
+        url: String(p.post_url ?? ""),
+      }));
+    } catch {
+      return [];
+    }
+  };
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const fresh = await get(`first_seen_at=gte.${encodeURIComponent(weekAgo)}`);
+  if (fresh.length >= 3) return fresh;
+  return get("is_confirmed_app=eq.true");
+}
+
 export async function generateWeeklyRecap(model: string = MODELS.SONNET_4_6): Promise<RecapRow> {
-  const stats = await buildWeeklyStats();
+  const [baseStats, appWorld] = await Promise.all([buildWeeklyStats(), fetchAppWorld()]);
+  const stats: RecapStats = { ...baseStats, app_world: appWorld };
   const { value: recap } = await structuredCall({
     model,
     system:
@@ -264,6 +316,21 @@ export function recapEmailHtml(row: RecapRow): string {
     <ul>${row.recap.patterns.map((p) => `<li><b>${esc(p.dimension)}:</b> ${esc(p.finding)}</li>`).join("")}</ul>
     <h3>Next actions</h3>
     <ul>${row.recap.actions.map((a) => `<li><b>[${a.urgency.replace("_", " ")}]</b> <b>${esc(a.title)}</b> — ${esc(a.detail)}</li>`).join("")}</ul>
+    ${
+      row.stats.app_world?.length
+        ? `<h3>📱 From the app world</h3>
+    <p style="color:#777;font-size:12px;margin-top:-6px;">What other apps' organic content went viral this week (Inspo tab has the full feed).</p>
+    ${row.stats.app_world
+      .map(
+        (p) => `<div style="margin:0 0 10px;padding:8px 12px;border-left:3px solid #d8c9a8;background:#faf8f4;">
+      <div><b>${esc(p.app_name ?? "Unknown app")}</b> · ${p.platform === "tiktok" ? "TikTok" : "Instagram"} · ${(p.views / 1_000_000) >= 1 ? `${(p.views / 1_000_000).toFixed(1)}M` : `${Math.round(p.views / 1000)}K`} views${p.hook_text ? ` — <i>“${esc(p.hook_text)}”</i>` : ""}</div>
+      ${p.why_it_hit ? `<div style="color:#555;font-size:13px;">${esc(p.why_it_hit)}</div>` : ""}
+      <a href="${esc(p.url)}" style="font-size:12px;">watch →</a>
+    </div>`,
+      )
+      .join("")}`
+        : ""
+    }
     <p style="color:#999;font-size:12px;">Open the Growth AI tab in the DreamMe admin dash for the interactive version.</p>
   </div>`;
 }
