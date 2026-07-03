@@ -860,6 +860,7 @@ function TrackBrandSheet({
   const [query, setQuery] = React.useState("");
   const [searching, setSearching] = React.useState(false);
   const [candidates, setCandidates] = React.useState<BrandCandidate[] | null>(null);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState<string | null>(null);
 
   const search = async () => {
@@ -867,6 +868,7 @@ function TrackBrandSheet({
     if (!q) return;
     setSearching(true);
     setCandidates(null);
+    setSearchError(null);
     try {
       const res = await fetch("/api/growth/competitors/search", {
         method: "POST",
@@ -877,8 +879,10 @@ function TrackBrandSheet({
       if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`);
       setCandidates(body.candidates ?? []);
     } catch (e) {
-      toast(`Search failed: ${(e as Error).message}`);
-      setCandidates([]);
+      // Distinguish API failures (credits, key) from a genuine no-match —
+      // "no pages found" on an out-of-credits account is a lie.
+      setSearchError((e as Error).message);
+      toast("Search failed");
     } finally {
       setSearching(false);
     }
@@ -953,7 +957,25 @@ function TrackBrandSheet({
         </button>
       </div>
 
-      {candidates && candidates.length === 0 && (
+      {searchError && (
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--accent)",
+            padding: "9px 12px",
+            borderRadius: 10,
+            background: "color-mix(in oklab, var(--accent) 9%, var(--surface))",
+            border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
+            lineHeight: 1.5,
+          }}
+        >
+          {searchError.includes("out of credits")
+            ? "The ScrapeCreators account is out of credits — top it up at scrapecreators.com, then search again."
+            : searchError}
+        </div>
+      )}
+
+      {candidates && candidates.length === 0 && !searchError && (
         <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
           No Meta pages found for that name — try the exact page name from Facebook/Instagram.
         </div>
