@@ -1,12 +1,12 @@
 /**
  * Viral App Inspo — pipeline that finds SaaS/consumer-app content going
- * viral organically on TikTok (Instagram lands in phase 2).
+ * viral organically on TikTok + Instagram.
  *
- * Two nets:
- *   watchlist — curated app brand accounts (app_watchlist table), scraped
- *               in profile mode; app name/category inherited from the row.
- *   hashtag   — discovery sweeps (#apptok etc.) gated by a Haiku
- *               classifier ("is this actually about an app?").
+ * Two nets per platform:
+ *   watchlist — curated app brand accounts (app_watchlist table); app
+ *               name/category inherited from the row.
+ *   discovery — hashtag sweeps (TikTok) / keyword reel search (Instagram)
+ *               gated by a Haiku classifier ("is this actually about an app?").
  *
  * Floor: 50k views (VIRAL_FLOOR). Every kept post gets one Haiku-vision
  * call (cover frame + caption) that emits format / hook type / on-screen
@@ -14,14 +14,21 @@
  * our bucket. Existing posts just get their engagement counts refreshed —
  * no re-billing.
  *
- * Reuses: apify-spy.ts (clockworks actor wrappers), schemas/apify.ts
- * (item parsing), storage.ts (re-hosting), growth-tools.ts structuredCall.
+ * Reuses: apify-spy.ts (TikTok actor wrappers), apify-instagram.ts (IG
+ * actors), schemas/apify.ts (TikTok item parsing), storage.ts (re-hosting),
+ * growth-tools.ts structuredCall.
  */
 import {
   runProfileScrape,
   runHashtagScrape,
   apifySpyConfigured,
 } from "@/lib/apify-spy";
+import {
+  runInstagramReelScrape,
+  runInstagramSearchReels,
+  type InstagramReelItem,
+  type InstagramSearchItem,
+} from "@/lib/apify-instagram";
 import { parseApifyItems, type ApifyTikTokItem } from "@/lib/schemas/apify";
 import { fetchToStorage } from "@/lib/storage";
 import { structuredCall } from "@/lib/growth-tools";
@@ -43,23 +50,46 @@ const SCRAPE_CONCURRENCY = 8;
 const CLASSIFY_CONCURRENCY = 3;
 /** Hard cap on new-post classifications per run (cost guard). */
 const MAX_CLASSIFY_PER_RUN = 60;
+/** Only pull IG reels newer than this (evergreen-viral still ranks via views). */
+const IG_NEWER_THAN = "12 months";
 
-/** Discovery hashtags — broad app-content nets, junk gated by the classifier. */
+/** TikTok discovery hashtags — broad app-content nets, junk gated by the classifier. */
 export const APP_DISCOVERY_HASHTAGS = ["apptok", "appsyouneed", "newapp", "bestapps"];
+/** Instagram discovery keyword searches. */
+export const IG_DISCOVERY_QUERIES = ["must have apps", "apps you need"];
+
+export type Platform = "tiktok" | "instagram";
 
 // --- types -------------------------------------------------------------------
 
 export interface WatchlistRow {
   id: string;
-  platform: "tiktok" | "instagram";
+  platform: Platform;
   handle: string;
   app_name: string;
   category: string | null;
   active: boolean;
 }
 
+/** Platform-agnostic post shape both scrapers normalize into. */
+interface NormalizedPost {
+  platform: Platform;
+  postId: string | null;
+  url: string;
+  author: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  caption: string;
+  coverUrl: string | null;
+  postedAtISO: string | null;
+  isSlideshow: boolean;
+}
+
 interface SourceResult {
-  source: "watchlist" | "hashtag";
+  platform: Platform;
+  source: "watchlist" | "hashtag" | "search";
   detail: string;
   fetched: number;
   kept: number;
@@ -74,6 +104,13 @@ export interface ScrapeSummary {
   rejected_not_app: number;
   classify_capped: number;
   errors: Array<{ post_url: string; error: string }>;
+}
+
+interface Candidate {
+  post: NormalizedPost;
+  source: "watchlist" | "hashtag" | "search";
+  sourceDetail: string;
+  known?: { app_name: string; category: string | null };
 }
 
 // --- small helpers -----------------------------------------------------------
@@ -107,16 +144,6 @@ async function sbWrite(
   if (!res.ok) throw new Error(`Supabase write failed (${path.split("?")[0]}): ${res.status} ${await res.text()}`);
 }
 
-function coverUrlOf(item: ApifyTikTokItem): string | null {
-  return (
-    item.videoMeta?.originalCoverUrl ??
-    item.videoMeta?.coverUrl ??
-    item.slideshowImageLinks?.[0]?.downloadLink ??
-    item.slideshowImageLinks?.[0]?.tiktokLink ??
-    null
-  );
-}
-
 async function fetchImageBase64(url: string): Promise<{ data: string; mime: string } | null> {
   try {
     const res = await fetch(url);
@@ -141,6 +168,67 @@ async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
   });
   await Promise.all(workers);
   return out;
+}
+
+// --- normalizers ---------------------------------------------------------------
+
+function fromTikTok(item: ApifyTikTokItem): NormalizedPost | null {
+  if (!item.webVideoUrl) return null;
+  return {
+    platform: "tiktok",
+    postId: item.id ?? null,
+    url: item.webVideoUrl,
+    author: item.authorMeta?.name ?? "",
+    views: item.playCount ?? 0,
+    likes: item.diggCount ?? 0,
+    comments: item.commentCount ?? 0,
+    shares: item.shareCount ?? 0,
+    caption: item.text ?? "",
+    coverUrl:
+      item.videoMeta?.originalCoverUrl ??
+      item.videoMeta?.coverUrl ??
+      item.slideshowImageLinks?.[0]?.downloadLink ??
+      item.slideshowImageLinks?.[0]?.tiktokLink ??
+      null,
+    postedAtISO: item.createTimeISO ?? null,
+    isSlideshow: item.isSlideshow === true,
+  };
+}
+
+function fromReel(item: InstagramReelItem): NormalizedPost | null {
+  if (item.error || !item.url) return null;
+  return {
+    platform: "instagram",
+    postId: item.shortCode ?? item.id ?? null,
+    url: item.url,
+    author: item.ownerUsername ?? "",
+    views: item.videoPlayCount ?? item.videoViewCount ?? 0,
+    likes: item.likesCount ?? 0,
+    comments: item.commentsCount ?? 0,
+    shares: item.sharesCount ?? 0,
+    caption: item.caption ?? "",
+    coverUrl: item.displayUrl ?? null,
+    postedAtISO: item.timestamp ?? null,
+    isSlideshow: false,
+  };
+}
+
+function fromSearchItem(item: InstagramSearchItem): NormalizedPost | null {
+  if (!item.code) return null;
+  return {
+    platform: "instagram",
+    postId: item.code,
+    url: `https://www.instagram.com/reel/${item.code}/`,
+    author: item.user?.username ?? "",
+    views: item.play_count ?? item.ig_play_count ?? 0,
+    likes: item.like_count ?? 0,
+    comments: item.comment_count ?? 0,
+    shares: item.share_count ?? 0,
+    caption: item.caption?.text ?? "",
+    coverUrl: item.thumbnail_url ?? item.image_versions?.items?.[0]?.url ?? null,
+    postedAtISO: item.taken_at ? new Date(item.taken_at * 1000).toISOString() : null,
+    isSlideshow: false,
+  };
 }
 
 // --- classification ------------------------------------------------------------
@@ -204,17 +292,17 @@ function validateClassified(v: unknown): Classified {
 }
 
 async function classifyPost(params: {
-  item: ApifyTikTokItem;
-  handle: string;
+  post: NormalizedPost;
   known?: { app_name: string; category: string | null };
 }): Promise<Classified> {
-  const cover = coverUrlOf(params.item);
-  const image = cover ? await fetchImageBase64(cover) : null;
+  const { post } = params;
+  const image = post.coverUrl ? await fetchImageBase64(post.coverUrl) : null;
 
   const knownNote = params.known
     ? `This post is from the official brand account of "${params.known.app_name}"${params.known.category ? ` (category: ${params.known.category})` : ""} — is_app_content is true and by_brand is true unless the post is clearly unrelated to the product.`
-    : "Unknown source (hashtag discovery) — judge strictly whether this is really about a mobile app or SaaS product.";
+    : "Unknown source (discovery sweep) — judge strictly whether this is really about a mobile app or SaaS product.";
 
+  const platformLabel = post.platform === "tiktok" ? "TikTok" : "Instagram Reel";
   const content: Array<Record<string, unknown>> = [];
   if (image) {
     content.push({ type: "image", source: { type: "base64", media_type: image.mime, data: image.data } });
@@ -222,10 +310,10 @@ async function classifyPost(params: {
   content.push({
     type: "text",
     text:
-      `TikTok post by @${params.handle}\n` +
-      `Views: ${params.item.playCount ?? "?"} · Likes: ${params.item.diggCount ?? "?"}\n` +
-      `Caption: ${(params.item.text ?? "(none)").slice(0, 500)}\n` +
-      (params.item.isSlideshow ? "This is a photo slideshow (image above is the first slide).\n" : "The image above is the video cover frame.\n") +
+      `${platformLabel} by @${post.author || "(unknown)"}\n` +
+      `Views: ${post.views} · Likes: ${post.likes}\n` +
+      `Caption: ${(post.caption || "(none)").slice(0, 500)}\n` +
+      (post.isSlideshow ? "This is a photo slideshow (image above is the first slide).\n" : "The image above is the video cover frame.\n") +
       `\n${knownNote}\n\nClassify via emit_post_tags.`,
   });
 
@@ -251,65 +339,26 @@ async function classifyPost(params: {
   return value;
 }
 
-// --- the pipeline --------------------------------------------------------------
+// --- collection legs -------------------------------------------------------------
 
-export async function scrapeViralApps(opts?: {
-  /** Restrict to specific watchlist handles (testing / UI re-scrape). */
-  handles?: string[];
-  includeDiscovery?: boolean;
-  resultsPerProfile?: number;
-}): Promise<ScrapeSummary> {
-  if (!apifySpyConfigured()) throw new Error("APIFY_KEY not set");
-
-  const summary: ScrapeSummary = {
-    floor: VIRAL_FLOOR,
-    sources: [],
-    new_posts: 0,
-    refreshed: 0,
-    rejected_not_app: 0,
-    classify_capped: 0,
-    errors: [],
-  };
-
-  // 1) load the watchlist
-  let watchlist = await sbSelect<WatchlistRow>(
-    `app_watchlist?select=id,platform,handle,app_name,category,active&platform=eq.tiktok&active=eq.true&limit=200`,
-  );
-  if (opts?.handles?.length) {
-    const want = new Set(opts.handles.map((h) => h.toLowerCase()));
-    watchlist = watchlist.filter((w) => want.has(w.handle.toLowerCase()));
-  }
-
-  // 2) existing posts (url -> id) so re-scrapes refresh instead of re-billing
-  const existing = await sbSelect<{ id: string; post_url: string }>(
-    `viral_app_posts?select=id,post_url&limit=10000`,
-  );
-  const existingByUrl = new Map(existing.map((p) => [p.post_url, p.id]));
-
-  interface Candidate {
-    item: ApifyTikTokItem;
-    handle: string;
-    source: "watchlist" | "hashtag";
-    sourceDetail: string;
-    known?: { app_name: string; category: string | null };
-  }
-  const candidates: Candidate[] = [];
-
-  // 3) watchlist profile scrapes (small concurrency pool)
+async function collectTikTok(
+  watchlist: WatchlistRow[],
+  includeDiscovery: boolean,
+  resultsPerProfile: number,
+  summary: ScrapeSummary,
+  candidates: Candidate[],
+): Promise<void> {
   await pool(watchlist, SCRAPE_CONCURRENCY, async (w) => {
-    const result: SourceResult = { source: "watchlist", detail: w.handle, fetched: 0, kept: 0 };
+    const result: SourceResult = { platform: "tiktok", source: "watchlist", detail: w.handle, fetched: 0, kept: 0 };
     try {
-      const raw = await runProfileScrape({
-        profile: w.handle,
-        resultsPerPage: opts?.resultsPerProfile ?? PROFILE_RESULTS,
-      });
+      const raw = await runProfileScrape({ profile: w.handle, resultsPerPage: resultsPerProfile });
       const { items } = parseApifyItems(raw);
       result.fetched = items.length;
       for (const item of items) {
-        if ((item.playCount ?? 0) >= VIRAL_FLOOR && item.webVideoUrl) {
+        const post = fromTikTok(item);
+        if (post && post.views >= VIRAL_FLOOR) {
           candidates.push({
-            item,
-            handle: w.handle,
+            post: { ...post, author: post.author || w.handle },
             source: "watchlist",
             sourceDetail: w.handle,
             known: { app_name: w.app_name, category: w.category },
@@ -327,22 +376,17 @@ export async function scrapeViralApps(opts?: {
     summary.sources.push(result);
   });
 
-  // 4) discovery hashtags
-  if (opts?.includeDiscovery !== false) {
+  if (includeDiscovery) {
     await pool(APP_DISCOVERY_HASHTAGS, 2, async (tag) => {
-      const result: SourceResult = { source: "hashtag", detail: `#${tag}`, fetched: 0, kept: 0 };
+      const result: SourceResult = { platform: "tiktok", source: "hashtag", detail: `#${tag}`, fetched: 0, kept: 0 };
       try {
         const raw = await runHashtagScrape({ hashtag: tag, resultsPerPage: HASHTAG_RESULTS });
         const { items } = parseApifyItems(raw);
         result.fetched = items.length;
         for (const item of items) {
-          if ((item.playCount ?? 0) >= VIRAL_FLOOR && item.webVideoUrl) {
-            candidates.push({
-              item,
-              handle: item.authorMeta?.name ?? "",
-              source: "hashtag",
-              sourceDetail: `#${tag}`,
-            });
+          const post = fromTikTok(item);
+          if (post && post.views >= VIRAL_FLOOR) {
+            candidates.push({ post, source: "hashtag", sourceDetail: `#${tag}` });
             result.kept++;
           }
         }
@@ -352,13 +396,167 @@ export async function scrapeViralApps(opts?: {
       summary.sources.push(result);
     });
   }
+}
 
-  // 5) upsert: refresh existing, classify + insert new (both pooled — the
+async function collectInstagram(
+  watchlist: WatchlistRow[],
+  includeDiscovery: boolean,
+  resultsPerProfile: number,
+  summary: ScrapeSummary,
+  candidates: Candidate[],
+): Promise<void> {
+  // Watchlist: ONE bulk actor run for all usernames (charged per reel, so
+  // batching saves N-1 actor starts).
+  if (watchlist.length > 0) {
+    const byHandle = new Map(watchlist.map((w) => [w.handle.toLowerCase(), w]));
+    try {
+      const items = await runInstagramReelScrape({
+        usernames: watchlist.map((w) => w.handle),
+        resultsLimit: resultsPerProfile,
+        newerThan: IG_NEWER_THAN,
+      });
+      // Attribute items back to handles for per-account result counts.
+      const countByHandle = new Map<string, number>();
+      for (const item of items) {
+        const owner = (item.ownerUsername ?? "").toLowerCase();
+        if (owner) countByHandle.set(owner, (countByHandle.get(owner) ?? 0) + 1);
+      }
+      for (const w of watchlist) {
+        const key = w.handle.toLowerCase();
+        const fetched = countByHandle.get(key) ?? 0;
+        const result: SourceResult = { platform: "instagram", source: "watchlist", detail: w.handle, fetched, kept: 0 };
+        summary.sources.push(result);
+        await sbWrite("PATCH", `app_watchlist?id=eq.${w.id}`, {
+          last_scraped_at: new Date().toISOString(),
+          last_result_count: fetched,
+        });
+      }
+      const resultByHandle = new Map(
+        summary.sources
+          .filter((s) => s.platform === "instagram" && s.source === "watchlist")
+          .map((s) => [s.detail.toLowerCase(), s]),
+      );
+      for (const item of items) {
+        const post = fromReel(item);
+        if (!post) continue;
+        const w = byHandle.get(post.author.toLowerCase());
+        if (post.views >= VIRAL_FLOOR) {
+          candidates.push({
+            post,
+            source: "watchlist",
+            sourceDetail: w?.handle ?? post.author,
+            known: w ? { app_name: w.app_name, category: w.category } : undefined,
+          });
+          const r = resultByHandle.get(post.author.toLowerCase());
+          if (r) r.kept++;
+        }
+      }
+    } catch (e) {
+      summary.sources.push({
+        platform: "instagram",
+        source: "watchlist",
+        detail: `(bulk: ${watchlist.length} accounts)`,
+        fetched: 0,
+        kept: 0,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  if (includeDiscovery) {
+    await pool(IG_DISCOVERY_QUERIES, 2, async (query) => {
+      const result: SourceResult = { platform: "instagram", source: "search", detail: query, fetched: 0, kept: 0 };
+      try {
+        const items = await runInstagramSearchReels({ query, maxPages: 1 });
+        result.fetched = items.length;
+        for (const item of items) {
+          const post = fromSearchItem(item);
+          if (post && post.views >= VIRAL_FLOOR) {
+            candidates.push({ post, source: "search", sourceDetail: query });
+            result.kept++;
+          }
+        }
+      } catch (e) {
+        result.error = e instanceof Error ? e.message : String(e);
+      }
+      summary.sources.push(result);
+    });
+  }
+}
+
+// --- the pipeline --------------------------------------------------------------
+
+export async function scrapeViralApps(opts?: {
+  /** Restrict to specific watchlist handles (testing / UI re-scrape). */
+  handles?: string[];
+  /** Which platforms to scrape; defaults to both. */
+  platforms?: Platform[];
+  includeDiscovery?: boolean;
+  resultsPerProfile?: number;
+}): Promise<ScrapeSummary> {
+  if (!apifySpyConfigured()) throw new Error("APIFY_KEY not set");
+
+  const platforms = opts?.platforms?.length ? opts.platforms : (["tiktok", "instagram"] as Platform[]);
+  const includeDiscovery = opts?.includeDiscovery !== false;
+  const resultsPerProfile = opts?.resultsPerProfile ?? PROFILE_RESULTS;
+
+  const summary: ScrapeSummary = {
+    floor: VIRAL_FLOOR,
+    sources: [],
+    new_posts: 0,
+    refreshed: 0,
+    rejected_not_app: 0,
+    classify_capped: 0,
+    errors: [],
+  };
+
+  // 1) load the watchlist
+  let watchlist = await sbSelect<WatchlistRow>(
+    `app_watchlist?select=id,platform,handle,app_name,category,active&active=eq.true&limit=400`,
+  );
+  if (opts?.handles?.length) {
+    const want = new Set(opts.handles.map((h) => h.toLowerCase()));
+    watchlist = watchlist.filter((w) => want.has(w.handle.toLowerCase()));
+  }
+
+  // 2) existing posts (url -> id) so re-scrapes refresh instead of re-billing
+  const existing = await sbSelect<{ id: string; post_url: string }>(
+    `viral_app_posts?select=id,post_url&limit=10000`,
+  );
+  const existingByUrl = new Map(existing.map((p) => [p.post_url, p.id]));
+
+  // 3) collect from both platforms concurrently (independent I/O)
+  const candidates: Candidate[] = [];
+  const legs: Promise<void>[] = [];
+  if (platforms.includes("tiktok")) {
+    legs.push(
+      collectTikTok(
+        watchlist.filter((w) => w.platform === "tiktok"),
+        includeDiscovery,
+        resultsPerProfile,
+        summary,
+        candidates,
+      ),
+    );
+  }
+  if (platforms.includes("instagram")) {
+    legs.push(
+      collectInstagram(
+        watchlist.filter((w) => w.platform === "instagram"),
+        includeDiscovery,
+        resultsPerProfile,
+        summary,
+        candidates,
+      ),
+    );
+  }
+  await Promise.all(legs);
+
+  // 4) upsert: refresh existing, classify + insert new (both pooled — the
   //    classify pass is the long pole on cold runs)
   const unique = new Map<string, Candidate>();
   for (const c of candidates) {
-    const url = c.item.webVideoUrl!;
-    if (!unique.has(url)) unique.set(url, c);
+    if (!unique.has(c.post.url)) unique.set(c.post.url, c);
   }
   const all = [...unique.entries()];
   const toRefresh = all.filter(([url]) => existingByUrl.has(url));
@@ -371,10 +569,10 @@ export async function scrapeViralApps(opts?: {
   await pool(toRefresh, 6, async ([url, c]) => {
     try {
       await sbWrite("PATCH", `viral_app_posts?id=eq.${existingByUrl.get(url)}`, {
-        view_count: c.item.playCount ?? 0,
-        like_count: c.item.diggCount ?? 0,
-        comment_count: c.item.commentCount ?? 0,
-        share_count: c.item.shareCount ?? 0,
+        view_count: c.post.views,
+        like_count: c.post.likes,
+        comment_count: c.post.comments,
+        share_count: c.post.shares,
         last_scraped_at: new Date().toISOString(),
       });
       summary.refreshed++;
@@ -385,43 +583,42 @@ export async function scrapeViralApps(opts?: {
 
   await pool(toClassify, CLASSIFY_CONCURRENCY, async ([url, c]) => {
     try {
-      const tags = await classifyPost({ item: c.item, handle: c.handle, known: c.known });
+      const tags = await classifyPost({ post: c.post, known: c.known });
       if (!tags.is_app_content) {
         summary.rejected_not_app++;
         return;
       }
 
-      // Re-host the cover so the feed doesn't depend on TikTok CDN expiry.
+      // Re-host the cover so the feed doesn't depend on CDN expiry.
       let thumb: string | null = null;
-      const cover = coverUrlOf(c.item);
-      if (cover) {
+      if (c.post.coverUrl) {
         try {
-          const postId = c.item.id ?? url.split("/").pop() ?? String(Date.now());
-          thumb = await fetchToStorage(cover, `viral-apps/tiktok/${postId}.jpg`);
+          const postId = c.post.postId ?? url.split("/").filter(Boolean).pop() ?? String(Math.random()).slice(2);
+          thumb = await fetchToStorage(c.post.coverUrl, `viral-apps/${c.post.platform}/${postId}.jpg`);
         } catch {
           thumb = null; // cover expired — the row is still useful
         }
       }
 
       await sbWrite("POST", `viral_app_posts?on_conflict=post_url`, {
-        platform: "tiktok",
-        post_id: c.item.id ?? null,
+        platform: c.post.platform,
+        post_id: c.post.postId,
         post_url: url,
-        author_handle: c.handle || null,
+        author_handle: c.post.author || null,
         app_name: tags.app_name || null,
         app_category: tags.app_category || null,
         by_brand: tags.by_brand,
         source: c.source,
         source_detail: c.sourceDetail,
-        posted_at: c.item.createTimeISO ?? null,
-        view_count: c.item.playCount ?? 0,
-        like_count: c.item.diggCount ?? 0,
-        comment_count: c.item.commentCount ?? 0,
-        share_count: c.item.shareCount ?? 0,
-        caption: (c.item.text ?? "").slice(0, 2000) || null,
+        posted_at: c.post.postedAtISO,
+        view_count: c.post.views,
+        like_count: c.post.likes,
+        comment_count: c.post.comments,
+        share_count: c.post.shares,
+        caption: c.post.caption.slice(0, 2000) || null,
         thumbnail_url: thumb,
         hook_text: tags.hook_text || null,
-        format: c.item.isSlideshow ? "slideshow" : tags.format,
+        format: c.post.isSlideshow ? "slideshow" : tags.format,
         hook_type: tags.hook_type || null,
         why_it_hit: tags.why_it_hit || null,
         is_confirmed_app: true,

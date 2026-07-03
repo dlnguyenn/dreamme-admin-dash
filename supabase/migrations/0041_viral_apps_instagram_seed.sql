@@ -1,0 +1,40 @@
+-- Viral App Inspo phase 2: seed the Instagram side of the watchlist.
+-- Same apps as the TikTok seed; handles are best-effort and the scraper's
+-- last_result_count surfaces dead/wrong ones for fixing in the UI.
+
+insert into public.app_watchlist (platform, handle, app_name, category, notes) values
+  ('instagram','myfitnesspal','MyFitnessPal','health_fitness',null),
+  ('instagram','loseitapp','Lose It!','health_fitness',null),
+  ('instagram','noom','Noom','health_fitness',null),
+  ('instagram','ww','WeightWatchers','health_fitness','verify handle'),
+  ('instagram','fastic','Fastic','health_fitness',null),
+  ('instagram','yuka.app','Yuka','health_fitness','verify handle'),
+  ('instagram','macrofactorapp','MacroFactor','health_fitness','verify handle'),
+  ('instagram','flotracker','Flo','health_fitness','verify handle'),
+  ('instagram','finchcare','Finch','wellness',null),
+  ('instagram','headspace','Headspace','wellness',null),
+  ('instagram','calm','Calm','wellness',null),
+  ('instagram','waterllama','WaterLlama','health_fitness','verify handle'),
+  ('instagram','strava','Strava','fitness',null),
+  ('instagram','whoop','WHOOP','fitness',null),
+  ('instagram','ouraring','Oura','fitness',null),
+  ('instagram','shotsyapp','Shotsy','glp1','GLP-1 tracker competitor; verify handle'),
+  ('instagram','cal.ai','Cal AI','health_fitness','verify handle'),
+  ('instagram','notionhq','Notion','productivity',null),
+  ('instagram','clickup','ClickUp','productivity',null),
+  ('instagram','canva','Canva','design',null),
+  ('instagram','grammarly','Grammarly','productivity',null),
+  ('instagram','duolingo','Duolingo','education',null),
+  ('instagram','shopify','Shopify','saas',null),
+  ('instagram','mondaydotcom','monday.com','saas','verify handle'),
+  ('instagram','locketcamera','Locket','social','verify handle'),
+  ('instagram','bereal','BeReal','social','verify handle'),
+  ('instagram','partiful','Partiful','social',null),
+  ('instagram','rocketmoney','Rocket Money','finance',null),
+  ('instagram','cashapp','Cash App','finance',null),
+  ('instagram','chime','Chime','finance',null),
+  ('instagram','ynab','YNAB','finance','verify handle'),
+  ('instagram','copilotmoney','Copilot Money','finance','verify handle'),
+  ('instagram','meetcleo','Cleo','finance',null),
+  ('instagram','umax.app','Umax','consumer','verify handle')
+on conflict (platform, handle) do nothing;

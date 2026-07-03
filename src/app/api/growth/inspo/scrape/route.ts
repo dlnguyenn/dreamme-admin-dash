@@ -14,6 +14,7 @@ export const maxDuration = 300;
 
 const Body = z.object({
   handles: z.array(z.string().min(1)).max(50).optional(),
+  platforms: z.array(z.enum(["tiktok", "instagram"])).max(2).optional(),
   include_discovery: z.boolean().optional(),
   results_per_profile: z.number().int().min(1).max(30).optional(),
 });
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
   try {
     const summary = await scrapeViralApps({
       handles: body.handles,
+      platforms: body.platforms,
       includeDiscovery: body.include_discovery,
       resultsPerProfile: body.results_per_profile,
     });
