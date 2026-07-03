@@ -107,8 +107,11 @@ export function decodeEvent(
   fields: ExtractedFields,
   schema: CvSchemaRow[],
 ): string | null {
-  const win = fields.postback_sequence_index;
-  if (win == null) return null;
+  // SKAN 3.0 postbacks carry no postback-sequence-index — they're a single
+  // postback measured in one early window, semantically Postback 1 (index 0).
+  // Treat a missing index as 0 so 3.0's fine conversion-value (0-63) decodes
+  // against the P1 fine ladder; 4.0 postbacks keep their explicit index.
+  const win = fields.postback_sequence_index ?? 0;
 
   if (fields.conversion_value != null) {
     const hit = schema.find(
