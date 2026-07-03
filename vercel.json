@@ -17,6 +17,7 @@
     { "path": "/api/cron/cull-variants", "schedule": "0 14 * * *" },
     { "path": "/api/cron/growth-tag", "schedule": "40 7 * * *" },
     { "path": "/api/cron/growth-recap", "schedule": "0 13 * * 1" },
-    { "path": "/api/cron/scrape-viral-apps", "schedule": "30 4 * * 2,5" }
+    { "path": "/api/cron/scrape-viral-apps?platform=tiktok", "schedule": "30 4 * * 2,5" },
+    { "path": "/api/cron/scrape-viral-apps?platform=instagram", "schedule": "15 5 * * 2,5" }
   ]
 }

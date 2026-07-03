@@ -1,11 +1,12 @@
 /**
- * Viral App Inspo scrape — Tue/Fri 04:30 UTC (offset from scrape-spy's
- * Mon/Wed/Fri 03:00). Watchlist profile scrapes + discovery hashtags,
- * 50k-view floor, Haiku classification, thumbnail re-hosting.
+ * Viral App Inspo scrape — Tue/Fri, one invocation per platform
+ * (?platform=tiktok at 04:30 UTC, ?platform=instagram at 05:15) so a
+ * cold run of either leg stays comfortably inside the 300s budget.
+ * Omitting ?platform scrapes both (fine for manual triggers).
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
-import { scrapeViralApps } from "@/lib/viral-apps";
+import { scrapeViralApps, type Platform } from "@/lib/viral-apps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +16,11 @@ export async function GET(req: Request) {
   if (!checkCronAuth(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const platformParam = new URL(req.url).searchParams.get("platform");
+  const platforms: Platform[] | undefined =
+    platformParam === "tiktok" || platformParam === "instagram" ? [platformParam] : undefined;
   try {
-    const summary = await scrapeViralApps({ includeDiscovery: true });
+    const summary = await scrapeViralApps({ platforms, includeDiscovery: true });
     return NextResponse.json({ ok: true, ...summary });
   } catch (e) {
     return NextResponse.json(
