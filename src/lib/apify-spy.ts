@@ -84,6 +84,43 @@ export async function runSearchQueryScrape(opts: {
 }
 
 /**
+ * Single-post scrape WITH video download. The actor mirrors the video
+ * file into Apify's key-value store and returns a `mediaUrls` link that
+ * stays fetchable (raw TikTok CDN URLs 403 without cookies). Used by the
+ * Deep Research inspect phase to hand video bytes to Gemini.
+ */
+export async function runPostScrape(opts: {
+  postUrl: string;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    ACTOR_ID,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    postURLs: [opts.postUrl],
+    resultsPerPage: 1,
+    shouldDownloadCovers: false,
+    shouldDownloadVideos: true,
+    shouldDownloadSlideshowImages: false,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify post run failed (${opts.postUrl}): ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}
+
+/**
  * Profile-mode scrape — fetches a single TikTok creator's recent posts
  * so we can compute their baseline view count and the outlier score of
  * any individual post against that baseline.

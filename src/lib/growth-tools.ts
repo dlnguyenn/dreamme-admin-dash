@@ -953,6 +953,60 @@ export const GROWTH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "research_reports",
+    description:
+      "Deep Research memos — Lightreel-style viral-content research runs (adjacent-category seed searches in native viewer language, creator-baseline outlier scoring, Gemini video coding of app visibility, synthesized memo with format clusters + verdicts + repeatable series). Use for 'did we research X', 'what did the research find', or to ground creative recommendations in a past study. Without an id: lists recent runs. With an id: returns that run's full memo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "A run id from the list — returns the full memo markdown." },
+        limit: { type: "number", description: "Max runs listed (1-20). Default 8." },
+      },
+    },
+    run: async (input) => {
+      if (typeof input.id === "string" && input.id.trim()) {
+        const rows = await sbSelect<Record<string, unknown>>(
+          `growth_research_runs?id=eq.${encodeURIComponent(input.id.trim())}&limit=1`,
+        );
+        const run = rows[0];
+        if (!run) throw new Error("research run not found");
+        const state = (run.phase_state ?? {}) as {
+          candidates?: Array<{ strong?: boolean; url?: string; author?: string; views?: number }>;
+          searches?: Array<{ query: string }>;
+        };
+        return {
+          id: run.id,
+          question: run.question,
+          status: run.status,
+          created_at: run.created_at,
+          searches_run: (state.searches ?? []).map((s) => s.query),
+          strong_finds: (state.candidates ?? [])
+            .filter((c) => c.strong)
+            .map((c) => ({ url: c.url, author: c.author, views: c.views })),
+          report_md: run.report_md ?? "(no memo yet — the run hasn't finished)",
+        };
+      }
+      const limit = Math.max(1, Math.min(20, Math.floor(num(input.limit)) || 8));
+      const rows = await sbSelect<Record<string, unknown>>(
+        `growth_research_runs?select=id,question,status,report_md,created_at,phase_state&order=created_at.desc&limit=${limit}`,
+      );
+      return {
+        runs: rows.map((r) => {
+          const state = (r.phase_state ?? {}) as { candidates?: Array<{ strong?: boolean }> };
+          return {
+            id: r.id,
+            question: r.question,
+            status: r.status,
+            created_at: r.created_at,
+            strong_finds: (state.candidates ?? []).filter((c) => c.strong).length,
+            memo_excerpt: String(r.report_md ?? "").slice(0, 300),
+          };
+        }),
+        note: "Call again with an id for the full memo.",
+      };
+    },
+  },
+  {
     name: "propose_action",
     description:
       "Propose a Meta Ads change for the user to confirm — pause/activate an ad, set an ad set or campaign daily budget, or duplicate an ad set. This NEVER executes anything: it renders a confirmation card in the dashboard that the user must explicitly approve. Only propose after the data justifies it, cite the numbers in `reason`, and propose at most one action per distinct change. Never claim a change was made.",
@@ -1019,7 +1073,7 @@ export const GROWTH_SYSTEM_PROMPT = `You are the DreamMe Growth AI — the marke
 
 ## How to answer
 - ALWAYS pull data with tools before answering anything quantitative. Start with week_over_week for "how are we doing" questions; use ad_performance / creative_attention for creative questions; blended_efficiency + rc_snapshot for efficiency/LTV questions.
-- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend" → viral_app_inspo · "what are competitors running / counter their ads / did X launch anything new" → competitor_ads.
+- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend" → viral_app_inspo · "what are competitors running / counter their ads / did X launch anything new" → competitor_ads · "did we research X / what did the deep research find" → research_reports.
 
 ## Actions (propose_action)
 - You can PROPOSE Meta changes — pause/activate an ad, set an ad set/campaign daily budget, duplicate an ad set — via the propose_action tool. It never executes; the user sees a confirmation card and must approve.

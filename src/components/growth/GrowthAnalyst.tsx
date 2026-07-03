@@ -11,6 +11,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { MODELS, MODEL_LABELS, type ModelId } from "@/lib/models";
 import { type GrowthData, aggregateAds, daysAgoISO } from "./data";
 import { ActionCard, actionDetail, type ChatAction, type ActionState } from "./ActionCard";
+import { ResearchRail } from "./ResearchRail";
 import {
   fmtUSD,
   fmtInt,
@@ -532,8 +533,11 @@ export function GrowthAnalyst({
         </div>
       </div>
 
-      {/* ---- side rail: weekly recap ---- */}
-      <RecapRail data={data} />
+      {/* ---- side rail: weekly recap + deep research ---- */}
+      <div style={{ display: "grid", gap: 14, minWidth: 0, alignContent: "start" }}>
+        <RecapRail data={data} />
+        <ResearchRail />
+      </div>
     </div>
   );
 }

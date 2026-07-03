@@ -58,9 +58,17 @@ Everything opens a shared **AdDrawer** for DreamMe's own ads (tags + re-tag, cop
 - Real-data gotchas encoded: ad-level `page_id` can differ from the queried brand page (ads store under the brand's), `body` is `{text}`, platforms key is `publisher_platform`, video thumbs come from `video_preview_image_url`, collapsed variants can be media-less (copy-only analysis).
 - Seeded with MeAgain (verified page_id). `competitor_ads` analyst tool + Competitor-watch recap section.
 
+### 8. Deep Research mode (Lightreel-style, shipped Jul 3)
+- **Pipeline** (`src/lib/growth-research.ts`, migration 0044): question → Sonnet plans adjacent categories + 6-8 seed searches in **native viewer language** → TikTok search sweeps (≥20k-view floor) → Haiku mines round-1 captions for recurring phrases → round-2 searches → per-candidate inspection: creator-baseline **outlier score** (spy-outlier) + **Gemini watches the actual video** (app visibility 0-3, hook transcript, works-without-app) → Sonnet memo (format clusters w/ REPLICATE/TEST/SKIP verdicts, copy/avoid, 3 repeatable series, replication searches).
+- **Client-stepped**: run state persists in `phase_state` jsonb; the browser loops `POST /api/growth/research/step` (3 videos/step in the inspect phase) so 5-10-min runs fit serverless limits and resume from anywhere.
+- Strong finds (visibility ≥2 or ≥3× creator median) with a visible app feed the Inspo feed automatically. `research_reports` analyst tool (16 total) pulls memos into chat.
+- UI: Deep Research rail in the Analyst subtab (question input + suggestions, phase progress, Resume/Retry, history pills, memo + strong-finds strip). Manual-trigger only, ~$2-3.50/run.
+- E2E'd head-to-head on the exact Lightreel question ("viral B2C app videos with a food scanner or in the health niche"): 14 searches → 141 candidates → 14 watched (13 true video, 1 slideshow cover-fallback) → found EXPOSR (2 videos, vis 3), Munchee (vis 2), Fastic (vis 3) → memo correctly isolated the "Brand Scandal Scan Reveal" as the only load-bearing format and called out the untapped GLP-1 angle. Cover-only coding proved measurably worse than video coding (it hallucinated TMZ as an app) — the video pass earns its cost.
+- Gotcha encoded: local `.env.local` `GOOGLE_API_KEY` was stale/dead (image gen only ever ran in prod) — replaced from the ops repo. There is NO plain `gemini-3.1-flash`; the video default is **`gemini-3.5-flash`** (env `GEMINI_VIDEO_MODEL`).
+
 ---
 
-## Database (migrations 0039–0043, all auto-applied)
+## Database (migrations 0039–0044, all auto-applied)
 
 | Table | Purpose |
 | --- | --- |
@@ -71,6 +79,7 @@ Everything opens a shared **AdDrawer** for DreamMe's own ads (tags + re-tag, cop
 | `viral_app_posts` / `viral_app_favorites` | ~142 enriched viral posts + saves |
 | `viral_app_settings` | Singleton toggles (discovery sweep on/off) |
 | `competitor_brands` / `competitor_ads` | Tracked competitors + their analyzed Ad Library ads |
+| `growth_research_runs` | Deep Research runs (question, status ladder, phase_state jsonb, memo) |
 
 ## Cron schedule (additions)
 

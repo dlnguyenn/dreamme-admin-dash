@@ -13,6 +13,12 @@ function getApiKey(): string {
 function getModel(): string {
   return process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image-preview";
 }
+function getVideoModel(): string {
+  // gemini-3.5-flash is the newest full-flash tier with video understanding
+  // (verified against the live models list 2026-07; there is no plain
+  // "gemini-3.1-flash" — only -lite and -image variants of 3.1).
+  return process.env.GEMINI_VIDEO_MODEL ?? "gemini-3.5-flash";
+}
 
 export function geminiConfigured() {
   return !!getApiKey();
@@ -180,6 +186,133 @@ export async function editImage(params: {
     const backoff = Math.min(16_000, 500 * Math.pow(2, attempt));
     const jitter = Math.floor(Math.random() * 250);
     await sleep(backoff + jitter);
+    attempt++;
+  }
+}
+
+/** Inline-video cap: Gemini accepts ~20MB request bodies; base64 inflates
+ *  by 4/3, so cap the raw file a bit under. TikTok SD files run 2-10MB. */
+export const VIDEO_INLINE_MAX_BYTES = 14 * 1024 * 1024;
+
+/**
+ * Watch a short video and answer a prompt about it. Fetches the bytes
+ * server-side (social CDN URLs expire fast — call this immediately after
+ * scraping) and sends them inline as base64. Throws on fetch failure or
+ * oversize files so callers can fall back to cover-frame coding.
+ */
+export async function analyzeVideo(params: {
+  videoUrl: string;
+  prompt: string;
+  mimeType?: string;
+  timeoutMs?: number;
+  route?: string;
+}): Promise<{ text: string }> {
+  const GOOGLE_API_KEY = getApiKey();
+  const MODEL = getVideoModel();
+  if (!GOOGLE_API_KEY) throw new Error("GOOGLE_API_KEY not set");
+  const timeoutMs = params.timeoutMs ?? 90_000;
+
+  const videoRes = await fetch(params.videoUrl, {
+    headers: { "User-Agent": "dreamme-admin-dash/1.0" },
+  });
+  if (!videoRes.ok) {
+    throw new Error(`video fetch failed: ${videoRes.status}`);
+  }
+  const buf = Buffer.from(await videoRes.arrayBuffer());
+  if (buf.byteLength === 0) throw new Error("video fetch returned 0 bytes");
+  if (buf.byteLength > VIDEO_INLINE_MAX_BYTES) {
+    throw new Error(
+      `video too large for inline analysis (${Math.round(buf.byteLength / 1024 / 1024)}MB > ${Math.round(VIDEO_INLINE_MAX_BYTES / 1024 / 1024)}MB)`,
+    );
+  }
+  const mime =
+    params.mimeType ??
+    videoRes.headers.get("content-type")?.split(";")[0] ??
+    "video/mp4";
+
+  const body = {
+    contents: [
+      {
+        parts: [
+          {
+            inline_data: {
+              mime_type: mime.startsWith("video/") ? mime : "video/mp4",
+              data: buf.toString("base64"),
+            },
+          },
+          { text: params.prompt },
+        ],
+      },
+    ],
+  };
+
+  let attempt = 0;
+  const maxRetries = 2;
+  while (true) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(ENDPOINT(MODEL), {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": GOOGLE_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const aborted =
+        (err as Error)?.name === "AbortError" ||
+        /abort/i.test((err as Error)?.message ?? "");
+      if (aborted && attempt < maxRetries) {
+        await sleep(Math.min(16_000, 1000 * Math.pow(2, attempt)));
+        attempt++;
+        continue;
+      }
+      throw aborted
+        ? new Error(`Gemini video call timed out after ${timeoutMs}ms`)
+        : (err as Error);
+    }
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data = (await res.json()) as GeminiResponse;
+      const block = data.promptFeedback?.blockReason;
+      if (block) throw new Error(`Gemini blocked the video prompt (${block}).`);
+      const text = (data.candidates?.[0]?.content?.parts ?? [])
+        .map((p) => p.text ?? "")
+        .join("")
+        .trim();
+      if (!text) throw new Error("Gemini returned no text for the video");
+      const usage = data.usageMetadata ?? {};
+      const inputTokens = usage.promptTokenCount ?? 0;
+      const outputTokens = usage.candidatesTokenCount ?? 0;
+      void logAiUsageEvent({
+        vendor: "google",
+        model: MODEL,
+        route: params.route,
+        inputTokens,
+        outputTokens,
+        imageCount: 0,
+        computedUsd: priceGeminiUsage({
+          model: MODEL,
+          inputTokens,
+          outputTokens,
+          imageCount: 0,
+        }),
+        metadata: { attempt, video_bytes: buf.byteLength },
+      });
+      return { text };
+    }
+
+    const bodyText = await res.text();
+    if (!RETRYABLE_STATUSES.has(res.status) || attempt >= maxRetries) {
+      throw new Error(`Gemini video error: ${res.status} ${bodyText.slice(0, 300)}`);
+    }
+    await sleep(Math.min(16_000, 1000 * Math.pow(2, attempt)));
     attempt++;
   }
 }
