@@ -34,6 +34,14 @@ export function fmtX(n: number): string {
   return `${n.toFixed(2)}×`;
 }
 
+/** 9,781,025 → "9.8M" · 264,100 → "264K" · 950 → "950" */
+export function fmtCompact(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(Math.round(n));
+}
+
 export function weeksSince(iso: string): number {
   const then = new Date(`${iso}T00:00:00Z`).getTime();
   return Math.max(1, Math.ceil((Date.now() - then) / (7 * 86_400_000)));

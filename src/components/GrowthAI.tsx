@@ -21,11 +21,12 @@ import { GrowthOverview } from "./growth/GrowthOverview";
 import { GrowthLeaderboard } from "./growth/GrowthLeaderboard";
 import { GrowthLaunches } from "./growth/GrowthLaunches";
 import { GrowthInsights } from "./growth/GrowthInsights";
+import { GrowthInspo } from "./growth/GrowthInspo";
 import { GrowthAnalyst } from "./growth/GrowthAnalyst";
 import { AdDrawer } from "./growth/AdDrawer";
 import { Skeleton } from "./growth/shared";
 
-type Subtab = "overview" | "creatives" | "insights" | "analyst";
+type Subtab = "overview" | "creatives" | "insights" | "inspo" | "analyst";
 type CreativesView = "leaderboard" | "launches";
 
 const SUBTAB_KEY = "dreamme.growth.subtab";
@@ -35,6 +36,7 @@ const SUBTABS: Array<{ id: Subtab; label: string; short: string }> = [
   { id: "overview", label: "Overview", short: "Overview" },
   { id: "creatives", label: "Creatives", short: "Creatives" },
   { id: "insights", label: "Insights", short: "Insights" },
+  { id: "inspo", label: "Inspo", short: "Inspo" },
   { id: "analyst", label: "AI Analyst", short: "Analyst" },
 ];
 
@@ -49,7 +51,13 @@ export function GrowthAI() {
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem(SUBTAB_KEY);
-      if (saved === "overview" || saved === "creatives" || saved === "insights" || saved === "analyst") {
+      if (
+        saved === "overview" ||
+        saved === "creatives" ||
+        saved === "insights" ||
+        saved === "inspo" ||
+        saved === "analyst"
+      ) {
         setSubtab(saved);
       }
       const view = localStorage.getItem(CREATIVES_VIEW_KEY);
@@ -194,6 +202,8 @@ export function GrowthAI() {
         </>
       ) : subtab === "insights" ? (
         <GrowthInsights data={data} onAsk={onAsk} onOpenAd={setSelectedAdId} />
+      ) : subtab === "inspo" ? (
+        <GrowthInspo onAsk={onAsk} />
       ) : (
         <GrowthAnalyst
           data={data}
