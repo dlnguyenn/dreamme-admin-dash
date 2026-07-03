@@ -12,7 +12,8 @@ and an auto-generated weekly recap.
 | Creatives | Leaderboard (thumbnails, theme tags, WoW deltas, hook/hold/CTR) + **New launches** sprint view (weekly cadence vs target, goal chips) |
 | Insights | Messaging Themes wall (AI-tag driven: spend, hit rate, Testing/Scaling/Proven/Declining) + compare-by-dimension bars + "formats you haven't tried" |
 | Inspo | Viral app content from TikTok + IG (`viral_app_posts`, scraped Tue/Fri, ≥50k views): trending-apps strip, filterable grid, post drawer w/ why-it-hit + "Adapt for DreamMe", watchlist manager |
-| AI Analyst | Tool-use chat over live data (14 tools incl. `viral_app_inspo`), **propose_action** confirmation cards, weekly recap panel w/ DB history + "From the app world" section |
+| Competitors | Competitor Meta Ad Library tracking (`competitor_brands`/`competitor_ads` via ScrapeCreators, scraped Tue/Fri 05:45): brand search → track, NEW badges on fresh launches, running-days longevity signal, per-ad AI analysis (format/angle/hook/offer/why-notable), "Counter this ad" briefs. **Requires `SCRAPECREATORS_API_KEY`** (in `.env.local`; add to Vercel env for prod). |
+| AI Analyst | Tool-use chat over live data (15 tools incl. `viral_app_inspo` + `competitor_ads`), **propose_action** confirmation cards, weekly recap panel w/ DB history + "From the app world" + "Competitor watch" sections |
 
 Everything opens the shared **AdDrawer** (tags + re-tag, copy, daily
 sparkline, attention funnel, WoW strip, confirm-gated pause/resume).

@@ -77,12 +77,26 @@ interface AppWorldItem {
   url: string;
 }
 
+interface CompetitorWatchBrand {
+  page_name: string;
+  new_ads_7d: number;
+  total_active: number;
+  examples: Array<{
+    hook: string | null;
+    angle: string | null;
+    format: string | null;
+    started_at: string | null;
+    ad_library_url: string | null;
+  }>;
+}
+
 interface RecapResponse {
   generated_at: string;
   model: string;
   stats: {
     window: { since: string; until: string };
     app_world?: AppWorldItem[];
+    competitor_watch?: CompetitorWatchBrand[];
     totals: {
       spend: number;
       spend_delta_pct: number | null;
@@ -933,6 +947,48 @@ function RecapRail({ data }: { data: GrowthData }) {
                           <strong style={{ color: "var(--ink)" }}>{a.title}</strong>{" "}
                           <span style={{ color: "var(--ink-3)" }}>{a.detail}</span>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recap.stats.competitor_watch && recap.stats.competitor_watch.length > 0 && (
+                <div>
+                  <SectionLabel>👀 Competitor watch</SectionLabel>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {recap.stats.competitor_watch.map((b, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          border: "1px solid var(--line)",
+                          borderLeft: `3px solid ${b.new_ads_7d > 0 ? "var(--accent)" : "var(--line-2)"}`,
+                          background: "var(--surface)",
+                        }}
+                      >
+                        <div style={{ fontSize: 12.5, fontWeight: 600 }}>
+                          {b.page_name}
+                          <span
+                            style={{
+                              fontWeight: 400,
+                              color: b.new_ads_7d > 0 ? "var(--accent)" : "var(--ink-3)",
+                              fontFamily: "var(--font-geist-mono), monospace",
+                              fontSize: 10.5,
+                              marginLeft: 8,
+                            }}
+                          >
+                            {b.new_ads_7d > 0 ? `${b.new_ads_7d} new this week` : "no new ads"} · {b.total_active} running
+                          </span>
+                        </div>
+                        {b.examples.map((e, ei) => (
+                          <div key={ei} style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, lineHeight: 1.45 }}>
+                            {e.angle && <strong style={{ color: "var(--ink-2)" }}>{e.angle}: </strong>}
+                            {e.hook && <em>“{e.hook}”</em>}
+                            {e.format && <span> · {e.format}</span>}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>

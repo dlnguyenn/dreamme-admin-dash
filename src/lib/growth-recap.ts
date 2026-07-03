@@ -15,6 +15,7 @@ import {
   GROWTH_SYSTEM_PROMPT,
   type WeeklyStats,
 } from "@/lib/growth-tools";
+import { fetchCompetitorWatch, type CompetitorWatchBrand } from "@/lib/competitor-ads";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -138,7 +139,10 @@ export interface AppWorldItem {
 }
 
 /** Recap stats carry an optional app-world section alongside the ad stats. */
-export type RecapStats = WeeklyStats & { app_world?: AppWorldItem[] };
+export type RecapStats = WeeklyStats & {
+  app_world?: AppWorldItem[];
+  competitor_watch?: CompetitorWatchBrand[];
+};
 
 export interface RecapRow {
   id?: string;
@@ -189,8 +193,16 @@ async function fetchAppWorld(limit = 5): Promise<AppWorldItem[]> {
 }
 
 export async function generateWeeklyRecap(model: string = MODELS.SONNET_4_6): Promise<RecapRow> {
-  const [baseStats, appWorld] = await Promise.all([buildWeeklyStats(), fetchAppWorld()]);
-  const stats: RecapStats = { ...baseStats, app_world: appWorld };
+  const [baseStats, appWorld, competitorWatch] = await Promise.all([
+    buildWeeklyStats(),
+    fetchAppWorld(),
+    fetchCompetitorWatch(),
+  ]);
+  const stats: RecapStats = {
+    ...baseStats,
+    app_world: appWorld,
+    competitor_watch: competitorWatch,
+  };
   const { value: recap } = await structuredCall({
     model,
     system:
@@ -326,6 +338,24 @@ export function recapEmailHtml(row: RecapRow): string {
       <div><b>${esc(p.app_name ?? "Unknown app")}</b> · ${p.platform === "tiktok" ? "TikTok" : "Instagram"} · ${(p.views / 1_000_000) >= 1 ? `${(p.views / 1_000_000).toFixed(1)}M` : `${Math.round(p.views / 1000)}K`} views${p.hook_text ? ` — <i>“${esc(p.hook_text)}”</i>` : ""}</div>
       ${p.why_it_hit ? `<div style="color:#555;font-size:13px;">${esc(p.why_it_hit)}</div>` : ""}
       <a href="${esc(p.url)}" style="font-size:12px;">watch →</a>
+    </div>`,
+      )
+      .join("")}`
+        : ""
+    }
+    ${
+      row.stats.competitor_watch?.length
+        ? `<h3>👀 Competitor watch</h3>
+    ${row.stats.competitor_watch
+      .map(
+        (b) => `<div style="margin:0 0 10px;padding:8px 12px;border-left:3px solid #b3502f;background:#faf8f4;">
+      <div><b>${esc(b.page_name)}</b> — ${b.new_ads_7d ? `<b>${b.new_ads_7d} NEW ad${b.new_ads_7d === 1 ? "" : "s"}</b> this week · ` : "no new ads this week · "}${b.total_active} running</div>
+      ${b.examples
+        .map(
+          (e) =>
+            `<div style="color:#555;font-size:13px;">${e.angle ? `<b>${esc(e.angle)}:</b> ` : ""}${e.hook ? `<i>“${esc(e.hook)}”</i>` : ""}${e.format ? ` (${esc(e.format)})` : ""}</div>`,
+        )
+        .join("")}
     </div>`,
       )
       .join("")}`

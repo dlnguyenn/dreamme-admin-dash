@@ -1,0 +1,101 @@
+[
+  {
+    "ad_archive_id": "1123442893358354",
+    "page_id": "1129402026925364",
+    "page_name": "Glowise",
+    "is_active": true,
+    "start_date": 1779606000,
+    "end_date": 1782198000,
+    "publisher_platform": [
+      "FACEBOOK",
+      "INSTAGRAM",
+      "AUDIENCE_NETWORK",
+      "MESSENGER",
+      "THREADS"
+    ],
+    "ad_library_url": "https://www.facebook.com/ads/library/?id=1123442893358354",
+    "url": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=1129402026925364",
+    "snapshot": {
+      "display_format": "VIDEO",
+      "body": {
+        "text": "Track your calories. Support your GLP-1 journey. AI makes weight loss easier. 💉✨"
+      },
+      "title": "The #1 GLP-1 Calorie Tracker of 2026",
+      "cta_text": "Install now",
+      "cta_type": "INSTALL_MOBILE_APP",
+      "link_url": "http://itunes.apple.com/app/id6730116702",
+      "images": [],
+      "cards": [],
+      "videos": [
+        {
+          "video_preview_image_url": "https://scontent.fbod1-1.fna.fbcdn.net/v/t39.35426-6/707067425_1609947350070415_846372940986733588_n.jpg?_nc_cat=101&ccb=1-7&_nc_sid=c53f8f&_nc_ohc=Zs1Jh9k-3A0Q7kNvwF2vgoC&_nc_oc=AdrFYThcXuJTZf8upApsfzUsJyuImI3WEGAGIff2t3uRXwiNHcXbtYC6_tTIfZj8qbrp8Vlr1SW33vApg0jlEREs&_nc_zt=14&_nc_ht=scontent.fbod1-1.fna&_nc_gid=3fUhN8wK1fv3B8E0E0A7RQ&_nc_ss=7f289&oh=00_Af8lCYOM7_XxLruwUNvHVOqpufDoc-P4FIfDT8lEY9hgdA&oe=6A40DCF0",
+          "video_sd_url": "https://video.fbod1-1.fna.fbcdn.net/o1/v/t2/f2/m412/AQNJshqvWMflKBtfV4EwLPOb4I-tDFsRQm2ZqUtd11rZ815nLTioT0WrSmuocpIcJmI_fl06wRPdMQ221Aizq0-uK9B7irrHT9DX3Qk8TQ.mp4?_nc_cat=111&_nc_oc=AdqbV287oZNRGRne-L0GNkasGDNdtvcIFscysGNa38BZrJ-6FRrGMwhr5khJyb9HOaf60fuMXs1mTJvELK6un2uL&_nc_sid=ef5aa3&_nc_ht=video.fbod1-1.fna.fbcdn.net&_nc_ohc=a-Zjws7d7CAQ7kNvwHw6TaV&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5WSV9VU0VDQVNFX1BST0RVQ1RfVFlQRS4uQzMuMzYwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTcxNjcxNzk3NjQ0MTYyNywiYXNzZXRfYWdlX2RheXMiOjMwLCJ2aV91c2VjYXNlX2lkIjoxMDc5OSwiZHVyYXRpb25fcyI6MTksInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&_nc_gid=3fUhN8wK1fv3B8E0E0A7RQ&_nc_ss=7f289&_nc_zt=28&oh=00_Af8MuCHb1b9Wq8sSYjYDhDneLC6RgKBuZQZ933Cz9-Sgvw&oe=6A40D83F"
+        }
+      ]
+    }
+  },
+  {
+    "ad_archive_id": "1030741722710835",
+    "page_id": "539227915950887",
+    "page_name": "MeAgain App",
+    "is_active": true,
+    "start_date": 1780470000,
+    "end_date": 1782198000,
+    "publisher_platform": [
+      "FACEBOOK",
+      "INSTAGRAM",
+      "AUDIENCE_NETWORK",
+      "MESSENGER",
+      "THREADS"
+    ],
+    "ad_library_url": "https://www.facebook.com/ads/library/?id=1030741722710835",
+    "url": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=539227915950887",
+    "snapshot": {
+      "display_format": null,
+      "body": {
+        "text": "MeAgain keeps GLP-1 info in one place:\n\n💉 Monitor your GLP-1 journey\n\n🍎 Easy food logging with AI"
+      },
+      "title": null,
+      "cta_text": null,
+      "cta_type": null,
+      "link_url": null,
+      "images": [],
+      "cards": [],
+      "videos": []
+    }
+  },
+  {
+    "ad_archive_id": "SYNTHETIC-IMAGE-1",
+    "page_id": "539227915950887",
+    "page_name": "MeAgain App",
+    "is_active": true,
+    "start_date": 1780470000,
+    "end_date": 1782198000,
+    "publisher_platform": [
+      "FACEBOOK",
+      "INSTAGRAM",
+      "AUDIENCE_NETWORK",
+      "MESSENGER",
+      "THREADS"
+    ],
+    "ad_library_url": "https://www.facebook.com/ads/library/?id=1030741722710835",
+    "url": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=539227915950887",
+    "snapshot": {
+      "display_format": "IMAGE",
+      "body": {
+        "text": "MeAgain keeps GLP-1 info in one place:\n\n💉 Monitor your GLP-1 journey\n\n🍎 Easy food logging with AI"
+      },
+      "title": null,
+      "cta_text": null,
+      "cta_type": null,
+      "link_url": null,
+      "images": [
+        {
+          "resized_image_url": "https://example.com/img.jpg"
+        }
+      ],
+      "cards": [],
+      "videos": []
+    }
+  }
+]

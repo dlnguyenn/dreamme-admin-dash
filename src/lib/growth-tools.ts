@@ -900,6 +900,59 @@ export const GROWTH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "competitor_ads",
+    description:
+      "Tracked competitors' Meta Ad Library ads (scraped Tue/Fri via the Competitors tab, each AI-analyzed with format/angle/hook/offer/why-notable). Use for 'what are competitors running', counter-ad strategy, and spotting their new launches. Longevity (days running) is a winner signal — long-running ads are the ones working for them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        brand: { type: "string", description: "Filter by page name (partial, case-insensitive match), e.g. 'MeAgain'." },
+        only_new: { type: "boolean", description: "Only ads first seen in the last 7 days." },
+        active_only: { type: "boolean", description: "Only currently-running ads. Default true." },
+        limit: { type: "number", description: "Max ads (1-50). Default 25." },
+      },
+    },
+    run: async (input) => {
+      const filters = ["select=*"];
+      if (input.active_only !== false) filters.push("is_active=eq.true");
+      if (input.only_new === true) filters.push(`first_seen_at=gte.${daysAgo(6)}`);
+      if (typeof input.brand === "string" && input.brand.trim()) {
+        filters.push(`page_name=ilike.*${encodeURIComponent(input.brand.trim())}*`);
+      }
+      const limit = Math.max(1, Math.min(50, Math.floor(num(input.limit)) || 25));
+      filters.push("order=first_seen_at.desc", `limit=${limit}`);
+      const rows = await sbSelect<Record<string, unknown>>(`competitor_ads?${filters.join("&")}`);
+      const brands = await sbSelect<Record<string, unknown>>(
+        `competitor_brands?select=page_id,page_name,last_ad_count,new_last_scrape&active=eq.true&limit=100`,
+      );
+      const nowMs = Date.now();
+      return {
+        tracked_brands: brands,
+        ads: rows.map((a) => {
+          const started = a.started_at ? new Date(String(a.started_at)).getTime() : null;
+          const endedOrNow = a.is_active === false && a.ended_at ? new Date(String(a.ended_at)).getTime() : nowMs;
+          return {
+            brand: a.page_name,
+            is_active: a.is_active,
+            days_running: started ? Math.max(1, Math.round((endedOrNow - started) / 86_400_000)) : null,
+            started_at: a.started_at,
+            first_seen_at: a.first_seen_at,
+            media_type: a.media_type,
+            format: a.format,
+            angle: a.angle,
+            hook: a.hook,
+            offer: a.offer,
+            why_notable: a.why_notable,
+            title: a.title,
+            cta: a.cta_text,
+            body_excerpt: String(a.body ?? "").slice(0, 240),
+            ad_library_url: a.ad_library_url,
+          };
+        }),
+      };
+    },
+  },
+  {
     name: "propose_action",
     description:
       "Propose a Meta Ads change for the user to confirm — pause/activate an ad, set an ad set or campaign daily budget, or duplicate an ad set. This NEVER executes anything: it renders a confirmation card in the dashboard that the user must explicitly approve. Only propose after the data justifies it, cite the numbers in `reason`, and propose at most one action per distinct change. Never claim a change was made.",
@@ -966,7 +1019,7 @@ export const GROWTH_SYSTEM_PROMPT = `You are the DreamMe Growth AI — the marke
 
 ## How to answer
 - ALWAYS pull data with tools before answering anything quantitative. Start with week_over_week for "how are we doing" questions; use ad_performance / creative_attention for creative questions; blended_efficiency + rc_snapshot for efficiency/LTV questions.
-- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend / competitive creative research" → viral_app_inspo.
+- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend" → viral_app_inspo · "what are competitors running / counter their ads / did X launch anything new" → competitor_ads.
 
 ## Actions (propose_action)
 - You can PROPOSE Meta changes — pause/activate an ad, set an ad set/campaign daily budget, duplicate an ad set — via the propose_action tool. It never executes; the user sees a confirmation card and must approve.

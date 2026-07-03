@@ -22,11 +22,12 @@ import { GrowthLeaderboard } from "./growth/GrowthLeaderboard";
 import { GrowthLaunches } from "./growth/GrowthLaunches";
 import { GrowthInsights } from "./growth/GrowthInsights";
 import { GrowthInspo } from "./growth/GrowthInspo";
+import { GrowthCompetitors } from "./growth/GrowthCompetitors";
 import { GrowthAnalyst } from "./growth/GrowthAnalyst";
 import { AdDrawer } from "./growth/AdDrawer";
 import { Skeleton } from "./growth/shared";
 
-type Subtab = "overview" | "creatives" | "insights" | "inspo" | "analyst";
+type Subtab = "overview" | "creatives" | "insights" | "inspo" | "competitors" | "analyst";
 type CreativesView = "leaderboard" | "launches";
 
 const SUBTAB_KEY = "dreamme.growth.subtab";
@@ -37,6 +38,7 @@ const SUBTABS: Array<{ id: Subtab; label: string; short: string }> = [
   { id: "creatives", label: "Creatives", short: "Creatives" },
   { id: "insights", label: "Insights", short: "Insights" },
   { id: "inspo", label: "Inspo", short: "Inspo" },
+  { id: "competitors", label: "Competitors", short: "Rivals" },
   { id: "analyst", label: "AI Analyst", short: "Analyst" },
 ];
 
@@ -56,6 +58,7 @@ export function GrowthAI() {
         saved === "creatives" ||
         saved === "insights" ||
         saved === "inspo" ||
+        saved === "competitors" ||
         saved === "analyst"
       ) {
         setSubtab(saved);
@@ -204,6 +207,8 @@ export function GrowthAI() {
         <GrowthInsights data={data} onAsk={onAsk} onOpenAd={setSelectedAdId} />
       ) : subtab === "inspo" ? (
         <GrowthInspo onAsk={onAsk} />
+      ) : subtab === "competitors" ? (
+        <GrowthCompetitors onAsk={onAsk} />
       ) : (
         <GrowthAnalyst
           data={data}
