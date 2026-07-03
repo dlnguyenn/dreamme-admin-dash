@@ -49,7 +49,7 @@ interface ResearchRunLite {
   report_md: string | null;
   error: string | null;
   created_at: string;
-  phase_state?: { candidates?: RunCandidate[] };
+  phase_state?: { candidates?: RunCandidate[]; follow_ups?: string[] };
   progress?: Progress;
 }
 
@@ -65,19 +65,21 @@ export function ResearchRail() {
 
   const selected = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
 
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/growth/research");
-        const body = (await res.json()) as { runs?: ResearchRunLite[] };
-        if (alive && res.ok && body.runs) setRuns(body.runs);
-      } catch {}
-    })();
-    return () => {
-      alive = false;
-    };
+  const fetchRuns = React.useCallback(async (): Promise<ResearchRunLite[]> => {
+    try {
+      const res = await fetch("/api/growth/research");
+      const body = (await res.json()) as { runs?: ResearchRunLite[] };
+      if (res.ok && body.runs) {
+        setRuns(body.runs);
+        return body.runs;
+      }
+    } catch {}
+    return [];
   }, []);
+
+  React.useEffect(() => {
+    void fetchRuns();
+  }, [fetchRuns]);
 
   const upsertRun = React.useCallback((run: ResearchRunLite) => {
     setRuns((cur) => {
@@ -122,6 +124,23 @@ export function ResearchRail() {
     },
     [upsertRun],
   );
+
+  // The analyst chat can start a run (start_deep_research tool) — when it
+  // does, pick the run up and step it so "ask in chat" works end-to-end.
+  React.useEffect(() => {
+    const onStarted = () => {
+      void (async () => {
+        const latest = await fetchRuns();
+        const active = latest.find((r) => ACTIVE_STATUSES.has(r.status));
+        if (active && !loopAlive.current) {
+          setSelectedId(active.id);
+          void stepLoop(active.id);
+        }
+      })();
+    };
+    window.addEventListener("growth:research-started", onStarted);
+    return () => window.removeEventListener("growth:research-started", onStarted);
+  }, [fetchRuns, stepLoop]);
 
   const start = async () => {
     const q = question.trim();
@@ -394,6 +413,34 @@ export function ResearchRail() {
           {selected.report_md && (
             <div style={{ fontSize: 13, lineHeight: 1.6, minWidth: 0, overflowWrap: "break-word" }}>
               <MarkdownLite text={selected.report_md} />
+            </div>
+          )}
+
+          {/* follow-up research chips */}
+          {selected.status === "done" && (selected.phase_state?.follow_ups?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 14, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {selected.phase_state!.follow_ups!.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => {
+                    setQuestion(f);
+                    document.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+                  }}
+                  title="Prefill this as the next research question"
+                  style={{
+                    fontSize: 11.5,
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    border: "1px solid var(--line)",
+                    background: "var(--surface-2)",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  ⚡ {f.length > 70 ? `${f.slice(0, 67)}…` : f}
+                </button>
+              ))}
             </div>
           )}
         </div>

@@ -105,6 +105,25 @@ Slack branch later.
 - Ask the analyst "what did our food-scanner research find?" → the
   `research_reports` tool pulls the memo into chat.
 
+### Chat-first research + the video database (Lightreel parity)
+
+- **`video_database` tool** — the analyst searches our OWN corpus of
+  already-analyzed videos (viral_app_posts + every video past runs coded)
+  before proposing anything new. Zero cost, instant, cites evidence as
+  clickable links (MarkdownLite renders `[text](url)`).
+- **`start_deep_research` tool** — "go research X" in chat creates a run;
+  the ResearchRail hears a `growth:research-started` event and steps it
+  automatically. The agent is instructed to say it's running and never
+  invent findings; ask again when it's done.
+- **Corpus reuse inside runs** (the Lightreel cost model): seeding queries
+  the local corpus first (`via: "database"` in the search log); the inspect
+  phase pulls codings + creator baselines from the last 15 runs so the same
+  video is **never watched twice** and known creators aren't re-scraped
+  (`coded_from: "prior"`).
+- **Memos cite evidence inline** as `[@author · 2.1M views](url)` links and
+  end with `follow_ups` — rendered as ⚡ chips that prefill the next
+  research question.
+
 ## Data sources (all pre-existing, anon-readable)
 
 `ad_insights_daily`, `rc_account_metrics_daily`, `blended_marketing_efficiency`,

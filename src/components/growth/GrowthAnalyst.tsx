@@ -226,6 +226,11 @@ export function GrowthAnalyst({
             actions: (body.proposals ?? []).map((p) => ({ ...p, state: "proposed" as const })),
           },
         ]);
+        // The agent can kick off a Deep Research run (start_deep_research
+        // tool) — nudge the rail so it picks the run up and steps it.
+        if ((body.steps ?? []).some((s) => s.tool === "start_deep_research" && s.ok)) {
+          window.dispatchEvent(new Event("growth:research-started"));
+        }
       } catch (e) {
         setError((e as Error).message);
         // keep the user turn so they can retry with context intact

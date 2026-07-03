@@ -6,7 +6,10 @@ import {
   parseJsonLoose,
   validateCoding,
   fromCheapSearchItem,
+  extractTerms,
+  applyPriorCodings,
   type ResearchCandidate,
+  type VideoCoding,
 } from "@/lib/growth-research";
 
 function cand(overrides: Partial<ResearchCandidate>): ResearchCandidate {
@@ -129,6 +132,48 @@ describe("fromCheapSearchItem", () => {
     expect(bare.author).toBe("");
     expect(bare.views).toBe(0);
     expect(bare.posted_at).toBeNull();
+  });
+});
+
+describe("extractTerms", () => {
+  it("keeps topic words, drops stopwords and short words", () => {
+    const terms = extractTerms("Look for viral B2C app videos with a food scanner or in the health niche");
+    expect(terms).toContain("scanner");
+    expect(terms).toContain("health");
+    expect(terms).toContain("food");
+    expect(terms).not.toContain("look");
+    expect(terms).not.toContain("viral");
+    expect(terms).not.toContain("b2c");
+  });
+  it("dedupes and caps", () => {
+    const terms = extractTerms("protein protein protein tracking tracking macro counting fiber weight journey glp-1 medication logging", 4);
+    expect(terms.length).toBeLessThanOrEqual(4);
+    expect(new Set(terms).size).toBe(terms.length);
+  });
+});
+
+describe("applyPriorCodings", () => {
+  const coding: VideoCoding = {
+    app_visibility: 3, app_name: "EXPOSR", app_category: "wellness",
+    hook_transcript: "bad news for pizza lovers", structure: "hook → scan → verdict",
+    works_without_app: false, format: "other", hook_type: "stat",
+    why_it_hit: "brand fear + scan payoff", score: 5,
+  };
+
+  it("copies coding + derives outlier from the prior baseline; never overwrites fresh coding", () => {
+    const already = cand({ url: "https://t/1", coding, coded_from: "video" });
+    const reusable = cand({ url: "https://t/2", views: 600_000 });
+    const unknown = cand({ url: "https://t/3" });
+    const map = new Map([
+      ["https://t/2", { coding, baseline_median: 50_000 }],
+      ["https://t/1", { coding: { ...coding, score: 1 }, baseline_median: 1 }],
+    ]);
+    const reused = applyPriorCodings([already, reusable, unknown], map);
+    expect(reused).toBe(1);
+    expect(reusable.coded_from).toBe("prior");
+    expect(reusable.outlier_score).toBe(12); // 600k / 50k
+    expect(already.coding!.score).toBe(5); // untouched
+    expect(unknown.coding).toBeUndefined();
   });
 });
 

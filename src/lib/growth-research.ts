@@ -106,7 +106,8 @@ export interface ResearchCandidate {
   baseline_median?: number | null;
   outlier_score?: number | null;
   coding?: VideoCoding | null;
-  coded_from?: "video" | "cover" | "none";
+  /** "prior" = coding reused from a past run's corpus — cost-free. */
+  coded_from?: "video" | "cover" | "prior" | "none";
   /** Why the video path fell back to cover-frame coding (diagnostic). */
   video_error?: string;
   strong?: boolean;
@@ -118,8 +119,9 @@ export interface SearchLogEntry {
   round: 1 | 2;
   fetched: number;
   kept: number;
-  /** Which actor served this query — the cheap one, or the clockworks fallback. */
-  via?: "cheap" | "clockworks";
+  /** Which source served this query — the cheap actor, the clockworks
+   *  fallback, or our own already-paid-for video database. */
+  via?: "cheap" | "clockworks" | "database";
   error?: string;
 }
 
@@ -132,6 +134,8 @@ export interface PhaseState {
   shortlist?: string[]; // candidate urls picked for inspection
   inspect_cursor?: number;
   searches?: SearchLogEntry[];
+  /** Follow-up research questions the memo suggests (rendered as chips). */
+  follow_ups?: string[];
 }
 
 export interface ResearchRun {
@@ -276,6 +280,119 @@ export function validateCoding(v: unknown): VideoCoding {
   };
 }
 
+// --- video database (reuse what we already paid for) ------------------------------
+//
+// Lightreel's core cost move: search an internal corpus of already-analyzed
+// videos BEFORE (and alongside) paid scrapes, and never watch the same video
+// twice. Our corpus is (a) viral_app_posts — every post the Inspo pipeline or
+// a past research run enriched — and (b) coded candidates inside past
+// growth_research_runs.phase_state.
+
+const STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "into", "about", "what",
+  "look", "find", "search", "viral", "video", "videos", "content", "tiktok",
+  "app", "apps", "b2c", "niche", "their", "them", "then", "than", "have",
+  "some", "more", "most", "very", "just", "like", "over", "under",
+]);
+
+/** Meaningful lowercase keywords from a research question (for ilike matching
+ *  against the local corpus). */
+export function extractTerms(question: string, cap = 8): string[] {
+  const words = question
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+  return [...new Set(words)].slice(0, cap);
+}
+
+/** Search viral_app_posts for candidates matching the question's terms —
+ *  zero marginal cost, these were paid for by past scrapes/runs. */
+async function searchLocalPosts(terms: string[], floor: number): Promise<ResearchCandidate[]> {
+  if (!terms.length) return [];
+  const out: ResearchCandidate[] = [];
+  for (const term of terms.slice(0, 5)) {
+    try {
+      const enc = encodeURIComponent(`*${term}*`);
+      const rows = await sbSelect<Record<string, unknown>>(
+        `viral_app_posts?select=post_url,post_id,author_handle,view_count,like_count,comment_count,caption,thumbnail_url,posted_at,hook_text,app_name` +
+          `&or=(caption.ilike.${enc},hook_text.ilike.${enc},app_name.ilike.${enc},why_it_hit.ilike.${enc})` +
+          `&view_count=gte.${floor}&platform=eq.tiktok&order=view_count.desc&limit=15`,
+      );
+      for (const r of rows) {
+        out.push({
+          url: String(r.post_url),
+          post_id: r.post_id != null ? String(r.post_id) : null,
+          author: String(r.author_handle ?? ""),
+          views: Number(r.view_count) || 0,
+          likes: Number(r.like_count) || 0,
+          comments: Number(r.comment_count) || 0,
+          caption: String(r.caption ?? "").slice(0, 800),
+          cover_url: (r.thumbnail_url as string | null) ?? null,
+          posted_at: (r.posted_at as string | null) ?? null,
+          found_via: `video_database:"${term}"`,
+        });
+      }
+    } catch {
+      // corpus search is best-effort — a miss never blocks the run
+    }
+  }
+  return out;
+}
+
+export interface PriorCodings {
+  byUrl: Map<string, { coding: VideoCoding; baseline_median: number | null }>;
+  baselineByAuthor: Map<string, number | null>;
+}
+
+/** Codings + creator baselines from recent runs, so a video is never watched
+ *  twice and a known creator's baseline is never re-scraped. */
+async function fetchPriorCodings(excludeRunId: string): Promise<PriorCodings> {
+  const byUrl = new Map<string, { coding: VideoCoding; baseline_median: number | null }>();
+  const baselineByAuthor = new Map<string, number | null>();
+  try {
+    const runs = await sbSelect<{ id: string; phase_state: PhaseState }>(
+      `growth_research_runs?select=id,phase_state&order=created_at.desc&limit=15`,
+    );
+    for (const run of runs) {
+      if (run.id === excludeRunId) continue;
+      for (const c of run.phase_state?.candidates ?? []) {
+        if (c.coding && (c.coded_from === "video" || c.coded_from === "cover") && !byUrl.has(c.url)) {
+          byUrl.set(c.url, { coding: c.coding, baseline_median: c.baseline_median ?? null });
+        }
+        if (c.author && c.baseline_median != null && !baselineByAuthor.has(c.author.toLowerCase())) {
+          baselineByAuthor.set(c.author.toLowerCase(), c.baseline_median);
+        }
+      }
+    }
+  } catch {
+    // best-effort
+  }
+  return { byUrl, baselineByAuthor };
+}
+
+/** Copy prior codings onto matching candidates (pure — unit-tested). Returns
+ *  how many candidates were satisfied from the corpus. */
+export function applyPriorCodings(
+  candidates: ResearchCandidate[],
+  byUrl: PriorCodings["byUrl"],
+): number {
+  let reused = 0;
+  for (const c of candidates) {
+    if (c.coding) continue;
+    const prior = byUrl.get(c.url);
+    if (!prior) continue;
+    c.coding = prior.coding;
+    c.coded_from = "prior";
+    if (c.baseline_median == null && prior.baseline_median != null) {
+      c.baseline_median = prior.baseline_median;
+      c.outlier_score = computeOutlierScore(c.views, prior.baseline_median);
+    }
+    reused++;
+  }
+  return reused;
+}
+
 // --- candidate collection --------------------------------------------------------
 
 function tiktokVideoUrl(item: ApifyTikTokItem): string | null {
@@ -411,7 +528,7 @@ async function planPhase(question: string): Promise<ResearchPlan> {
   const { value } = await structuredCall<ResearchPlan>({
     model: MODELS.SONNET_4_6,
     system:
-      "You are a viral-content research planner for a consumer-app growth team. " +
+      "You are a viral-content research planner for the growth team of DreamMe — a consumer iOS app: a GLP-1 companion + self-care Tamagotchi (medication/shot logging, protein & fiber tracking, food scanning, weight journey, virtual pet). Skew adjacent categories toward veins DreamMe could credibly own. " +
       "You turn a research question into TikTok search queries the way a smart human researcher would: " +
       "seed from ADJACENT content categories, not just the literal topic (a food-scanner question also lives in grocery hauls, ingredient exposés, allergy content, symptom talk); " +
       "and phrase every query in NATIVE VIEWER LANGUAGE — what a normal person types or says ('foods that scored 100 at aldi', 'what I eat in a day scanning everything'), never marketer terms like 'app promo video'.",
@@ -677,7 +794,7 @@ async function inspectCandidate(
 
 // --- synthesis -----------------------------------------------------------------------
 
-async function synthesizeReport(run: ResearchRun): Promise<string> {
+async function synthesizeReport(run: ResearchRun): Promise<{ report_md: string; follow_ups: string[] }> {
   const state = run.phase_state;
   const inspected = (state.candidates ?? []).filter((c) => c.coding || c.outlier_score != null);
   const evidence = inspected.map((c) => ({
@@ -690,7 +807,7 @@ async function synthesizeReport(run: ResearchRun): Promise<string> {
     found_via: c.found_via,
     ...(c.coding ?? {}),
   }));
-  const { value } = await structuredCall<{ report_md: string }>({
+  const { value } = await structuredCall<{ report_md: string; follow_ups: string[] }>({
     model: MODELS.SONNET_4_6,
     system:
       "You write viral-content research memos for DreamMe, a GLP-1 companion iOS app (medication logging, protein/fiber tracking, food scanning, virtual pet). " +
@@ -708,23 +825,39 @@ async function synthesizeReport(run: ResearchRun): Promise<string> {
       "## Copy / avoid — what to lift verbatim vs the traps (e.g. formats that work without the app)\n" +
       "## 3 repeatable series for DreamMe — concrete series concepts with example first-video hooks in native viewer language\n" +
       "## Replication searches — the exact TikTok searches a human should run monthly to keep mining this vein\n" +
-      "Where evidence is thin (few videos, cover-only coding), say so plainly.",
+      "EVERY time you cite an evidence video, cite it as a markdown link using its exact url from the evidence JSON, in the form [@author · 2.1M views](url) — the dashboard renders these as clickable evidence. " +
+      "Where evidence is thin (few videos, cover-only coding), say so plainly.\n\n" +
+      "Also emit follow_ups: 3 sharp follow-up research questions this memo begs (each phrased as a runnable research question, like 'Find viral videos where a scanner app settles a couple's grocery argument').",
     toolName: "emit_research_memo",
     toolDescription: "Emit the final research memo.",
     schema: {
       type: "object",
-      properties: { report_md: { type: "string", description: "The full memo in markdown." } },
-      required: ["report_md"],
+      properties: {
+        report_md: { type: "string", description: "The full memo in markdown, evidence videos cited as [@author · views](url) links." },
+        follow_ups: {
+          type: "array",
+          items: { type: "string" },
+          description: "3 follow-up research questions this memo suggests running next.",
+        },
+      },
+      required: ["report_md", "follow_ups"],
     },
     validate: (v) => {
       const o = v as Record<string, unknown>;
       const md = String(o.report_md ?? "").trim();
       if (md.length < 200) throw new Error("memo too short");
-      return { report_md: md };
+      const follow_ups = (Array.isArray(o.follow_ups) ? o.follow_ups : [])
+        .map((s) => String(s).slice(0, 200))
+        .filter(Boolean)
+        .slice(0, 4);
+      return { report_md: md, follow_ups };
     },
-    maxTokens: 4000,
+    // Memo + inline citations + follow_ups for a 14-video run regularly runs
+    // past 4.5k output tokens — a truncated tool call surfaces as
+    // "memo too short", so keep real headroom here.
+    maxTokens: 8000,
   });
-  return value.report_md;
+  return value;
 }
 
 // --- run lifecycle ---------------------------------------------------------------------
@@ -838,6 +971,17 @@ export async function stepResearchRun(runId: string): Promise<ResearchRun> {
         break;
       }
       case "seeding": {
+        // Our own video database first (free — already paid for by past
+        // scrapes and runs), then the paid searches.
+        const terms = extractTerms(`${run.question} ${(state.categories ?? []).join(" ")}`);
+        const local = await searchLocalPosts(terms, RESEARCH_FLOOR);
+        if (local.length) {
+          state.candidates = mergeCandidates(state.candidates ?? [], local);
+          state.searches = [
+            ...(state.searches ?? []),
+            { query: terms.slice(0, 5).join(", "), round: 1, fetched: local.length, kept: local.length, via: "database" },
+          ];
+        }
         await runSearches(state.seed_queries ?? [], 1, state);
         await saveRun(run.id, { status: "expanding", phase_state: state });
         break;
@@ -860,15 +1004,36 @@ export async function stepResearchRun(runId: string): Promise<ResearchRun> {
           .slice(cursor, cursor + INSPECT_PER_STEP)
           .map((url) => byUrl.get(url))
           .filter((c): c is ResearchCandidate => !!c);
+        // Never watch the same video twice: pull codings + creator baselines
+        // from recent runs and satisfy what we can from the corpus for free.
+        const prior = await fetchPriorCodings(run.id);
+        const reused = applyPriorCodings(batch, prior.byUrl);
+        for (const c of batch) {
+          if (c.coded_from === "prior") c.strong = isStrongFind(c);
+        }
         // Seed the baseline cache from candidates already inspected in prior
-        // steps so a repeat author isn't re-scraped across step boundaries.
-        const baselineCache = new Map<string, number | null>();
+        // steps AND from prior runs, so a known author isn't re-scraped.
+        const baselineCache = new Map<string, number | null>(prior.baselineByAuthor);
         for (const cand of state.candidates ?? []) {
           if (cand.author && cand.baseline_median !== undefined) {
             baselineCache.set(cand.author.toLowerCase(), cand.baseline_median ?? null);
           }
         }
-        await pool(batch, INSPECT_PER_STEP, (c) => inspectCandidate(c, run.id, baselineCache));
+        const todo = batch.filter((c) => c.coded_from !== "prior");
+        if (reused > 0) {
+          // still resolve baselines for prior-coded candidates missing one
+          for (const c of batch) {
+            if (c.coded_from === "prior" && c.outlier_score == null && c.author) {
+              const cached = baselineCache.get(c.author.toLowerCase());
+              if (cached != null) {
+                c.baseline_median = cached;
+                c.outlier_score = computeOutlierScore(c.views, cached);
+                c.strong = isStrongFind(c);
+              }
+            }
+          }
+        }
+        await pool(todo, INSPECT_PER_STEP, (c) => inspectCandidate(c, run.id, baselineCache));
         state.inspect_cursor = Math.min(cursor + INSPECT_PER_STEP, shortlist.length);
         const finished = state.inspect_cursor >= shortlist.length;
         await saveRun(run.id, {
@@ -878,11 +1043,12 @@ export async function stepResearchRun(runId: string): Promise<ResearchRun> {
         break;
       }
       case "synthesizing": {
-        const report = await synthesizeReport({ ...run, phase_state: state });
+        const { report_md, follow_ups } = await synthesizeReport({ ...run, phase_state: state });
+        state.follow_ups = follow_ups;
         await saveRun(run.id, {
           status: "done",
           phase_state: state,
-          report_md: report,
+          report_md,
           completed_at: new Date().toISOString(),
         } as Partial<ResearchRun>);
         break;

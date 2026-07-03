@@ -411,10 +411,23 @@ export function adsManagerAdUrl(adId: string): string {
 
 function renderInline(text: string, keyBase: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  // split on **bold** and `code`
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  // split on [link](url), **bold** and `code`
+  const parts = text.split(/(\[[^\]]+\]\(https?:\/\/[^)\s]+\)|\*\*[^*]+\*\*|`[^`]+`)/g);
   parts.forEach((p, i) => {
-    if (p.startsWith("**") && p.endsWith("**")) {
+    const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(p);
+    if (link) {
+      out.push(
+        <a
+          key={`${keyBase}-${i}`}
+          href={link[2]}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "var(--ink)", textDecoration: "underline", textUnderlineOffset: 2 }}
+        >
+          {link[1]}
+        </a>,
+      );
+    } else if (p.startsWith("**") && p.endsWith("**")) {
       out.push(
         <strong key={`${keyBase}-${i}`} style={{ fontWeight: 600, color: "var(--ink)" }}>
           {p.slice(2, -2)}

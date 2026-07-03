@@ -953,6 +953,90 @@ export const GROWTH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "video_database",
+    description:
+      "Search OUR OWN corpus of already-analyzed viral videos (every post the Inspo pipeline scraped + every video past Deep Research runs watched and coded) — zero cost, instant. ALWAYS try this before suggesting new research: if we've already analyzed videos about the topic, answer from them. Matches against captions, on-screen hooks, app names, and why-it-hit notes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Topic keywords, e.g. 'food scanner ingredients' or 'protein tracking'." },
+        min_views: { type: "number", description: "View floor. Default 20000." },
+        limit: { type: "number", description: "Max posts returned (1-30). Default 15." },
+      },
+      required: ["query"],
+    },
+    run: async (input) => {
+      const { extractTerms } = await import("@/lib/growth-research");
+      const terms = extractTerms(String(input.query ?? ""));
+      if (!terms.length) throw new Error("query too generic — give topic keywords");
+      const minViews = Math.max(0, Math.floor(num(input.min_views))) || 20_000;
+      const limit = Math.max(1, Math.min(30, Math.floor(num(input.limit)) || 15));
+      const seen = new Set<string>();
+      const posts: Array<Record<string, unknown>> = [];
+      for (const term of terms.slice(0, 5)) {
+        const enc = encodeURIComponent(`*${term}*`);
+        const rows = await sbSelect<Record<string, unknown>>(
+          `viral_app_posts?select=post_url,platform,author_handle,app_name,app_category,view_count,like_count,posted_at,format,hook_type,hook_text,why_it_hit,caption,source,source_detail` +
+            `&or=(caption.ilike.${enc},hook_text.ilike.${enc},app_name.ilike.${enc},why_it_hit.ilike.${enc})` +
+            `&view_count=gte.${minViews}&order=view_count.desc&limit=${limit}`,
+        );
+        for (const r of rows) {
+          const url = String(r.post_url);
+          if (seen.has(url)) continue;
+          seen.add(url);
+          posts.push({
+            url,
+            platform: r.platform,
+            author: r.author_handle,
+            app_name: r.app_name,
+            app_category: r.app_category,
+            views: num(r.view_count),
+            likes: num(r.like_count),
+            posted_at: r.posted_at,
+            format: r.format,
+            hook_type: r.hook_type,
+            hook_text: r.hook_text,
+            why_it_hit: r.why_it_hit,
+            caption_excerpt: String(r.caption ?? "").slice(0, 160),
+            matched_term: term,
+          });
+        }
+        if (posts.length >= limit) break;
+      }
+      return {
+        terms_searched: terms,
+        matches: posts.slice(0, limit),
+        note: posts.length
+          ? "These are already-analyzed videos from our corpus — cite them directly (markdown links render in the dashboard). If coverage looks thin for the question, suggest start_deep_research."
+          : "No corpus matches — this topic hasn't been researched yet. Offer to run start_deep_research.",
+      };
+    },
+  },
+  {
+    name: "start_deep_research",
+    description:
+      "Kick off a Deep Research run (Lightreel-style): plans adjacent-category searches in native viewer language, scrapes TikTok, scores finds vs each creator's baseline, WATCHES the videos with AI, and writes a memo with format verdicts. Costs ~$0.65 and takes 5-10 minutes; the dashboard steps it automatically and shows live progress in the Deep Research rail. Use when the user asks to research/find/investigate a content vein that video_database doesn't already cover. Phrase `question` as a complete research brief, not keywords.",
+    input_schema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The research question, e.g. 'Find viral B2C app videos with a food scanner or in the health niche'." },
+      },
+      required: ["question"],
+    },
+    run: async (input) => {
+      const question = String(input.question ?? "").trim();
+      if (question.length < 10) throw new Error("question too short — write a full research brief");
+      const { createResearchRun } = await import("@/lib/growth-research");
+      const run = await createResearchRun(question);
+      return {
+        run_id: run.id,
+        status: run.status,
+        note:
+          "Run created — the Deep Research rail (right side of this tab) picks it up and steps through plan → search → watch → memo automatically (~5-10 min, ~$0.65). Tell the user it's running and that they can ask 'what did the research find' once it completes (research_reports tool). Do NOT wait for it or invent findings.",
+      };
+    },
+  },
+  {
     name: "research_reports",
     description:
       "Deep Research memos — Lightreel-style viral-content research runs (adjacent-category seed searches in native viewer language, creator-baseline outlier scoring, Gemini video coding of app visibility, synthesized memo with format clusters + verdicts + repeatable series). Use for 'did we research X', 'what did the research find', or to ground creative recommendations in a past study. Without an id: lists recent runs. With an id: returns that run's full memo.",
@@ -1073,7 +1157,7 @@ export const GROWTH_SYSTEM_PROMPT = `You are the DreamMe Growth AI — the marke
 
 ## How to answer
 - ALWAYS pull data with tools before answering anything quantitative. Start with week_over_week for "how are we doing" questions; use ad_performance / creative_attention for creative questions; blended_efficiency + rc_snapshot for efficiency/LTV questions.
-- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend" → viral_app_inspo · "what are competitors running / counter their ads / did X launch anything new" → competitor_ads · "did we research X / what did the deep research find" → research_reports.
+- Tool routing: "what themes/formats/angles work" → creative_tags · "anything weird / what should I look at" → alerts_digest · "worth it long-term / which campaigns produce valuable users" → payback_ltv, retention_cohorts · "can we trust attribution" → skan_health · "which ads are tired / need refresh" → fatigue_check · "what's going viral for other apps / adapt this trend" → viral_app_inspo · "what are competitors running / counter their ads / did X launch anything new" → competitor_ads · "did we research X / what did the deep research find" → research_reports · "have we seen videos about X / examples of X content" → video_database (our free corpus of already-analyzed videos — ALWAYS check it before proposing new research) · "go research X / find viral videos about X we haven't covered" → start_deep_research (~$0.65, 5-10 min, runs in the Deep Research rail — start it, tell the user it's running, never invent its findings).
 
 ## Actions (propose_action)
 - You can PROPOSE Meta changes — pause/activate an ad, set an ad set/campaign daily budget, duplicate an ad set — via the propose_action tool. It never executes; the user sees a confirmation card and must approve.
