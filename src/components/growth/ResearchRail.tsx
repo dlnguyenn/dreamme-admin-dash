@@ -211,7 +211,7 @@ export function ResearchRail() {
           >
             🔍 Run deep research
           </button>
-          <span style={{ ...mono, fontSize: 10.5, color: "var(--ink-3)" }}>~$2–3.50 · 5–10 min</span>
+          <span style={{ ...mono, fontSize: 10.5, color: "var(--ink-3)" }}>~$0.65 · 5–10 min</span>
         </div>
         {!question && !stepping && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>

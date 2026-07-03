@@ -92,8 +92,16 @@ Slack branch later.
 - Video coding needs `GOOGLE_API_KEY` (already set for image gen);
   `GEMINI_VIDEO_MODEL` overrides the default video model. Video files >14MB
   or expired fall back to cover-frame coding (flagged in the memo).
-- Cost ≈ $2-3.50/run (≈12 Apify searches + ~14 baselines/post scrapes +
-  ~14 Gemini watches + 3 Claude passes), logged to `ai_usage_events`.
+- Cost ≈ **$0.65/run** (down from ~$1.85). Apify is ~90% of the bill, so the
+  search + baseline legs use cheaper actors with a clockworks fallback:
+  searches via `paul_44~tiktok-search` ($0.0009/result with a **server-side
+  `minPlayCount` floor** so we stop paying for sub-viral results), baselines
+  via `novi~tiktok-user-api` (~$0.0001/creator). Both fall back to the
+  clockworks actor (`runSearchQueryScrape` now with MOST_LIKED sorting) on any
+  error/empty; the `via` field on each search-log entry records which ran.
+  Same-author baselines are cached within a run. Override actors with
+  `APIFY_TIKTOK_SEARCH_ACTOR_ID` / `APIFY_TIKTOK_USER_ACTOR_ID`. Gemini
+  (~$0.03) + Claude (~$0.15) are logged to `ai_usage_events`.
 - Ask the analyst "what did our food-scanner research find?" → the
   `research_reports` tool pulls the memo into chat.
 

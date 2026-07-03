@@ -50,22 +50,31 @@ export async function runHashtagScrape(opts: {
  * runHashtagScrape but uses the actor's `searchQueries` field instead
  * of `hashtags`. One query per call (separate Apify runs per query —
  * gives us independent per-query cost attribution and isolates failures).
+ *
+ * `sortByLikes` sorts search results by MOST_LIKED (a cheap charged
+ * add-on) so a fixed result budget returns the top videos rather than a
+ * random slice — most of them then clear our view floor instead of ~40%.
  */
 export async function runSearchQueryScrape(opts: {
   query: string;
   resultsPerPage?: number;
+  sortByLikes?: boolean;
 }): Promise<unknown[]> {
   if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
   const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
     ACTOR_ID,
   )}/run-sync-get-dataset-items`;
-  const body = {
+  const body: Record<string, unknown> = {
     searchQueries: [opts.query],
     resultsPerPage: opts.resultsPerPage ?? 30,
     shouldDownloadCovers: false,
     shouldDownloadVideos: false,
     shouldDownloadSlideshowImages: true,
   };
+  if (opts.sortByLikes) {
+    body.searchSection = "/video";
+    body.videoSearchSorting = "MOST_LIKED";
+  }
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -77,6 +86,90 @@ export async function runSearchQueryScrape(opts: {
   if (!res.ok) {
     throw new Error(
       `Apify search-query run failed (${opts.query}): ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}
+
+// --- cheaper third-party actors (Deep Research) --------------------------------
+//
+// The clockworks actor charges $0.003/result whether or not a result clears
+// our view floor. For Deep Research (many searches + many baseline scrapes,
+// most results discarded) these two actors cut the per-run cost ~3-6x with a
+// server-side view filter and a near-free baseline lookup. Both are wrapped
+// so Deep Research can fall back to clockworks on any failure.
+
+const SEARCH_ACTOR_CHEAP =
+  process.env.APIFY_TIKTOK_SEARCH_ACTOR_ID ?? "paul_44~tiktok-search";
+const USER_ACTOR_CHEAP =
+  process.env.APIFY_TIKTOK_USER_ACTOR_ID ?? "novi~tiktok-user-api";
+
+/**
+ * paul_44/tiktok-search — $0.0009/result with a SERVER-SIDE `minPlayCount`
+ * filter, so a fixed result budget returns only above-floor videos. Returns
+ * this actor's own item shape (normalized in growth-research.ts).
+ */
+export async function runSearchQueryScrapeCheap(opts: {
+  query: string;
+  maxItems?: number;
+  minPlayCount?: number;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    SEARCH_ACTOR_CHEAP,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    keywords: [opts.query],
+    maxItems: opts.maxItems ?? 25,
+    minPlayCount: opts.minPlayCount ?? 0,
+    sortType: "MOST_LIKED",
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify cheap-search run failed (${opts.query}): ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * novi/tiktok-user-api — ~$0.0001 for a creator's recent posts (vs $0.03 on
+ * clockworks) purely to compute a baseline median. Returns this actor's own
+ * item shape (view counts under statistics.play_count).
+ */
+export async function runProfileScrapeCheap(opts: {
+  profile: string;
+  limit?: number;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    USER_ACTOR_CHEAP,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    usernames: [opts.profile],
+    limit: opts.limit ?? 10,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify cheap-profile run failed (${opts.profile}): ${res.status} ${await res.text()}`,
     );
   }
   const data = (await res.json()) as unknown;

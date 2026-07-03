@@ -5,6 +5,7 @@ import {
   isStrongFind,
   parseJsonLoose,
   validateCoding,
+  fromCheapSearchItem,
   type ResearchCandidate,
 } from "@/lib/growth-research";
 
@@ -91,6 +92,43 @@ describe("parseJsonLoose", () => {
   });
   it("throws when there is no object", () => {
     expect(() => parseJsonLoose("no json here")).toThrow();
+  });
+});
+
+describe("fromCheapSearchItem", () => {
+  // shape pinned against a real paul_44/tiktok-search item
+  const real = {
+    id: "7644050844320550166",
+    url: "https://www.tiktok.com/@exposrapp/video/7644050844320550166",
+    channel: { username: "exposrapp", name: "EXPOSR App" },
+    title: "Scan 3M+ safer alternatives on the EXPOSR app",
+    views: 4600000,
+    likes: 211800,
+    comments: 15200,
+    shares: 183100,
+    uploadedAt: 1779769319,
+    thumbnail: "https://p16.tiktokcdn.com/cover.jpg",
+  };
+
+  it("normalizes a real cheap-search item (title→caption, channel→author, unix→ISO)", () => {
+    const c = fromCheapSearchItem(real, "safer food alternatives")!;
+    expect(c).not.toBeNull();
+    expect(c.url).toBe(real.url);
+    expect(c.post_id).toBe("7644050844320550166");
+    expect(c.author).toBe("exposrapp");
+    expect(c.views).toBe(4600000);
+    expect(c.caption).toBe(real.title);
+    expect(c.cover_url).toBe(real.thumbnail);
+    expect(c.posted_at).toMatch(/^2026-/);
+    expect(c.found_via).toBe("safer food alternatives");
+  });
+
+  it("returns null without a url and tolerates missing fields", () => {
+    expect(fromCheapSearchItem({ title: "no url" }, "q")).toBeNull();
+    const bare = fromCheapSearchItem({ url: "https://t/9" }, "q")!;
+    expect(bare.author).toBe("");
+    expect(bare.views).toBe(0);
+    expect(bare.posted_at).toBeNull();
   });
 });
 

@@ -26,7 +26,9 @@
  */
 import {
   runSearchQueryScrape,
+  runSearchQueryScrapeCheap,
   runProfileScrape,
+  runProfileScrapeCheap,
   runPostScrape,
   apifySpyConfigured,
 } from "@/lib/apify-spy";
@@ -116,6 +118,8 @@ export interface SearchLogEntry {
   round: 1 | 2;
   fetched: number;
   kept: number;
+  /** Which actor served this query — the cheap one, or the clockworks fallback. */
+  via?: "cheap" | "clockworks";
   error?: string;
 }
 
@@ -302,6 +306,73 @@ function toCandidate(item: ApifyTikTokItem, query: string): ResearchCandidate | 
   };
 }
 
+/** Normalizer for the cheap search actor (paul_44/tiktok-search). Its shape
+ *  differs from clockworks: caption is `title`, author under `channel`,
+ *  `uploadedAt` is unix seconds, cover under `thumbnail`/`coverImage`. */
+export function fromCheapSearchItem(raw: unknown, query: string): ResearchCandidate | null {
+  const o = raw as Record<string, unknown>;
+  const ch = (o.channel ?? {}) as Record<string, unknown>;
+  const url = String(o.url ?? o.postPage ?? o.tiktokUrl ?? "");
+  if (!url) return null;
+  const uploadedAt = Number(o.uploadedAt);
+  return {
+    url,
+    post_id: o.id != null ? String(o.id) : null,
+    author: String(ch.username ?? ""),
+    views: Number(o.views) || 0,
+    likes: Number(o.likes) || 0,
+    comments: Number(o.comments) || 0,
+    caption: String(o.title ?? "").slice(0, 800),
+    cover_url:
+      (typeof o.thumbnail === "string" && o.thumbnail) ||
+      (typeof o.coverImage === "string" && o.coverImage) ||
+      (typeof o.thumbnailCdn === "string" && o.thumbnailCdn) ||
+      null,
+    posted_at: Number.isFinite(uploadedAt) && uploadedAt > 0
+      ? new Date(uploadedAt * 1000).toISOString()
+      : null,
+    found_via: query,
+  };
+}
+
+/** One query: try the cheap actor (server-side view floor), fall back to
+ *  clockworks (MOST_LIKED sort) on any error/empty. Returns kept candidates
+ *  plus which path served it. */
+async function searchOneQuery(query: string): Promise<{
+  candidates: ResearchCandidate[];
+  fetched: number;
+  via: "cheap" | "clockworks";
+  error?: string;
+}> {
+  // cheap path first
+  try {
+    const raw = await runSearchQueryScrapeCheap({
+      query,
+      maxItems: SEED_RESULTS_PER_QUERY,
+      minPlayCount: RESEARCH_FLOOR,
+    });
+    if (raw.length > 0) {
+      const candidates = raw
+        .map((r) => fromCheapSearchItem(r, query))
+        .filter((c): c is ResearchCandidate => !!c && c.views >= RESEARCH_FLOOR);
+      return { candidates, fetched: raw.length, via: "cheap" };
+    }
+  } catch {
+    // fall through to clockworks
+  }
+  // clockworks fallback
+  const raw = await runSearchQueryScrape({
+    query,
+    resultsPerPage: SEED_RESULTS_PER_QUERY,
+    sortByLikes: true,
+  });
+  const { items } = parseApifyItems(raw);
+  const candidates = items
+    .map((item) => toCandidate(item, query))
+    .filter((c): c is ResearchCandidate => !!c && c.views >= RESEARCH_FLOOR);
+  return { candidates, fetched: items.length, via: "clockworks" };
+}
+
 async function runSearches(
   queries: string[],
   round: 1 | 2,
@@ -312,15 +383,12 @@ async function runSearches(
   await pool(queries, SEARCH_CONCURRENCY, async (query) => {
     const entry: SearchLogEntry = { query, round, fetched: 0, kept: 0 };
     try {
-      const raw = await runSearchQueryScrape({ query, resultsPerPage: SEED_RESULTS_PER_QUERY });
-      const { items } = parseApifyItems(raw);
-      entry.fetched = items.length;
-      for (const item of items) {
-        const c = toCandidate(item, query);
-        if (c && c.views >= RESEARCH_FLOOR) {
-          found.push(c);
-          entry.kept++;
-        }
+      const { candidates, fetched, via } = await searchOneQuery(query);
+      entry.via = via;
+      entry.fetched = fetched;
+      for (const c of candidates) {
+        found.push(c);
+        entry.kept++;
       }
     } catch (e) {
       entry.error = e instanceof Error ? e.message : String(e);
@@ -470,18 +538,52 @@ async function codeFromCover(c: ResearchCandidate): Promise<VideoCoding> {
   return value;
 }
 
-async function inspectCandidate(c: ResearchCandidate, runId: string): Promise<void> {
-  // (a) creator baseline → outlier score
+/** Baseline view-count list for a creator. Cheap actor (novi) first; on
+ *  error/empty fall back to clockworks. Excludes the candidate's own post so
+ *  a viral outlier can't inflate its own baseline. */
+async function fetchBaselineViews(profile: string, ownPostId: string | null): Promise<number[]> {
+  // cheap path (novi/tiktok-user-api)
+  try {
+    const raw = await runProfileScrapeCheap({ profile, limit: BASELINE_RESULTS });
+    if (raw.length > 0) {
+      const views = raw
+        .map((r) => r as Record<string, unknown>)
+        .filter((r) => String(r.aweme_id ?? "") !== (ownPostId ?? "\0"))
+        .map((r) => Number((r.statistics as Record<string, unknown> | undefined)?.play_count) || 0)
+        .filter((v) => v > 0);
+      if (views.length > 0) return views;
+    }
+  } catch {
+    // fall through to clockworks
+  }
+  // clockworks fallback
+  const raw = await runProfileScrape({ profile, resultsPerPage: BASELINE_RESULTS });
+  const { items } = parseApifyItems(raw);
+  return items
+    .filter((i) => i.id !== ownPostId)
+    .map((i) => i.playCount ?? 0)
+    .filter((v) => v > 0);
+}
+
+async function inspectCandidate(
+  c: ResearchCandidate,
+  runId: string,
+  baselineCache?: Map<string, number | null>,
+): Promise<void> {
+  // (a) creator baseline → outlier score. Reuse a same-author baseline
+  //     already computed this run (some creators land multiple videos in the
+  //     shortlist — EXPOSR had two — and their baseline doesn't change).
   try {
     if (c.author) {
-      const raw = await runProfileScrape({ profile: c.author, resultsPerPage: BASELINE_RESULTS });
-      const { items } = parseApifyItems(raw);
-      const views = items
-        .filter((i) => i.id !== c.post_id) // don't let the outlier inflate its own baseline
-        .map((i) => i.playCount ?? 0)
-        .filter((v) => v > 0);
-      c.baseline_median = computeBaselineMedian(views);
-      c.outlier_score = computeOutlierScore(c.views, c.baseline_median ?? null);
+      const key = c.author.toLowerCase();
+      let median: number | null | undefined = baselineCache?.get(key);
+      if (median === undefined) {
+        const views = await fetchBaselineViews(c.author, c.post_id);
+        median = computeBaselineMedian(views);
+        baselineCache?.set(key, median);
+      }
+      c.baseline_median = median;
+      c.outlier_score = computeOutlierScore(c.views, median ?? null);
     }
   } catch (e) {
     c.inspect_error = `baseline: ${e instanceof Error ? e.message : String(e)}`;
@@ -758,7 +860,15 @@ export async function stepResearchRun(runId: string): Promise<ResearchRun> {
           .slice(cursor, cursor + INSPECT_PER_STEP)
           .map((url) => byUrl.get(url))
           .filter((c): c is ResearchCandidate => !!c);
-        await pool(batch, INSPECT_PER_STEP, (c) => inspectCandidate(c, run.id));
+        // Seed the baseline cache from candidates already inspected in prior
+        // steps so a repeat author isn't re-scraped across step boundaries.
+        const baselineCache = new Map<string, number | null>();
+        for (const cand of state.candidates ?? []) {
+          if (cand.author && cand.baseline_median !== undefined) {
+            baselineCache.set(cand.author.toLowerCase(), cand.baseline_median ?? null);
+          }
+        }
+        await pool(batch, INSPECT_PER_STEP, (c) => inspectCandidate(c, run.id, baselineCache));
         state.inspect_cursor = Math.min(cursor + INSPECT_PER_STEP, shortlist.length);
         const finished = state.inspect_cursor >= shortlist.length;
         await saveRun(run.id, {
