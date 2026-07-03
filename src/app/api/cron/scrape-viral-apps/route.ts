@@ -20,7 +20,8 @@ export async function GET(req: Request) {
   const platforms: Platform[] | undefined =
     platformParam === "tiktok" || platformParam === "instagram" ? [platformParam] : undefined;
   try {
-    const summary = await scrapeViralApps({ platforms, includeDiscovery: true });
+    // includeDiscovery omitted → respects the saved "discovery sweep" toggle.
+    const summary = await scrapeViralApps({ platforms });
     return NextResponse.json({ ok: true, ...summary });
   } catch (e) {
     return NextResponse.json(

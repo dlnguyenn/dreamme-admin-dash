@@ -813,6 +813,36 @@ function WatchlistSheet({
   const [busy, setBusy] = React.useState(false);
   const [scraping, setScraping] = React.useState<string | null>(null);
   const [deleting, setDeleting] = React.useState<WatchRow | null>(null);
+  const [discoveryOn, setDiscoveryOn] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    sb<Array<{ discovery_enabled: boolean }>>(`viral_app_settings?select=discovery_enabled&limit=1`)
+      .then((rows) => {
+        if (alive) setDiscoveryOn(rows[0]?.discovery_enabled ?? true);
+      })
+      .catch(() => {
+        if (alive) setDiscoveryOn(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggleDiscovery = async () => {
+    const next = !(discoveryOn ?? true);
+    setDiscoveryOn(next); // optimistic
+    try {
+      await sb(`viral_app_settings?id=eq.true`, {
+        method: "PATCH",
+        body: JSON.stringify({ discovery_enabled: next, updated_at: new Date().toISOString() }),
+      });
+      toast(next ? "Discovery sweep on" : "Discovery sweep off — watchlist only");
+    } catch {
+      setDiscoveryOn(!next); // revert
+      toast("Couldn't save — try again");
+    }
+  };
 
   const add = async () => {
     const h = handle.trim().replace(/^@/, "");
@@ -891,6 +921,61 @@ function WatchlistSheet({
         Brand accounts scraped every Tue &amp; Fri. Repeated zeros in the result column mean a
         dead or wrong handle.
       </p>
+
+      {/* discovery sweep toggle */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          borderRadius: 12,
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Discovery sweep</div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45, marginTop: 2 }}>
+            Also scan hashtags &amp; keywords for viral apps beyond your watchlist. Off = watchlist
+            accounts only (cheaper, less noise).
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={discoveryOn ?? true}
+          disabled={discoveryOn === null}
+          onClick={() => void toggleDiscovery()}
+          title={discoveryOn ? "Turn discovery sweep off" : "Turn discovery sweep on"}
+          style={{
+            flexShrink: 0,
+            width: 46,
+            height: 26,
+            borderRadius: 999,
+            border: "1px solid var(--line)",
+            background: discoveryOn ? "var(--accent-2)" : "var(--bg-2)",
+            position: "relative",
+            cursor: discoveryOn === null ? "default" : "pointer",
+            opacity: discoveryOn === null ? 0.5 : 1,
+            transition: "background 160ms ease",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: discoveryOn ? 22 : 2,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "var(--shadow-sm)",
+              transition: "left 160ms ease",
+            }}
+          />
+        </button>
+      </div>
 
       {/* add form */}
       <div

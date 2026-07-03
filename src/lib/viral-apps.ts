@@ -58,6 +58,22 @@ export const APP_DISCOVERY_HASHTAGS = ["apptok", "appsyouneed", "newapp", "besta
 /** Instagram discovery keyword searches. */
 export const IG_DISCOVERY_QUERIES = ["must have apps", "apps you need"];
 
+/**
+ * Read the "discovery sweep" toggle (viral_app_settings singleton). The
+ * hashtag/keyword sweep runs unless a saved setting turns it off. Defaults
+ * to enabled if the row/table is missing (e.g. before 0042 lands).
+ */
+export async function isDiscoveryEnabled(): Promise<boolean> {
+  try {
+    const rows = await sbSelect<{ discovery_enabled: boolean }>(
+      `viral_app_settings?select=discovery_enabled&limit=1`,
+    );
+    return rows[0]?.discovery_enabled ?? true;
+  } catch {
+    return true;
+  }
+}
+
 export type Platform = "tiktok" | "instagram";
 
 // --- types -------------------------------------------------------------------
@@ -497,7 +513,10 @@ export async function scrapeViralApps(opts?: {
   if (!apifySpyConfigured()) throw new Error("APIFY_KEY not set");
 
   const platforms = opts?.platforms?.length ? opts.platforms : (["tiktok", "instagram"] as Platform[]);
-  const includeDiscovery = opts?.includeDiscovery !== false;
+  // Explicit caller wins (the UI's single-handle re-scrape forces false);
+  // otherwise the saved "discovery sweep" toggle decides.
+  const includeDiscovery =
+    typeof opts?.includeDiscovery === "boolean" ? opts.includeDiscovery : await isDiscoveryEnabled();
   const resultsPerProfile = opts?.resultsPerProfile ?? PROFILE_RESULTS;
 
   const summary: ScrapeSummary = {
