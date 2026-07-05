@@ -28,6 +28,7 @@ import {
   createVideoCreative,
   createAd,
   deleteEntity,
+  fetchAdCreativeInfo,
   type AdInsightRowWithCreative,
 } from "@/lib/vendors/meta-ads";
 import { resolveMeta, normAcct, NO_META, defaultAccount } from "@/lib/meta-resolve";
@@ -807,11 +808,32 @@ const mcpHandler = createMcpHandler(
       },
     );
 
+    // --- READ: ad creative essentials (for rebuild-from-video) -----------
+    // When /copies is blocked by Meta's dev-mode-app restriction (1885183),
+    // read each ad's video_id + copy here, then feed batch_create_video_ads
+    // (video_id path + url_tags) to rebuild fresh creatives the connected app
+    // owns. The uploaded VIDEO asset is reusable; only the original post isn't.
+    server.tool(
+      "get_ad_creative_info",
+      "Read creative essentials off existing ads: video_id, message, headline, link, page_id, effective_status. Use with batch_create_video_ads (video_id + url_tags) to rebuild ads as fresh creatives when duplication is blocked by the dev-mode-app restriction.",
+      { ad_ids: z.array(z.string()).min(1).max(50) },
+      async ({ ad_ids }) => {
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        try {
+          const rows = await fetchAdCreativeInfo({ adIds: ad_ids, accessToken: meta.token });
+          return json({ count: rows.length, rows });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+
     // --- WRITE: batch creative upload (video → ads) ---------------------
     const DEFAULT_MSG = "Your GLP-1 journey, made simple. Track your progress and stay motivated with DreamMe.";
     server.tool(
       "batch_create_video_ads",
-      "Upload videos (by public file_url) and build app-install VIDEO creatives; optionally create PAUSED ads in a target ad set. Each video: {file_url? OR video_id?, name?, message?, headline?}. Google Drive share links do NOT work as file_url — use a direct/public URL or a pre-uploaded Meta video_id. Guarded: requires confirm:true.",
+      "Upload videos (by public file_url) and build app-install VIDEO creatives; optionally create PAUSED ads in a target ad set. Each video: {file_url? OR video_id?, name?, message?, headline?}. Google Drive share links do NOT work as file_url — use a direct/public URL or a pre-uploaded Meta video_id. Optional url_tags bakes UTMs into each new creative. Guarded: requires confirm:true.",
       {
         videos: z
           .array(
@@ -830,6 +852,12 @@ const mcpHandler = createMcpHandler(
         message: z.string().optional().describe("Shared ad copy (per-video message overrides)"),
         headline: z.string().optional(),
         link: z.string().optional().describe("Destination link; defaults to the DreamMe App Store URL"),
+        url_tags: z
+          .string()
+          .optional()
+          .describe(
+            "UTM query string (no leading ?) baked into each new creative, e.g. utm_source=facebook&utm_campaign={{campaign.name}}&utm_medium={{adset.name}}&utm_content={{ad.name}}",
+          ),
         status: z.enum(["ACTIVE", "PAUSED"]).default("PAUSED"),
         confirm: z.boolean().default(false),
         dry_run: z.boolean().default(false),
@@ -872,6 +900,7 @@ const mcpHandler = createMcpHandler(
               message: v.message ?? a.message ?? DEFAULT_MSG,
               headline: v.headline ?? a.headline ?? "Meet DreamMe",
               link: a.link,
+              urlTags: a.url_tags,
               accessToken: meta.token,
             });
             let adId: string | undefined;

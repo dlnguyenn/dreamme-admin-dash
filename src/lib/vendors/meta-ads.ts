@@ -886,6 +886,8 @@ export async function createVideoCreative(params: {
   headline?: string;
   link?: string;
   pageId?: string;
+  /** UTM query string (no leading ?) appended by Meta to the landing link. */
+  urlTags?: string;
   accessToken?: string;
 }): Promise<string> {
   const API_VERSION = getApiVersion();
@@ -899,18 +901,109 @@ export async function createVideoCreative(params: {
     },
   };
   if (params.headline) videoData.title = params.headline;
+  const creativeBody: Record<string, unknown> = {
+    name: params.name,
+    object_story_spec: { page_id: params.pageId ?? DEFAULT_PAGE_ID, video_data: videoData },
+    degrees_of_freedom_spec: { creative_features_spec: CREATIVE_FEATURES_OPT_OUT },
+  };
+  if (params.urlTags) creativeBody.url_tags = params.urlTags;
   const res = await metaPostJson<{ id?: string }>(
     `https://graph.facebook.com/${API_VERSION}/${params.accountId}/adcreatives`,
-    {
-      name: params.name,
-      object_story_spec: { page_id: params.pageId ?? DEFAULT_PAGE_ID, video_data: videoData },
-      degrees_of_freedom_spec: { creative_features_spec: CREATIVE_FEATURES_OPT_OUT },
-    },
+    creativeBody,
     4,
     params.accessToken,
   );
   if (!res.id) throw new Error("No creative id returned from adcreatives");
   return res.id;
+}
+
+/**
+ * Read the creative essentials off existing ads — enough to REBUILD each ad as
+ * a fresh creative (same uploaded video, same copy) when Meta's dev-mode-app
+ * restriction (subcode 1885183) blocks /copies of the original post.
+ */
+export async function fetchAdCreativeInfo(params: {
+  adIds: string[];
+  accessToken?: string;
+}): Promise<
+  Array<{
+    ad_id: string;
+    ad_name: string | null;
+    effective_status: string | null;
+    creative_id: string | null;
+    video_id: string | null;
+    message: string | null;
+    headline: string | null;
+    link: string | null;
+    page_id: string | null;
+    error?: string;
+  }>
+> {
+  const API_VERSION = getApiVersion();
+  const out: Array<{
+    ad_id: string;
+    ad_name: string | null;
+    effective_status: string | null;
+    creative_id: string | null;
+    video_id: string | null;
+    message: string | null;
+    headline: string | null;
+    link: string | null;
+    page_id: string | null;
+    error?: string;
+  }> = [];
+  for (const adId of params.adIds) {
+    try {
+      const res = await metaFetchJson<{
+        id?: string;
+        name?: string;
+        effective_status?: string;
+        creative?: {
+          id?: string;
+          video_id?: string;
+          object_story_spec?: {
+            page_id?: string;
+            video_data?: {
+              video_id?: string;
+              message?: string;
+              title?: string;
+              call_to_action?: { value?: { link?: string } };
+            };
+          };
+        };
+      }>(
+        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,creative{id,video_id,object_story_spec}`,
+        3,
+        params.accessToken,
+      );
+      const oss = res.creative?.object_story_spec;
+      out.push({
+        ad_id: adId,
+        ad_name: res.name ?? null,
+        effective_status: res.effective_status ?? null,
+        creative_id: res.creative?.id ?? null,
+        video_id: res.creative?.video_id ?? oss?.video_data?.video_id ?? null,
+        message: oss?.video_data?.message ?? null,
+        headline: oss?.video_data?.title ?? null,
+        link: oss?.video_data?.call_to_action?.value?.link ?? null,
+        page_id: oss?.page_id ?? null,
+      });
+    } catch (e) {
+      out.push({
+        ad_id: adId,
+        ad_name: null,
+        effective_status: null,
+        creative_id: null,
+        video_id: null,
+        message: null,
+        headline: null,
+        link: null,
+        page_id: null,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return out;
 }
 
 /** Create an ad in an ad set from an existing creative. Returns the new ad id. */
