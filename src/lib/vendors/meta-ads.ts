@@ -937,6 +937,8 @@ type AdCreativeInfoRow = {
    *  lookup wasn't permitted. */
   authoring_app_id: string | null;
   authoring_app_name: string | null;
+  /** Policy issues when the ad is disapproved (from issues_info). */
+  issues: Array<{ code?: number; summary?: string; message?: string; level?: string }> | null;
   error?: string;
 };
 
@@ -952,6 +954,7 @@ export async function fetchAdCreativeInfo(params: {
         id?: string;
         name?: string;
         effective_status?: string;
+        issues_info?: Array<{ error_code?: number; error_summary?: string; error_message?: string; level?: string }>;
         creative?: {
           id?: string;
           video_id?: string;
@@ -967,11 +970,17 @@ export async function fetchAdCreativeInfo(params: {
           };
         };
       }>(
-        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,creative{id,video_id,effective_object_story_id,object_story_spec}`,
+        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,issues_info,creative{id,video_id,effective_object_story_id,object_story_spec}`,
         3,
         params.accessToken,
       );
       const oss = res.creative?.object_story_spec;
+      const issues = (res.issues_info ?? []).map((i) => ({
+        code: i.error_code,
+        summary: i.error_summary,
+        message: i.error_message,
+        level: i.level,
+      }));
       // Best-effort: read the authoring app off the underlying post. This is the
       // app whose dev/live mode Meta checks when you reuse the post in a new ad.
       let appId: string | null = null;
@@ -1002,6 +1011,7 @@ export async function fetchAdCreativeInfo(params: {
         page_id: oss?.page_id ?? null,
         authoring_app_id: appId,
         authoring_app_name: appName,
+        issues: issues.length ? issues : null,
       });
     } catch (e) {
       out.push({
@@ -1016,6 +1026,7 @@ export async function fetchAdCreativeInfo(params: {
         page_id: null,
         authoring_app_id: null,
         authoring_app_name: null,
+        issues: null,
         error: e instanceof Error ? e.message : String(e),
       });
     }
