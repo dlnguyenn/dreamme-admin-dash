@@ -922,36 +922,30 @@ export async function createVideoCreative(params: {
  * a fresh creative (same uploaded video, same copy) when Meta's dev-mode-app
  * restriction (subcode 1885183) blocks /copies of the original post.
  */
+type AdCreativeInfoRow = {
+  ad_id: string;
+  ad_name: string | null;
+  effective_status: string | null;
+  creative_id: string | null;
+  video_id: string | null;
+  message: string | null;
+  headline: string | null;
+  link: string | null;
+  page_id: string | null;
+  /** The app that authored the underlying post — the one Meta checks for the
+   *  dev-mode-app block (1885183). Null if the post has no application or the
+   *  lookup wasn't permitted. */
+  authoring_app_id: string | null;
+  authoring_app_name: string | null;
+  error?: string;
+};
+
 export async function fetchAdCreativeInfo(params: {
   adIds: string[];
   accessToken?: string;
-}): Promise<
-  Array<{
-    ad_id: string;
-    ad_name: string | null;
-    effective_status: string | null;
-    creative_id: string | null;
-    video_id: string | null;
-    message: string | null;
-    headline: string | null;
-    link: string | null;
-    page_id: string | null;
-    error?: string;
-  }>
-> {
+}): Promise<AdCreativeInfoRow[]> {
   const API_VERSION = getApiVersion();
-  const out: Array<{
-    ad_id: string;
-    ad_name: string | null;
-    effective_status: string | null;
-    creative_id: string | null;
-    video_id: string | null;
-    message: string | null;
-    headline: string | null;
-    link: string | null;
-    page_id: string | null;
-    error?: string;
-  }> = [];
+  const out: AdCreativeInfoRow[] = [];
   for (const adId of params.adIds) {
     try {
       const res = await metaFetchJson<{
@@ -961,6 +955,7 @@ export async function fetchAdCreativeInfo(params: {
         creative?: {
           id?: string;
           video_id?: string;
+          effective_object_story_id?: string;
           object_story_spec?: {
             page_id?: string;
             video_data?: {
@@ -972,11 +967,29 @@ export async function fetchAdCreativeInfo(params: {
           };
         };
       }>(
-        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,creative{id,video_id,object_story_spec}`,
+        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,creative{id,video_id,effective_object_story_id,object_story_spec}`,
         3,
         params.accessToken,
       );
       const oss = res.creative?.object_story_spec;
+      // Best-effort: read the authoring app off the underlying post. This is the
+      // app whose dev/live mode Meta checks when you reuse the post in a new ad.
+      let appId: string | null = null;
+      let appName: string | null = null;
+      const storyId = res.creative?.effective_object_story_id;
+      if (storyId) {
+        try {
+          const post = await metaFetchJson<{ application?: { id?: string; name?: string } }>(
+            `https://graph.facebook.com/${API_VERSION}/${storyId}?fields=application{id,name}`,
+            2,
+            params.accessToken,
+          );
+          appId = post.application?.id ?? null;
+          appName = post.application?.name ?? null;
+        } catch {
+          // post may not expose application to this token — leave null
+        }
+      }
       out.push({
         ad_id: adId,
         ad_name: res.name ?? null,
@@ -987,6 +1000,8 @@ export async function fetchAdCreativeInfo(params: {
         headline: oss?.video_data?.title ?? null,
         link: oss?.video_data?.call_to_action?.value?.link ?? null,
         page_id: oss?.page_id ?? null,
+        authoring_app_id: appId,
+        authoring_app_name: appName,
       });
     } catch (e) {
       out.push({
@@ -999,6 +1014,8 @@ export async function fetchAdCreativeInfo(params: {
         headline: null,
         link: null,
         page_id: null,
+        authoring_app_id: null,
+        authoring_app_name: null,
         error: e instanceof Error ? e.message : String(e),
       });
     }
