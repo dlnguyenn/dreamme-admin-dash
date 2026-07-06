@@ -927,6 +927,9 @@ type AdCreativeInfoRow = {
   ad_name: string | null;
   effective_status: string | null;
   creative_id: string | null;
+  /** The underlying post (page_id_post_id). Social proof (likes/comments) lives
+   *  here — copies that share this id share the engagement. */
+  object_story_id: string | null;
   video_id: string | null;
   message: string | null;
   headline: string | null;
@@ -1008,6 +1011,7 @@ export async function fetchAdCreativeInfo(params: {
         ad_name: res.name ?? null,
         effective_status: res.effective_status ?? null,
         creative_id: res.creative?.id ?? null,
+        object_story_id: res.creative?.effective_object_story_id ?? null,
         video_id: res.creative?.video_id ?? oss?.video_data?.video_id ?? null,
         message: oss?.video_data?.message ?? null,
         headline: oss?.video_data?.title ?? null,
@@ -1024,6 +1028,7 @@ export async function fetchAdCreativeInfo(params: {
         ad_name: null,
         effective_status: null,
         creative_id: null,
+        object_story_id: null,
         video_id: null,
         message: null,
         headline: null,
