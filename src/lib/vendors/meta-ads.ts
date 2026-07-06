@@ -939,6 +939,9 @@ type AdCreativeInfoRow = {
   authoring_app_name: string | null;
   /** Policy issues when the ad is disapproved (from issues_info). */
   issues: Array<{ code?: number; summary?: string; message?: string; level?: string }> | null;
+  /** Detailed review verdict (from ad_review_feedback) — often where the real
+   *  disapproval reason lives when issues_info is empty. */
+  review_feedback: Record<string, unknown> | null;
   error?: string;
 };
 
@@ -955,6 +958,7 @@ export async function fetchAdCreativeInfo(params: {
         name?: string;
         effective_status?: string;
         issues_info?: Array<{ error_code?: number; error_summary?: string; error_message?: string; level?: string }>;
+        ad_review_feedback?: Record<string, unknown>;
         creative?: {
           id?: string;
           video_id?: string;
@@ -970,7 +974,7 @@ export async function fetchAdCreativeInfo(params: {
           };
         };
       }>(
-        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,issues_info,creative{id,video_id,effective_object_story_id,object_story_spec}`,
+        `https://graph.facebook.com/${API_VERSION}/${adId}?fields=id,name,effective_status,issues_info,ad_review_feedback,creative{id,video_id,effective_object_story_id,object_story_spec}`,
         3,
         params.accessToken,
       );
@@ -1012,6 +1016,7 @@ export async function fetchAdCreativeInfo(params: {
         authoring_app_id: appId,
         authoring_app_name: appName,
         issues: issues.length ? issues : null,
+        review_feedback: res.ad_review_feedback ?? null,
       });
     } catch (e) {
       out.push({
@@ -1027,6 +1032,7 @@ export async function fetchAdCreativeInfo(params: {
         authoring_app_id: null,
         authoring_app_name: null,
         issues: null,
+        review_feedback: null,
         error: e instanceof Error ? e.message : String(e),
       });
     }
