@@ -27,6 +27,8 @@ import {
   uploadImageByUrl,
   createVideoCreative,
   createAd,
+  createExistingPostCreative,
+  getAdObjectStoryId,
   deleteEntity,
   fetchAdCreativeInfo,
   type AdInsightRowWithCreative,
@@ -826,6 +828,87 @@ const mcpHandler = createMcpHandler(
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }
+      },
+    );
+
+    // --- WRITE: create ads from EXISTING posts (preserve social proof) ----
+    // The correct "duplicate but keep likes/comments" path. /copies clones the
+    // post (new zero-engagement object_story_id); this instead references each
+    // source ad's ORIGINAL effective_object_story_id via "Use Existing Post",
+    // so the new ad inherits the post's accumulated social proof. url_tags is
+    // baked into the creative without forking the post. New ads are PAUSED.
+    const UTM_DEFAULT =
+      "utm_source=facebook&utm_campaign={{campaign.name}}&utm_medium={{adset.name}}&utm_content={{ad.name}}";
+    server.tool(
+      "create_ads_from_posts",
+      "Recreate ads in a target ad set while PRESERVING social proof: references each source ad's original post (object_story_id) via Use-Existing-Post instead of /copies (which clones the post to a zero-engagement copy). Bakes url_tags in without forking. New ads are PAUSED. items=[{source_ad_id, target_adset_id, name?}]. Guarded: requires confirm:true.",
+      {
+        items: z
+          .array(
+            z.object({
+              source_ad_id: z.string(),
+              target_adset_id: z.string(),
+              name: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(50),
+        url_tags: z.string().default(UTM_DEFAULT),
+        status: z.enum(["ACTIVE", "PAUSED"]).default("PAUSED"),
+        confirm: z.boolean().default(false),
+        dry_run: z.boolean().default(false),
+      },
+      async ({ items, url_tags, status, confirm, dry_run }) => {
+        const meta = await resolveMeta();
+        if (!meta) return fail(NO_META);
+        const account = meta.account.startsWith("act_") ? meta.account : `act_${meta.account}`;
+        const results: Array<Record<string, unknown>> = [];
+        for (const it of items) {
+          try {
+            const storyId = await getAdObjectStoryId({ adId: it.source_ad_id, accessToken: meta.token });
+            if (!storyId) {
+              results.push({ source_ad_id: it.source_ad_id, status: "error", error: "no effective_object_story_id (ad has no shared post — can't preserve social proof)" });
+              continue;
+            }
+            if (dry_run || !confirm) {
+              results.push({
+                source_ad_id: it.source_ad_id,
+                target_adset_id: it.target_adset_id,
+                object_story_id: storyId,
+                status: dry_run ? "dry_run_would_create" : "needs_confirm",
+              });
+              continue;
+            }
+            const name = it.name ?? `existing-post ${it.source_ad_id}`;
+            const creativeId = await createExistingPostCreative({
+              accountId: account,
+              name,
+              objectStoryId: storyId,
+              urlTags: url_tags,
+              accessToken: meta.token,
+            });
+            const adId = await createAd({
+              accountId: account,
+              adsetId: it.target_adset_id,
+              name,
+              creativeId,
+              status,
+              accessToken: meta.token,
+            });
+            results.push({
+              source_ad_id: it.source_ad_id,
+              new_ad_id: adId,
+              new_creative_id: creativeId,
+              object_story_id: storyId,
+              target_adset_id: it.target_adset_id,
+              status: "created",
+            });
+          } catch (e) {
+            results.push({ source_ad_id: it.source_ad_id, status: "error", error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        const created = results.filter((r) => r.status === "created").length;
+        return json({ created, failed: results.filter((r) => r.status === "error").length, applied: confirm && !dry_run, results });
       },
     );
 

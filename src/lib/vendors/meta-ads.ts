@@ -1071,6 +1071,50 @@ export async function createAd(params: {
 }
 
 /**
+ * Create an ad creative that references an EXISTING page post via
+ * object_story_id ("Use Existing Post"). Unlike /copies (which clones the post
+ * into a new zero-engagement post) this keeps the ad on the ORIGINAL post, so
+ * it inherits the post's accumulated likes/comments/shares. url_tags rides
+ * along without forking the post. Returns the new creative id.
+ */
+export async function createExistingPostCreative(params: {
+  accountId: string;
+  name: string;
+  objectStoryId: string;
+  urlTags?: string;
+  accessToken?: string;
+}): Promise<string> {
+  const API_VERSION = getApiVersion();
+  const body: Record<string, unknown> = {
+    name: params.name,
+    object_story_id: params.objectStoryId,
+  };
+  if (params.urlTags) body.url_tags = params.urlTags;
+  const res = await metaPostJson<{ id?: string }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.accountId}/adcreatives`,
+    body,
+    4,
+    params.accessToken,
+  );
+  if (!res.id) throw new Error("No creative id returned from adcreatives (existing post)");
+  return res.id;
+}
+
+/** Read one ad's underlying post id (effective_object_story_id). */
+export async function getAdObjectStoryId(params: {
+  adId: string;
+  accessToken?: string;
+}): Promise<string | null> {
+  const API_VERSION = getApiVersion();
+  const res = await metaFetchJson<{ creative?: { effective_object_story_id?: string } }>(
+    `https://graph.facebook.com/${API_VERSION}/${params.adId}?fields=creative{effective_object_story_id}`,
+    3,
+    params.accessToken,
+  );
+  return res.creative?.effective_object_story_id ?? null;
+}
+
+/**
  * Permanently delete an entity (campaign / ad set / ad / creative / video) by
  * id via Graph HTTP DELETE. Irreversible. Token-injectable.
  */
