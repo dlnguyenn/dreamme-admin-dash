@@ -58,8 +58,14 @@ interface RcWebhookEvent {
 }
 
 function extractCreatorCode(ev: RcWebhookEvent): string | null {
-  const attr = ev.subscriber_attributes?.["creator_code"]?.value;
-  if (typeof attr === "string" && attr.trim()) return attr.trim().toUpperCase();
+  // The iOS app (1.3.9 creator-referral system) sets
+  // subscriber_attributes.referral_code. `creator_code` kept as a fallback
+  // for any legacy events; offer_code last. Codes are stored UPPERCASE.
+  const attrs = ev.subscriber_attributes ?? {};
+  for (const key of ["referral_code", "creator_code"]) {
+    const v = attrs[key]?.value;
+    if (typeof v === "string" && v.trim()) return v.trim().toUpperCase();
+  }
   if (typeof ev.offer_code === "string" && ev.offer_code.trim()) {
     return ev.offer_code.trim().toUpperCase();
   }
