@@ -348,12 +348,17 @@ export function effectiveViews(v: Pick<ClipperVideoRow, "views" | "manual_views"
 }
 
 export async function loadClipperBundle(clipper: ClipperRow): Promise<ClipperBundle> {
+  // Videos & payouts belong to this overlay row (clipper_id). Money, however,
+  // is keyed on the referral CODE — rc_events may land before an overlay row
+  // exists (ingest can't resolve clipper_id yet), so joining on creator_code
+  // is the robust key. codes are stored UPPERCASE on both sides.
+  const code = (clipper.code || "").toUpperCase();
   const [videos, events, payouts] = await Promise.all([
     sbGet<ClipperVideoRow[]>(
       `clipper_videos?clipper_id=eq.${clipper.id}&active=eq.true&order=posted_at.desc.nullslast,created_at.desc&limit=500`,
     ),
     sbGet<RcEventRow[]>(
-      `rc_events?clipper_id=eq.${clipper.id}&order=event_at.asc&limit=10000`,
+      `rc_events?creator_code=eq.${encodeURIComponent(code)}&order=event_at.asc&limit=10000`,
     ),
     sbGet<ClipperPayoutRow[]>(
       `clipper_payouts?clipper_id=eq.${clipper.id}&order=paid_at.desc&limit=500`,

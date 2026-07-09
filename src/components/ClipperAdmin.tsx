@@ -3,12 +3,13 @@
 /**
  * Clippers — admin screen for the rev-share program.
  *
- * Roster of clippers with computed totals (views, conversions,
- * pending/payable/paid/balance), expandable rows for video + payout
- * management, copy-public-link, and a create/edit form.
+ * The code roster + funnel come from the DreamMe app's referral system (codes
+ * are created there and appear here automatically). This screen manages the
+ * dashboard-owned overlay per code (rev-share %, Facebook page, videos,
+ * payouts) and shows the computed pay from RevenueCat transactions.
  *
- * Data via /api/clippers (same-origin; checkIngestAuth). Money math lives
- * server-side in src/lib/clippers.ts — this screen only renders it.
+ * Data via /api/clippers (same-origin; checkIngestAuth). Money math + roster
+ * merge live server-side — this screen only renders it.
  */
 import * as React from "react";
 import { Button, Chip, useToast } from "./ui";
@@ -16,7 +17,9 @@ import { Button, Chip, useToast } from "./ui";
 interface Totals {
   videos: number;
   views: number;
-  conversions: number;
+  entered: number | null;
+  conversions: number; // headline = app purchased count
+  pricedConversions: number; // rc_events-derived (money we can price)
   netUsd: number;
   pendingUsd: number;
   payableUsd: number;
@@ -60,6 +63,8 @@ interface ClipperItem {
   token: string;
   active: boolean;
   notes: string | null;
+  discount_percent: number | null;
+  inApp: boolean;
   totals: Totals;
   videos: VideoRow[];
   payouts: PayoutRow[];
@@ -70,8 +75,8 @@ function fmtUSD(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
-function fmtInt(n: number): string {
-  return Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
+function fmtInt(n: number | null): string {
+  return n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
 }
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -119,18 +124,23 @@ const card: React.CSSProperties = {
 export function ClipperAdmin() {
   const toast = useToast();
   const [items, setItems] = React.useState<ClipperItem[]>([]);
+  const [feedOn, setFeedOn] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [expanded, setExpanded] = React.useState<string | null>(null);
-  const [showCreate, setShowCreate] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
       const res = await fetch("/api/clippers");
-      const data = (await res.json()) as { clippers?: ClipperItem[]; error?: string };
+      const data = (await res.json()) as {
+        clippers?: ClipperItem[];
+        appFeedConfigured?: boolean;
+        error?: string;
+      };
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setItems(data.clippers ?? []);
+      setFeedOn(data.appFeedConfigured !== false);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -168,22 +178,30 @@ export function ClipperAdmin() {
         <div>
           <div style={{ fontSize: 20, fontWeight: 600, color: "var(--ink)" }}>Clippers</div>
           <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 2 }}>
-            Rev-share program · pay = % of net proceeds, payable 30 days after each charge,
-            12-month cap per subscriber
+            Codes are created in the app and appear here automatically. Pay = % of net proceeds,
+            payable 30 days after each charge, 12-month cap per subscriber.
           </div>
         </div>
-        <Button variant="primary" onClick={() => setShowCreate((v) => !v)}>
-          {showCreate ? "Close" : "+ New clipper"}
+        <Button onClick={() => void load()} disabled={busy}>
+          Refresh
         </Button>
       </div>
 
-      {showCreate ? (
-        <ClipperForm
-          busy={busy}
-          onSubmit={(body) =>
-            void run("create_clipper", body, "Clipper created").then(() => setShowCreate(false))
-          }
-        />
+      {!feedOn ? (
+        <div
+          style={{
+            ...card,
+            padding: "12px 16px",
+            fontSize: 13,
+            color: "var(--ink-2)",
+            borderColor: "var(--accent)",
+            background: "color-mix(in srgb, var(--accent) 8%, var(--surface))",
+          }}
+        >
+          <strong>App referral feed not connected.</strong> Showing local overlays only. Set{" "}
+          <code>APP_REFERRAL_STATS_URL</code> and <code>APP_REFERRAL_STATS_TOKEN</code> (from David)
+          to auto-populate creators + conversion counts.
+        </div>
       ) : null}
 
       {loading ? (
@@ -192,12 +210,12 @@ export function ClipperAdmin() {
         <div style={{ color: "var(--accent)", fontSize: 13, padding: 24 }}>{error}</div>
       ) : items.length === 0 ? (
         <div style={{ ...card, padding: 32, textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}>
-          No clippers yet. Create one, share their link, and give the agency their code.
+          No creator codes yet. Once a code is created in the app, it shows up here — then set its
+          rev-share %, Facebook page, and videos.
         </div>
       ) : (
         items.map((c) => (
           <div key={c.id} style={{ ...card, opacity: c.active ? 1 : 0.55 }}>
-            {/* summary row */}
             <div
               style={{
                 display: "flex",
@@ -209,16 +227,19 @@ export function ClipperAdmin() {
               }}
               onClick={() => setExpanded(expanded === c.id ? null : c.id)}
             >
-              <div style={{ minWidth: 160 }}>
+              <div style={{ minWidth: 150 }}>
                 <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 14 }}>{c.name}</div>
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                   <Chip tone="accent">{c.code}</Chip>
                   <Chip tone="neutral">{Number(c.revshare_pct)}%</Chip>
+                  {c.discount_percent ? <Chip tone="neutral">−{c.discount_percent}%</Chip> : null}
                   {!c.active ? <Chip tone="ink">inactive</Chip> : null}
+                  {!c.inApp ? <Chip tone="ink">not in app</Chip> : null}
                 </div>
               </div>
               <Stat l="Videos" v={fmtInt(c.totals.videos)} />
               <Stat l="Views" v={fmtInt(c.totals.views)} />
+              <Stat l="Entered" v={fmtInt(c.totals.entered)} />
               <Stat l="Convs" v={fmtInt(c.totals.conversions)} />
               <Stat l="Net rev" v={fmtUSD(c.totals.netUsd)} />
               <Stat l="Pending" v={fmtUSD(c.totals.pendingUsd)} />
@@ -238,9 +259,7 @@ export function ClipperAdmin() {
               </div>
             </div>
 
-            {expanded === c.id ? (
-              <ClipperDetail clipper={c} busy={busy} run={run} />
-            ) : null}
+            {expanded === c.id ? <ClipperDetail clipper={c} busy={busy} run={run} /> : null}
           </div>
         ))
       )}
@@ -250,7 +269,7 @@ export function ClipperAdmin() {
 
 function Stat({ l, v, strong }: { l: string; v: string; strong?: boolean }) {
   return (
-    <div style={{ minWidth: 64 }}>
+    <div style={{ minWidth: 62 }}>
       <div style={label}>{l}</div>
       <div
         style={{
@@ -266,67 +285,6 @@ function Stat({ l, v, strong }: { l: string; v: string; strong?: boolean }) {
   );
 }
 
-function ClipperForm({
-  busy,
-  initial,
-  onSubmit,
-}: {
-  busy: boolean;
-  initial?: Partial<ClipperItem>;
-  onSubmit: (body: Record<string, unknown>) => void;
-}) {
-  const [name, setName] = React.useState(initial?.name ?? "");
-  const [code, setCode] = React.useState(initial?.code ?? "");
-  const [pageUrl, setPageUrl] = React.useState(initial?.facebook_page_url ?? "");
-  const [pct, setPct] = React.useState(String(initial?.revshare_pct ?? 20));
-
-  return (
-    <div style={{ ...card, padding: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-      <div style={{ flex: "1 1 160px" }}>
-        <div style={label}>Name</div>
-        <input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ava M." />
-      </div>
-      <div style={{ flex: "0 1 120px" }}>
-        <div style={label}>Code</div>
-        <input
-          style={{ ...input, textTransform: "uppercase" }}
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="AVA"
-        />
-      </div>
-      <div style={{ flex: "2 1 240px" }}>
-        <div style={label}>Facebook page URL (daily scan)</div>
-        <input
-          style={input}
-          value={pageUrl ?? ""}
-          onChange={(e) => setPageUrl(e.target.value)}
-          placeholder="https://www.facebook.com/…"
-        />
-      </div>
-      <div style={{ flex: "0 1 90px" }}>
-        <div style={label}>Share %</div>
-        <input style={input} value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" />
-      </div>
-      <Button
-        variant="primary"
-        disabled={busy || !name.trim() || !code.trim()}
-        onClick={() =>
-          onSubmit({
-            ...(initial?.id ? { id: initial.id } : {}),
-            name,
-            code,
-            facebook_page_url: pageUrl || null,
-            revshare_pct: Number(pct) || 20,
-          })
-        }
-      >
-        {initial?.id ? "Save" : "Create"}
-      </Button>
-    </div>
-  );
-}
-
 function ClipperDetail({
   clipper: c,
   busy,
@@ -336,47 +294,51 @@ function ClipperDetail({
   busy: boolean;
   run: (action: string, body: Record<string, unknown>, okMsg: string) => Promise<void>;
 }) {
-  const [editing, setEditing] = React.useState(false);
+  const [pct, setPct] = React.useState(String(c.revshare_pct));
+  const [fbUrl, setFbUrl] = React.useState(c.facebook_page_url ?? "");
   const [videoUrl, setVideoUrl] = React.useState("");
   const [payoutAmt, setPayoutAmt] = React.useState("");
   const [payoutNote, setPayoutNote] = React.useState("");
 
   const section: React.CSSProperties = { padding: "14px 16px", borderTop: "1px solid var(--line)" };
+  const settingsDirty =
+    Number(pct) !== Number(c.revshare_pct) || (fbUrl || "") !== (c.facebook_page_url ?? "");
 
   return (
     <div>
-      {/* edit / deactivate */}
-      <div style={{ ...section, display: "flex", gap: 8, alignItems: "center" }}>
-        <Button size="sm" onClick={() => setEditing((v) => !v)}>
-          {editing ? "Close edit" : "Edit"}
-        </Button>
+      {/* overlay settings (dashboard-owned) */}
+      <div style={{ ...section, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "0 1 90px" }}>
+          <div style={label}>Rev-share %</div>
+          <input style={input} value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" />
+        </div>
+        <div style={{ flex: "2 1 320px" }}>
+          <div style={label}>Facebook page URL (daily scan)</div>
+          <input
+            style={input}
+            value={fbUrl}
+            onChange={(e) => setFbUrl(e.target.value)}
+            placeholder="https://www.facebook.com/…"
+          />
+        </div>
         <Button
+          variant="primary"
           size="sm"
-          variant={c.active ? "danger" : "secondary"}
-          disabled={busy}
+          disabled={busy || !settingsDirty}
           onClick={() =>
             void run(
               "update_clipper",
-              { id: c.id, active: !c.active },
-              c.active ? "Deactivated" : "Reactivated",
+              { id: c.id, revshare_pct: Number(pct) || 20, facebook_page_url: fbUrl || null },
+              "Saved",
             )
           }
         >
-          {c.active ? "Deactivate" : "Reactivate"}
+          Save settings
         </Button>
-        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          Public link: /clip/{c.token.slice(0, 8)}…
+        <span style={{ fontSize: 12, color: "var(--ink-3)", marginLeft: "auto" }}>
+          /clip/{c.token.slice(0, 8)}…
         </span>
       </div>
-      {editing ? (
-        <div style={section}>
-          <ClipperForm
-            busy={busy}
-            initial={c}
-            onSubmit={(body) => void run("update_clipper", body, "Saved").then(() => setEditing(false))}
-          />
-        </div>
-      ) : null}
 
       {/* videos */}
       <div style={section}>
@@ -457,10 +419,18 @@ function ClipperDetail({
 
       {/* earnings */}
       <div style={section}>
-        <div style={{ ...label, marginBottom: 8 }}>Recent earnings</div>
+        <div style={{ ...label, marginBottom: 8 }}>
+          Recent earnings
+          {c.totals.conversions !== c.totals.pricedConversions ? (
+            <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-4)", marginLeft: 8 }}>
+              ({c.totals.conversions} app conversions · {c.totals.pricedConversions} priced from RC)
+            </span>
+          ) : null}
+        </div>
         {c.recentTxns.length === 0 ? (
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-            No attributed conversions yet (code {c.code}).
+            No priced transactions yet (code {c.code}). Conversions before the money-webhook show in
+            the app count but have no revenue data.
           </div>
         ) : (
           <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>

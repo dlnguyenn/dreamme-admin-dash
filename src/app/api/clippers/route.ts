@@ -1,11 +1,11 @@
 /**
  * Clippers admin API — called by the ClipperAdmin screen (same-origin).
  *
- * GET  → all clippers with computed totals (earnings, views), videos, payouts.
- * POST → { action, ... } mutations:
- *   create_clipper { name, code, facebook_page_url?, revshare_pct?, notes? }
- *   update_clipper { id, ...patch }
- *   delete_clipper { id }               (soft: active=false)
+ * GET  → creators (app roster + funnel merged with local overlay + rc_events
+ *        pay). App codes auto-appear (overlay auto-created). Headline
+ *        conversions = the app's `purchased` count.
+ * POST → { action, ... } mutations (codes are created app-side, NOT here):
+ *   update_clipper { id, revshare_pct?, facebook_page_url?, notes? }
  *   add_video      { clipper_id, url, platform?, title? }
  *   update_video   { id, ...patch }     (manual_views, title, active, ...)
  *   delete_video   { id }
@@ -26,6 +26,7 @@ import {
   sbDelete,
   type ClipperRow,
 } from "@/lib/clippers";
+import { fetchCreatorStats, creatorStatsConfigured } from "@/lib/appReferrals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,35 +40,65 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "supabase not configured" }, { status: 503 });
   }
   try {
-    const clippers = await sbGet<ClipperRow[]>("clippers?order=created_at.asc&limit=200");
-    const bundles = await Promise.all(clippers.map((c) => loadClipperBundle(c)));
-    return NextResponse.json({
-      clippers: bundles.map((b) => ({
-        ...b.clipper,
-        totals: {
-          videos: b.videos.length,
-          views: b.totalViews,
-          conversions: b.earnings.conversions,
-          netUsd: b.earnings.netUsd,
-          pendingUsd: b.earnings.pendingUsd,
-          payableUsd: b.earnings.payableUsd,
-          paidUsd: b.earnings.paidUsd,
-          balanceUsd: b.earnings.balanceUsd,
-        },
-        videos: b.videos,
-        payouts: b.payouts,
-        recentTxns: b.earnings.txns.slice(0, 50),
-      })),
-    });
+    // App roster (source of truth for codes/names/funnel) + local overlays.
+    const [appCreators, localClippers] = await Promise.all([
+      fetchCreatorStats(),
+      sbGet<ClipperRow[]>("clippers?order=created_at.asc&limit=500"),
+    ]);
+    const localByCode = new Map(localClippers.map((c) => [c.code.toUpperCase(), c]));
+    const appByCode = new Map(appCreators.map((a) => [a.code, a]));
+
+    // Auto-appear: create an overlay row for every app code we don't have yet.
+    const missing = appCreators.filter((a) => !localByCode.has(a.code));
+    if (missing.length) {
+      const inserted = await sbPost<ClipperRow>(
+        "clippers",
+        missing.map((a) => ({ code: a.code, name: a.creator_name, revshare_pct: 20 })),
+        { onConflict: "code" },
+      );
+      for (const r of inserted) localByCode.set(r.code.toUpperCase(), r);
+    }
+
+    const overlays = [...localByCode.values()];
+    const bundles = await Promise.all(overlays.map((c) => loadClipperBundle(c)));
+    const clippers = bundles
+      .map((b) => {
+        const app = appByCode.get(b.clipper.code.toUpperCase());
+        return {
+          ...b.clipper,
+          name: app?.creator_name ?? b.clipper.name,
+          active: app ? app.is_active : b.clipper.active,
+          discount_percent: app?.discount_percent ?? null,
+          inApp: !!app,
+          totals: {
+            videos: b.videos.length,
+            views: b.totalViews,
+            entered: app?.entered ?? null,
+            // Headline conversions = the app's authoritative purchased count;
+            // fall back to priced (rc_events) count when the app feed is off.
+            conversions: app?.purchased ?? b.earnings.conversions,
+            pricedConversions: b.earnings.conversions,
+            netUsd: b.earnings.netUsd,
+            pendingUsd: b.earnings.pendingUsd,
+            payableUsd: b.earnings.payableUsd,
+            paidUsd: b.earnings.paidUsd,
+            balanceUsd: b.earnings.balanceUsd,
+          },
+          videos: b.videos,
+          payouts: b.payouts,
+          recentTxns: b.earnings.txns.slice(0, 50),
+        };
+      })
+      .sort((a, b) => (b.totals.conversions ?? 0) - (a.totals.conversions ?? 0));
+
+    return NextResponse.json({ clippers, appFeedConfigured: creatorStatsConfigured() });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }
 
 type Action =
-  | "create_clipper"
   | "update_clipper"
-  | "delete_clipper"
   | "add_video"
   | "update_video"
   | "delete_video"
@@ -78,8 +109,6 @@ interface PostBody {
   action?: Action;
   id?: string;
   clipper_id?: string;
-  name?: string;
-  code?: string;
   facebook_page_url?: string | null;
   revshare_pct?: number;
   notes?: string | null;
@@ -110,39 +139,21 @@ export async function POST(req: Request) {
 
   try {
     switch (body.action) {
-      case "create_clipper": {
-        if (!body.name?.trim() || !body.code?.trim()) {
-          return NextResponse.json({ error: "name and code required" }, { status: 400 });
-        }
-        const rows = await sbPost<ClipperRow>("clippers", [
-          {
-            name: body.name.trim(),
-            code: body.code.trim().toUpperCase(),
-            facebook_page_url: body.facebook_page_url?.trim() || null,
-            revshare_pct: Number(body.revshare_pct) || 20,
-            notes: body.notes ?? null,
-          },
-        ]);
-        return NextResponse.json({ ok: true, clipper: rows[0] });
-      }
+      // Codes/names/active are owned by the app's referral system — the
+      // dashboard only edits its overlay fields (rev-share %, FB page, notes).
       case "update_clipper": {
         if (!body.id) return NextResponse.json({ error: "id required" }, { status: 400 });
         const patch: Record<string, unknown> = {};
-        if (body.name !== undefined) patch.name = body.name.trim();
-        if (body.code !== undefined) patch.code = body.code.trim().toUpperCase();
         if (body.facebook_page_url !== undefined) {
           patch.facebook_page_url = body.facebook_page_url?.trim() || null;
         }
         if (body.revshare_pct !== undefined) patch.revshare_pct = Number(body.revshare_pct) || 20;
         if (body.notes !== undefined) patch.notes = body.notes;
-        if (body.active !== undefined) patch.active = body.active;
+        if (Object.keys(patch).length === 0) {
+          return NextResponse.json({ error: "nothing to update" }, { status: 400 });
+        }
         const rows = await sbPatch<ClipperRow>(`clippers?id=eq.${body.id}`, patch);
         return NextResponse.json({ ok: true, clipper: rows[0] });
-      }
-      case "delete_clipper": {
-        if (!body.id) return NextResponse.json({ error: "id required" }, { status: 400 });
-        await sbPatch(`clippers?id=eq.${body.id}`, { active: false });
-        return NextResponse.json({ ok: true });
       }
       case "add_video": {
         if (!body.clipper_id || !body.url?.trim()) {

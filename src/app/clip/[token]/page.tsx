@@ -21,6 +21,7 @@ import {
   type ClipperRow,
   type EarningTxn,
 } from "@/lib/clippers";
+import { fetchCreatorStatByCode } from "@/lib/appReferrals";
 import { SubmitVideoForm } from "./submit-form";
 
 export const dynamic = "force-dynamic";
@@ -92,7 +93,14 @@ export default async function ClipperPage({
   const clipper = clippers[0];
   if (!clipper) notFound();
 
-  const { videos, earnings, totalViews, payouts } = await loadClipperBundle(clipper);
+  const [{ videos, earnings, totalViews, payouts }, appStat] = await Promise.all([
+    loadClipperBundle(clipper),
+    fetchCreatorStatByCode(clipper.code),
+  ]);
+  // App referral system is authoritative for display name + conversion count;
+  // fall back to local/priced values when the feed isn't connected.
+  const displayName = appStat?.creator_name ?? clipper.name;
+  const conversions = appStat?.purchased ?? earnings.conversions;
 
   return (
     <main className="min-h-screen bg-[#faf7f2] px-4 py-10 text-neutral-900 sm:px-8">
@@ -103,7 +111,7 @@ export default async function ClipperPage({
             <div className="text-sm font-semibold uppercase tracking-widest text-[#c96a4a]">
               DreamMe · Creator Report
             </div>
-            <h1 className="mt-1 text-3xl font-semibold">{clipper.name}</h1>
+            <h1 className="mt-1 text-3xl font-semibold">{displayName}</h1>
           </div>
           <div className="rounded-xl border border-[#c96a4a]/30 bg-[#c96a4a]/10 px-4 py-2 text-sm">
             Your code: <span className="font-mono font-bold text-[#c96a4a]">{clipper.code}</span>
@@ -114,7 +122,7 @@ export default async function ClipperPage({
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatTile label="Total views" value={fmtInt(totalViews)} />
           <StatTile label="Videos" value={fmtInt(videos.length)} />
-          <StatTile label="Conversions" value={fmtInt(earnings.conversions)} sub="subscribers via your code" />
+          <StatTile label="Conversions" value={fmtInt(conversions)} sub="subscribers via your code" />
           <StatTile label="Pending" value={fmtUSD(earnings.pendingUsd)} sub={`clears after ${HOLDBACK_DAYS} days`} />
           <StatTile label="Payable now" value={fmtUSD(earnings.balanceUsd > 0 ? earnings.balanceUsd : 0)} sub="after payouts to date" />
           <StatTile label="Paid to date" value={fmtUSD(earnings.paidUsd)} />
