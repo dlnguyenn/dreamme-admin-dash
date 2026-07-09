@@ -46,19 +46,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "REVENUECAT_API_KEY / PROJECT_ID not set" }, { status: 503 });
   }
 
-  // Bootstrap flexibility: any fields in the request body are merged into the
-  // RC create payload, so we can iterate on the exact schema (esp. the auth
-  // header field name) via curl without redeploying.
-  let overrides: Record<string, unknown> = {};
+  // Optional event_types override from body; otherwise the default set.
+  let eventTypes = DEFAULT_EVENT_TYPES;
   try {
-    overrides = ((await req.json()) as Record<string, unknown>) ?? {};
+    const body = (await req.json()) as { event_types?: string[] };
+    if (Array.isArray(body?.event_types) && body.event_types.length) eventTypes = body.event_types;
   } catch {
     /* no body */
   }
-  const eventTypes =
-    Array.isArray(overrides.event_types) && overrides.event_types.length
-      ? (overrides.event_types as string[])
-      : DEFAULT_EVENT_TYPES;
 
   const base = `https://api.revenuecat.com/v2/projects/${projectId}/integrations/webhooks`;
   const rcHeaders = {
@@ -83,19 +78,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, alreadyExists: true, webhook: already });
   }
 
-  // 2) create — defaults, then overrides from body (event_types handled above)
-  const { event_types: _ignored, ...restOverrides } = overrides;
-  const payload: Record<string, unknown> = {
-    name: "Clipper rev-share attribution",
-    url: ingestUrl,
-    environment: "production",
-    event_types: eventTypes,
-    ...restOverrides,
-  };
+  // 2) create. Field name `authorization_header` confirmed against the RC v2
+  // schema (it's the value RC sends in the Authorization header to our ingest).
+  // Requires the RC key to hold project_configuration:integrations:read_write.
   const createRes = await fetch(base, {
     method: "POST",
     headers: rcHeaders,
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      name: "Clipper rev-share attribution",
+      url: ingestUrl,
+      environment: "production",
+      authorization_header: secret,
+      event_types: eventTypes,
+    }),
   });
   const createText = await createRes.text();
   return NextResponse.json(
