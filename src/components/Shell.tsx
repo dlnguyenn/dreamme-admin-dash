@@ -20,7 +20,8 @@ export type DashId =
   | "requests"
   | "synthid-research"
   | "image-studio"
-  | "integrations";
+  | "integrations"
+  | "clippers";
 
 export interface NavItem {
   id: DashId;
@@ -48,6 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "synthid-research", label: "SynthID Research", icon: "Image", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Image", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "integrations", label: "Integrations", icon: "Bookmark", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
+  { id: "clippers", label: "Clippers", icon: "Chart", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
 ];
 
 export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {

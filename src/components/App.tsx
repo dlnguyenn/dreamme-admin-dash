@@ -24,6 +24,7 @@ import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
 import { Integrations } from "./Integrations";
+import { ClipperAdmin } from "./ClipperAdmin";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -231,6 +232,12 @@ export function App() {
   } else if (current === "integrations") {
     screen = role === "admin"
       ? <Integrations />
+      : <ComingSoon item={currentItem} />;
+  } else if (current === "clippers") {
+    // Defense-in-depth: nav hides it for non-admins, but the dash id can
+    // persist in localStorage so re-check role at render.
+    screen = role === "admin"
+      ? <ClipperAdmin />
       : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;

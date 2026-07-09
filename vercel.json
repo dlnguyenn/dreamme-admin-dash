@@ -19,6 +19,7 @@
     { "path": "/api/cron/growth-recap", "schedule": "0 13 * * 1" },
     { "path": "/api/cron/scrape-viral-apps?platform=tiktok", "schedule": "30 4 * * 2,5" },
     { "path": "/api/cron/scrape-viral-apps?platform=instagram", "schedule": "15 5 * * 2,5" },
-    { "path": "/api/cron/scrape-competitor-ads", "schedule": "45 5 * * 2,5" }
+    { "path": "/api/cron/scrape-competitor-ads", "schedule": "45 5 * * 2,5" },
+    { "path": "/api/cron/sync-clipper-views", "schedule": "0 9 * * *" }
   ]
 }
