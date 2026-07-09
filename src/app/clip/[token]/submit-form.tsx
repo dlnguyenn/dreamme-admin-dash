@@ -3,10 +3,12 @@
 /**
  * Tiny client island on /clip/[token]: lets a clipper paste one of their own
  * video links. POSTs to the token-scoped public endpoint, then refreshes the
- * server-rendered page data.
+ * server-rendered page data. Inline styles (Tailwind isn't wired up).
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
+
+const ACCENT = "#c96a4a";
 
 export function SubmitVideoForm({ token }: { token: string }) {
   const router = useRouter();
@@ -42,7 +44,7 @@ export function SubmitVideoForm({ token }: { token: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex items-center gap-2">
+    <form onSubmit={submit} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <input
         type="url"
         value={url}
@@ -51,21 +53,37 @@ export function SubmitVideoForm({ token }: { token: string }) {
           if (state !== "idle") setState("idle");
         }}
         placeholder="Paste a video link…"
-        className="w-56 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-[#c96a4a] sm:w-72"
+        style={{
+          width: 240,
+          maxWidth: "100%",
+          borderRadius: 8,
+          border: "1px solid #d9d2c6",
+          background: "#fff",
+          padding: "8px 12px",
+          fontSize: 14,
+          color: "#1a1816",
+          outline: "none",
+        }}
       />
       <button
         type="submit"
         disabled={state === "busy" || !url.trim()}
-        className="rounded-lg bg-[#c96a4a] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        style={{
+          borderRadius: 8,
+          border: "none",
+          background: ACCENT,
+          padding: "8px 14px",
+          fontSize: 14,
+          fontWeight: 600,
+          color: "#fff",
+          cursor: state === "busy" || !url.trim() ? "default" : "pointer",
+          opacity: state === "busy" || !url.trim() ? 0.5 : 1,
+        }}
       >
         {state === "busy" ? "Adding…" : "Add video"}
       </button>
       {message ? (
-        <span
-          className={`text-xs ${state === "error" ? "text-red-600" : "text-emerald-700"}`}
-        >
-          {message}
-        </span>
+        <span style={{ fontSize: 12, color: state === "error" ? "#c0392b" : "#1e874b" }}>{message}</span>
       ) : null}
     </form>
   );

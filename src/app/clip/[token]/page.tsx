@@ -7,10 +7,11 @@
  * proceeds, payable 30 days after each transaction, refunds excluded,
  * first 12 months per subscriber.
  *
- * Server component (creatives/page.tsx pattern): force-dynamic, service-role
- * reads via src/lib/clippers.ts, Tailwind utilities.
+ * Server component. Inline styles + CSS vars (Tailwind is not wired up in this
+ * app — see globals.css); the whole surface is self-contained.
  */
 import { notFound } from "next/navigation";
+import * as React from "react";
 import {
   clippersDbConfigured,
   loadClipperBundle,
@@ -23,17 +24,19 @@ import {
 } from "@/lib/clippers";
 import { fetchCreatorStatByCode } from "@/lib/appReferrals";
 import { SubmitVideoForm } from "./submit-form";
+import { Onboarding } from "./onboarding";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const ACCENT = "#c96a4a";
+const INK = "#1a1816";
+const MUTED = "#9a8f85";
+const BORDER = "#e7e2d8";
+
 function fmtUSD(n: number, frac = 2): string {
   if (!Number.isFinite(n) || n === 0) return "$0.00";
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: frac,
-  });
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: frac });
 }
 function fmtInt(n: number): string {
   return Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
@@ -45,37 +48,81 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+const card: React.CSSProperties = {
+  background: "#fff",
+  border: `1px solid ${BORDER}`,
+  borderRadius: 18,
+  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+};
+const tileLabel: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 500,
+  textTransform: "uppercase",
+  letterSpacing: 0.8,
+  color: MUTED,
+};
+const h2: React.CSSProperties = { margin: "0 0 12px", fontSize: 18, fontWeight: 600, color: INK };
+const th: React.CSSProperties = {
+  padding: "12px 16px",
+  fontSize: 11,
+  fontWeight: 500,
+  textTransform: "uppercase",
+  letterSpacing: 0.6,
+  color: MUTED,
+  textAlign: "left",
+  borderBottom: `1px solid #f0ece4`,
+};
+const td: React.CSSProperties = { padding: "10px 16px", fontSize: 13.5, color: "#3a332e" };
+const num: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+const emptyCard: React.CSSProperties = {
+  border: `1px dashed #d9d2c6`,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.5)",
+  padding: "40px 24px",
+  textAlign: "center",
+  fontSize: 14,
+  color: "#8a8078",
+};
+
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white px-5 py-4 shadow-sm">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-neutral-400">
-        {label}
-      </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-neutral-900">{value}</div>
-      {sub ? <div className="mt-0.5 text-xs text-neutral-400">{sub}</div> : null}
+    <div style={{ ...card, padding: "16px 20px" }}>
+      <div style={tileLabel}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 24, fontWeight: 600, color: INK, ...num }}>{value}</div>
+      {sub ? <div style={{ marginTop: 2, fontSize: 12, color: MUTED }}>{sub}</div> : null}
     </div>
   );
 }
 
 function StatusBadge({ txn }: { txn: EarningTxn }) {
-  if (txn.status === "refunded") {
-    return (
-      <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-600">
-        Refunded
-      </span>
-    );
-  }
-  if (txn.status === "pending") {
-    return (
-      <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-        Pending · {txn.daysLeft}d left
-      </span>
-    );
-  }
+  const map = {
+    refunded: { bg: "#fdecec", fg: "#c0392b", text: "Refunded" },
+    pending: { bg: "#fef6e7", fg: "#b7791f", text: `Pending · ${txn.daysLeft}d left` },
+    payable: { bg: "#e9f7ef", fg: "#1e874b", text: "Payable" },
+  } as const;
+  const s = map[txn.status];
   return (
-    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-      Payable
+    <span
+      style={{
+        borderRadius: 999,
+        background: s.bg,
+        color: s.fg,
+        padding: "3px 10px",
+        fontSize: 12,
+        fontWeight: 500,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {s.text}
     </span>
+  );
+}
+
+function TableCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ ...card, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>{children}</table>
+    </div>
   );
 }
 
@@ -101,25 +148,55 @@ export default async function ClipperPage({
   // fall back to local/priced values when the feed isn't connected.
   const displayName = appStat?.creator_name ?? clipper.name;
   const conversions = appStat?.purchased ?? earnings.conversions;
+  const pct = Number(clipper.revshare_pct);
 
   return (
-    <main className="min-h-screen bg-[#faf7f2] px-4 py-10 text-neutral-900 sm:px-8">
-      <div className="mx-auto max-w-5xl">
+    <main style={{ minHeight: "100vh", background: "#faf7f2", color: INK, padding: "40px 16px" }}>
+      <div style={{ margin: "0 auto", maxWidth: 960 }}>
         {/* Header */}
-        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <header
+          style={{
+            marginBottom: 28,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
           <div>
-            <div className="text-sm font-semibold uppercase tracking-widest text-[#c96a4a]">
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: ACCENT }}>
               DreamMe · Creator Report
             </div>
-            <h1 className="mt-1 text-3xl font-semibold">{displayName}</h1>
+            <h1 style={{ margin: "4px 0 0", fontSize: 30, fontWeight: 600 }}>{displayName}</h1>
           </div>
-          <div className="rounded-xl border border-[#c96a4a]/30 bg-[#c96a4a]/10 px-4 py-2 text-sm">
-            Your code: <span className="font-mono font-bold text-[#c96a4a]">{clipper.code}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Onboarding name={displayName} code={clipper.code} />
+            <div
+              style={{
+                borderRadius: 12,
+                border: `1px solid ${ACCENT}55`,
+                background: `${ACCENT}18`,
+                padding: "8px 16px",
+                fontSize: 14,
+              }}
+            >
+              Your code:{" "}
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 700, color: ACCENT }}>
+                {clipper.code}
+              </span>
+            </div>
           </div>
         </header>
 
         {/* Stat tiles */}
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <section
+          style={{
+            display: "grid",
+            gap: 12,
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          }}
+        >
           <StatTile label="Total views" value={fmtInt(totalViews)} />
           <StatTile label="Videos" value={fmtInt(videos.length)} />
           <StatTile label="Conversions" value={fmtInt(conversions)} sub="subscribers via your code" />
@@ -129,125 +206,139 @@ export default async function ClipperPage({
         </section>
 
         {/* Earnings */}
-        <section className="mt-10">
-          <h2 className="mb-3 text-lg font-semibold">Earnings</h2>
+        <section style={{ marginTop: 40 }}>
+          <h2 style={h2}>Earnings</h2>
           {earnings.txns.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 px-6 py-10 text-center text-sm text-neutral-500">
+            <div style={emptyCard}>
               No conversions yet. When someone subscribes with your code{" "}
-              <span className="font-mono font-semibold">{clipper.code}</span>, each payment shows
-              up here with your {Number(clipper.revshare_pct)}% share.
+              <b style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{clipper.code}</b>, each
+              payment shows up here with your {pct}% share.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-100 text-left text-[11px] uppercase tracking-wider text-neutral-400">
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 text-right font-medium">Net revenue</th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Your {Number(clipper.revshare_pct)}%
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">Status</th>
+            <TableCard>
+              <thead>
+                <tr>
+                  <th style={th}>Date</th>
+                  <th style={th}>Type</th>
+                  <th style={{ ...th, textAlign: "right" }}>Net revenue</th>
+                  <th style={{ ...th, textAlign: "right" }}>Your {pct}%</th>
+                  <th style={{ ...th, textAlign: "right" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {earnings.txns.slice(0, 100).map((t) => (
+                  <tr key={t.transactionId} style={{ borderBottom: "1px solid #f5f1ea" }}>
+                    <td style={{ ...td, ...num }}>{fmtDate(t.eventAt)}</td>
+                    <td style={td}>{t.type === "INITIAL_PURCHASE" ? "New subscriber" : "Renewal"}</td>
+                    <td style={{ ...td, ...num, textAlign: "right" }}>{fmtUSD(t.netUsd)}</td>
+                    <td style={{ ...td, ...num, textAlign: "right", fontWeight: 600 }}>
+                      {t.status === "refunded" ? "—" : fmtUSD(t.earningUsd)}
+                    </td>
+                    <td style={{ ...td, textAlign: "right" }}>
+                      <StatusBadge txn={t} />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {earnings.txns.slice(0, 100).map((t) => (
-                    <tr key={t.transactionId} className="border-b border-neutral-50 last:border-0">
-                      <td className="px-4 py-2.5 tabular-nums">{fmtDate(t.eventAt)}</td>
-                      <td className="px-4 py-2.5">
-                        {t.type === "INITIAL_PURCHASE" ? "New subscriber" : "Renewal"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{fmtUSD(t.netUsd)}</td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums">
-                        {t.status === "refunded" ? "—" : fmtUSD(t.earningUsd)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <StatusBadge txn={t} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </TableCard>
           )}
         </section>
 
         {/* Videos */}
-        <section className="mt-10">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Your videos</h2>
+        <section style={{ marginTop: 40 }}>
+          <div
+            style={{
+              marginBottom: 12,
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <h2 style={{ ...h2, margin: 0 }}>Your videos</h2>
             <SubmitVideoForm token={token} />
           </div>
           {videos.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-neutral-300 bg-white/60 px-6 py-10 text-center text-sm text-neutral-500">
-              No videos tracked yet. We scan your Facebook page daily — or paste a video link
-              above.
+            <div style={emptyCard}>
+              No videos tracked yet. We scan your Facebook page daily, or paste a video link above.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-100 text-left text-[11px] uppercase tracking-wider text-neutral-400">
-                    <th className="px-4 py-3 font-medium">Video</th>
-                    <th className="px-4 py-3 font-medium">Platform</th>
-                    <th className="px-4 py-3 font-medium">Posted</th>
-                    <th className="px-4 py-3 text-right font-medium">Views</th>
-                    <th className="px-4 py-3 text-right font-medium">Updated</th>
+            <TableCard>
+              <thead>
+                <tr>
+                  <th style={th}>Video</th>
+                  <th style={th}>Platform</th>
+                  <th style={th}>Posted</th>
+                  <th style={{ ...th, textAlign: "right" }}>Views</th>
+                  <th style={{ ...th, textAlign: "right" }}>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {videos.map((v) => (
+                  <tr key={v.id} style={{ borderBottom: "1px solid #f5f1ea" }}>
+                    <td style={{ ...td, maxWidth: 320 }}>
+                      <a
+                        href={v.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: ACCENT,
+                          textDecoration: "none",
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {v.title?.trim() || v.url.replace(/^https?:\/\/(www\.)?/, "")}
+                      </a>
+                    </td>
+                    <td style={{ ...td, textTransform: "capitalize" }}>{v.platform}</td>
+                    <td style={{ ...td, ...num }}>{fmtDate(v.posted_at)}</td>
+                    <td style={{ ...td, ...num, textAlign: "right", fontWeight: 600 }}>
+                      {fmtInt(effectiveViews(v))}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontSize: 12, color: MUTED }}>
+                      {fmtDate(v.views_updated_at)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {videos.map((v) => (
-                    <tr key={v.id} className="border-b border-neutral-50 last:border-0">
-                      <td className="max-w-[320px] px-4 py-2.5">
-                        <a
-                          href={v.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate text-[#c96a4a] hover:underline"
-                        >
-                          {v.title?.trim() || v.url.replace(/^https?:\/\/(www\.)?/, "")}
-                        </a>
-                      </td>
-                      <td className="px-4 py-2.5 capitalize">{v.platform}</td>
-                      <td className="px-4 py-2.5 tabular-nums">{fmtDate(v.posted_at)}</td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums">
-                        {fmtInt(effectiveViews(v))}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-xs text-neutral-400">
-                        {fmtDate(v.views_updated_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </TableCard>
           )}
         </section>
 
         {/* Payout history */}
         {payouts.length > 0 ? (
-          <section className="mt-10">
-            <h2 className="mb-3 text-lg font-semibold">Payout history</h2>
-            <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <table className="w-full text-sm">
-                <tbody>
-                  {payouts.map((p) => (
-                    <tr key={p.id} className="border-b border-neutral-50 last:border-0">
-                      <td className="px-4 py-2.5 tabular-nums">{fmtDate(p.paid_at)}</td>
-                      <td className="px-4 py-2.5 text-neutral-500">{p.note ?? p.method ?? ""}</td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums">
-                        {fmtUSD(Number(p.amount_usd))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <section style={{ marginTop: 40 }}>
+            <h2 style={h2}>Payout history</h2>
+            <TableCard>
+              <tbody>
+                {payouts.map((p) => (
+                  <tr key={p.id} style={{ borderBottom: "1px solid #f5f1ea" }}>
+                    <td style={{ ...td, ...num }}>{fmtDate(p.paid_at)}</td>
+                    <td style={{ ...td, color: MUTED }}>{p.note ?? p.method ?? ""}</td>
+                    <td style={{ ...td, ...num, textAlign: "right", fontWeight: 600 }}>
+                      {fmtUSD(Number(p.amount_usd))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </TableCard>
           </section>
         ) : null}
 
-        <footer className="mt-12 border-t border-neutral-200 pt-5 text-xs leading-relaxed text-neutral-400">
+        <footer
+          style={{
+            marginTop: 48,
+            borderTop: `1px solid ${BORDER}`,
+            paddingTop: 20,
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: MUTED,
+          }}
+        >
           Figures are estimates and may adjust as store data settles. Payments become payable{" "}
           {HOLDBACK_DAYS} days after each transaction, exclude refunded purchases, and cover the
           first {REVSHARE_MONTHS_CAP} months of each subscriber. Revenue shares are calculated on
