@@ -18,9 +18,9 @@ import { checkCronAuth } from "@/lib/auth-ingest";
 import {
   fetchAdInsights,
   updateAdStatus,
-  metaAdsConfigured,
   type AdInsightRow,
 } from "@/lib/vendors/meta-ads";
+import { resolveMeta } from "@/lib/meta-resolve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,7 +131,7 @@ function shouldSkipByThreshold(
   return { skip: false };
 }
 
-async function executeSchedule(row: CullScheduleRow, accountId: string): Promise<{
+async function executeSchedule(row: CullScheduleRow, accountId: string, accessToken: string): Promise<{
   ok: boolean;
   paused_ad_ids: string[];
   ranked_summary: unknown;
@@ -148,6 +148,7 @@ async function executeSchedule(row: CullScheduleRow, accountId: string): Promise
     accountId,
     since: isoDate(since),
     until: isoDate(until),
+    accessToken,
   });
   const adsetAds = insights.filter((r) => r.adset_id === row.adset_id);
 
@@ -186,7 +187,7 @@ async function executeSchedule(row: CullScheduleRow, accountId: string): Promise
   const paused_ad_ids: string[] = [];
   for (const t of toPause) {
     try {
-      await updateAdStatus({ adId: t.ad_id, status: "PAUSED" });
+      await updateAdStatus({ adId: t.ad_id, status: "PAUSED", accessToken });
       paused_ad_ids.push(t.ad_id);
     } catch (e) {
       return {
@@ -212,9 +213,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
-  if (!metaAdsConfigured()) {
+  const meta = await resolveMeta();
+  if (!meta) {
     return NextResponse.json(
-      { ok: false, error: "META_ACCESS_TOKEN not set" },
+      { ok: false, error: "No Meta token (OAuth connection missing + META_ACCESS_TOKEN unset/expired)" },
       { status: 500 },
     );
   }
@@ -245,7 +247,7 @@ export async function GET(req: Request) {
   for (const row of pending) {
     let result: Awaited<ReturnType<typeof executeSchedule>>;
     try {
-      result = await executeSchedule(row, accountId);
+      result = await executeSchedule(row, accountId, meta.token);
     } catch (e) {
       result = {
         ok: false,

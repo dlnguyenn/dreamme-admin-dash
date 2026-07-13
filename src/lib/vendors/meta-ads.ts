@@ -620,10 +620,11 @@ export async function createLookalike(params: {
 export async function updateAdStatus(params: {
   adId: string;
   status: "ACTIVE" | "PAUSED";
+  accessToken?: string;
 }): Promise<{ success: true }> {
   const API_VERSION = getApiVersion();
   const url = `https://graph.facebook.com/${API_VERSION}/${params.adId}`;
-  await metaPostJson(url, { status: params.status });
+  await metaPostJson(url, { status: params.status }, 4, params.accessToken);
   return { success: true };
 }
 
