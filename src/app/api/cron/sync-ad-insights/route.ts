@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
-import {
-  fetchAdInsightsWithCreative,
-  metaAdsConfigured,
-} from "@/lib/vendors/meta-ads";
+import { fetchAdInsightsWithCreative } from "@/lib/vendors/meta-ads";
+import { resolveMeta } from "@/lib/meta-resolve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +29,13 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
-  if (!metaAdsConfigured()) {
+  // Prefer the OAuth connection token (long-lived, refreshed) over the env
+  // META_ACCESS_TOKEN, which expired ~2026-06-30 and silently broke this sync
+  // (ad_insights_daily froze at 6/30). Mirrors how the live ads-MCP tools auth.
+  const meta = await resolveMeta();
+  if (!meta) {
     return NextResponse.json(
-      { ok: false, error: "META_ACCESS_TOKEN not set" },
+      { ok: false, error: "No Meta token (OAuth connection missing + META_ACCESS_TOKEN unset/expired)" },
       { status: 500 },
     );
   }
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
     );
   }
 
-  const accountId = process.env.META_AD_ACCOUNT_ID ?? DEFAULT_ACCOUNT_ID;
+  const accountId = process.env.META_AD_ACCOUNT_ID ?? meta.account ?? DEFAULT_ACCOUNT_ID;
   // Default 35d so weekly/monthly dashboard windows are always fully
   // backfilled even if a daily run is skipped. Override with ?days=N for
   // one-shot backfills.
@@ -63,6 +65,7 @@ export async function GET(req: Request) {
       since: sinceDate,
       until: untilDate,
       timeIncrement: 1,
+      accessToken: meta.token,
     });
   } catch (e) {
     return NextResponse.json(
