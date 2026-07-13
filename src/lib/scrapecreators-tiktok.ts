@@ -52,16 +52,35 @@ interface ScComment {
   user?: { unique_id?: string };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function scGet<T>(
   path: string,
   params: Record<string, string>,
+  attempt = 0,
 ): Promise<T> {
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${SC_BASE}${path}?${qs}`, {
-    headers: { "x-api-key": SC_KEY },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${SC_BASE}${path}?${qs}`, {
+      headers: { "x-api-key": SC_KEY },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12000),
+    });
+  } catch (e) {
+    // Network error / timeout — retry with backoff, then give up.
+    if (attempt < 3) {
+      await sleep(500 * 2 ** attempt);
+      return scGet<T>(path, params, attempt + 1);
+    }
+    throw e;
+  }
   if (!res.ok) {
+    // Transient throttle/5xx under burst load — back off and retry.
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+      await sleep(500 * 2 ** attempt);
+      return scGet<T>(path, params, attempt + 1);
+    }
     throw new Error(
       `ScrapeCreators ${path} failed: ${res.status} ${await res.text()}`,
     );
@@ -91,6 +110,7 @@ function awemeToNormalized(a: ScAweme): NormalizedSlideshow {
   const tiktokUrl =
     author && id ? `https://www.tiktok.com/@${author}/photo/${id}` : "";
   return {
+    platform: "tiktok",
     tiktokUrl,
     // aweme_type 150 == photo/slideshow post
     isSlideshow: a.aweme_type === 150 && slideUrls.length > 0,
@@ -146,14 +166,11 @@ export async function scProfilePopularSlideshows(
   return out.slice(0, limit);
 }
 
-/**
- * Top `n` comments for a post, pinned-first then by likes desc. Pulls a
- * couple pages (TikTok's default order is not by likes) and sorts locally.
- */
-export async function scTopComments(
+/** One pass of the comment pager (no sort). See scTopComments for the API. */
+async function scCommentsOnce(
   url: string,
   n: number,
-  maxPages = 2,
+  maxPages: number,
 ): Promise<StoredComment[]> {
   const acc: StoredComment[] = [];
   let cursor: string | undefined;
@@ -181,6 +198,24 @@ export async function scTopComments(
     if (!d.has_more) break;
     cursor = String(d.cursor ?? "");
     if (!cursor) break;
+  }
+  return acc;
+}
+
+/**
+ * Top `n` comments for a post, pinned-first then by likes desc. Pulls a
+ * couple pages (TikTok's default order is not by likes) and sorts locally.
+ * Retries once if the first attempt returns empty (transient under burst).
+ */
+export async function scTopComments(
+  url: string,
+  n: number,
+  maxPages = 2,
+): Promise<StoredComment[]> {
+  let acc = await scCommentsOnce(url, n, maxPages);
+  if (acc.length === 0) {
+    await sleep(700);
+    acc = await scCommentsOnce(url, n, maxPages);
   }
   acc.sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;

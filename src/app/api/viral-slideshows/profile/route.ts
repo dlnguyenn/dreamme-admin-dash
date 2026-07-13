@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { apifyConfigured } from "@/lib/apify";
+import { scConfigured } from "@/lib/scrapecreators-tiktok";
 import { storageConfigured } from "@/lib/storage";
 import {
   collectTopSlideshowsFromProfile,
@@ -20,6 +21,7 @@ const SERVICE_ROLE =
 
 const Body = z.object({
   profile: z.string().min(1).max(200),
+  platform: z.enum(["tiktok", "instagram"]).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -32,9 +34,6 @@ export async function POST(req: Request) {
       { ok: false, error: "Supabase not configured" },
       { status: 500 },
     );
-  }
-  if (!apifyConfigured()) {
-    return NextResponse.json({ ok: false, error: "APIFY_KEY not set" }, { status: 500 });
   }
   if (!storageConfigured()) {
     return NextResponse.json(
@@ -57,6 +56,20 @@ export async function POST(req: Request) {
     );
   }
 
+  const platform = parsed.data.platform ?? "tiktok";
+  if (platform === "instagram" && !scConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "Instagram requires a ScrapeCreators API key." },
+      { status: 500 },
+    );
+  }
+  if (platform === "tiktok" && !scConfigured() && !apifyConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "No TikTok scraper configured (ScrapeCreators or Apify)." },
+      { status: 500 },
+    );
+  }
+
   const profile = normalizeProfile(parsed.data.profile);
   if (!profile) {
     return NextResponse.json(
@@ -69,17 +82,19 @@ export async function POST(req: Request) {
     const summary = await collectTopSlideshowsFromProfile(
       profile,
       parsed.data.limit ?? 10,
+      platform,
     );
     if (summary.considered === 0) {
+      const kind = platform === "instagram" ? "carousel" : "slideshow (photo)";
       return NextResponse.json(
         {
           ok: false,
-          error: `No slideshow (photo) posts found for @${profile}. This creator may post only videos.`,
+          error: `No ${kind} posts found for @${profile} in their recent posts.`,
         },
         { status: 400 },
       );
     }
-    return NextResponse.json({ ok: true, ...summary });
+    return NextResponse.json({ ok: true, platform, ...summary });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: (e as Error).message },

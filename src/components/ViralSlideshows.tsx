@@ -21,6 +21,7 @@ interface Comment {
 
 interface ViralSlideshow {
   id: string;
+  platform?: string;
   tiktok_url: string;
   author_username: string | null;
   caption: string | null;
@@ -43,6 +44,7 @@ function compact(n: number | null | undefined): string {
 }
 
 type Mode = "url" | "profile";
+type Platform = "tiktok" | "instagram";
 
 export function ViralSlideshows() {
   const toast = useToast();
@@ -50,6 +52,7 @@ export function ViralSlideshows() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<Mode>("url");
+  const [platform, setPlatform] = React.useState<Platform>("tiktok");
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [busyMsg, setBusyMsg] = React.useState<string | null>(null);
@@ -86,7 +89,7 @@ export function ViralSlideshows() {
         const res = await fetch("/api/viral-slideshows", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tiktokUrl: trimmed }),
+          body: JSON.stringify({ url: trimmed }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
@@ -100,7 +103,7 @@ export function ViralSlideshows() {
         const res = await fetch("/api/viral-slideshows/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile: trimmed }),
+          body: JSON.stringify({ profile: trimmed, platform }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
@@ -112,8 +115,9 @@ export function ViralSlideshows() {
           setRows((prev) => [...added, ...prev.filter((r) => !ids.has(r.id))]);
         }
         setInput("");
+        const noun = platform === "instagram" ? "carousel" : "slideshow";
         toast(
-          `@${data.profile}: saved ${data.saved} slideshow${data.saved === 1 ? "" : "s"}` +
+          `@${data.profile}: saved ${data.saved} ${noun}${data.saved === 1 ? "" : "s"}` +
             (data.skipped ? ` · ${data.skipped} skipped` : ""),
         );
       }
@@ -125,9 +129,13 @@ export function ViralSlideshows() {
   };
 
   const placeholder =
-    mode === "url"
-      ? "https://www.tiktok.com/@creator/photo/..."
-      : "@creator  or  https://www.tiktok.com/@creator";
+    platform === "instagram"
+      ? mode === "url"
+        ? "https://www.instagram.com/p/..."
+        : "@creator  or  https://www.instagram.com/creator"
+      : mode === "url"
+        ? "https://www.tiktok.com/@creator/photo/..."
+        : "@creator  or  https://www.tiktok.com/@creator";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -139,8 +147,8 @@ export function ViralSlideshows() {
           Viral Slideshows
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 4 }}>
-          Collect TikTok slideshows for analysis. Paste a single photo-post URL,
-          or pull a creator&rsquo;s top 10 slideshows. Every slide image and the
+          Collect TikTok slideshows &amp; Instagram carousels for analysis. Paste
+          a single post URL, or pull a creator&rsquo;s top 10. Every image and the
           top 20 comments are downloaded into our library.
         </div>
       </div>
@@ -158,26 +166,50 @@ export function ViralSlideshows() {
           boxShadow: "var(--shadow-sm)",
         }}
       >
-        {/* Mode toggle */}
-        <div style={{ display: "inline-flex", gap: 4, alignSelf: "flex-start" }}>
-          {(["url", "profile"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => !busy && setMode(m)}
-              style={{
-                padding: "5px 12px",
-                fontSize: 12,
-                fontWeight: 500,
-                borderRadius: 8,
-                cursor: busy ? "not-allowed" : "pointer",
-                border: "1px solid var(--line)",
-                background: mode === m ? "var(--ink)" : "var(--surface-2)",
-                color: mode === m ? "var(--surface)" : "var(--ink-2)",
-              }}
-            >
-              {m === "url" ? "Single URL" : "Profile · top 10"}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {/* Platform toggle */}
+          <div style={{ display: "inline-flex", gap: 4 }}>
+            {(["tiktok", "instagram"] as Platform[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => !busy && setPlatform(p)}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  borderRadius: 8,
+                  cursor: busy ? "not-allowed" : "pointer",
+                  border: "1px solid var(--line)",
+                  background: platform === p ? "var(--accent)" : "var(--surface-2)",
+                  color: platform === p ? "#fff" : "var(--ink-2)",
+                }}
+              >
+                {p === "tiktok" ? "TikTok" : "Instagram"}
+              </button>
+            ))}
+          </div>
+
+          {/* Mode toggle */}
+          <div style={{ display: "inline-flex", gap: 4 }}>
+            {(["url", "profile"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => !busy && setMode(m)}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  borderRadius: 8,
+                  cursor: busy ? "not-allowed" : "pointer",
+                  border: "1px solid var(--line)",
+                  background: mode === m ? "var(--ink)" : "var(--surface-2)",
+                  color: mode === m ? "var(--surface)" : "var(--ink-2)",
+                }}
+              >
+                {m === "url" ? "Single URL" : "Profile · top 10"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -277,11 +309,11 @@ export function ViralSlideshows() {
             className="serif"
             style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
           >
-            No slideshows yet
+            Nothing collected yet
           </div>
           <div style={{ fontSize: 13 }}>
-            Paste a TikTok slideshow URL or a creator handle above to start your
-            collection.
+            Paste a TikTok or Instagram post URL, or a creator handle, above to
+            start your collection.
           </div>
         </div>
       ) : (
@@ -306,9 +338,12 @@ function SlideshowCard({
   const isMobile = useIsMobile();
   const [open, setOpen] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
+  const isIg = slideshow.platform === "instagram";
   const author = slideshow.author_username
     ? `@${slideshow.author_username}`
-    : "TikTok creator";
+    : isIg
+      ? "Instagram creator"
+      : "TikTok creator";
   const cover = slideshow.slides[0]?.image_url;
   const comments = slideshow.comments ?? [];
 
@@ -389,18 +424,37 @@ function SlideshowCard({
               textTransform: "uppercase",
               letterSpacing: "0.08em",
               color: "var(--ink-4)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexWrap: "wrap",
             }}
           >
-            {author} · {slideshow.slide_count} slide
+            <span
+              style={{
+                padding: "1px 6px",
+                borderRadius: 5,
+                fontSize: 9.5,
+                color: "#fff",
+                background: isIg ? "#C13584" : "var(--ink-3)",
+              }}
+            >
+              {isIg ? "IG" : "TT"}
+            </span>
+            {author} · {slideshow.slide_count} image
             {slideshow.slide_count === 1 ? "" : "s"} · {comments.length} comment
             {comments.length === 1 ? "" : "s"}
           </div>
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Chip title="Plays">▶ {compact(slideshow.play_count)}</Chip>
+            {slideshow.play_count != null && (
+              <Chip title="Plays">▶ {compact(slideshow.play_count)}</Chip>
+            )}
             <Chip title="Likes">♥ {compact(slideshow.digg_count)}</Chip>
             <Chip title="Comments">💬 {compact(slideshow.comment_count)}</Chip>
-            <Chip title="Shares">↗ {compact(slideshow.share_count)}</Chip>
+            {slideshow.share_count != null && (
+              <Chip title="Shares">↗ {compact(slideshow.share_count)}</Chip>
+            )}
           </div>
 
           {slideshow.caption && (
@@ -635,7 +689,7 @@ function SlideshowCard({
             }}
           >
             <Icons.Link size={13} />
-            Open on TikTok
+            Open on {isIg ? "Instagram" : "TikTok"}
           </a>
         </div>
       )}

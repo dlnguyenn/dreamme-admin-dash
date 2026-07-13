@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { apifyConfigured } from "@/lib/apify";
+import { scConfigured } from "@/lib/scrapecreators-tiktok";
 import { storageConfigured } from "@/lib/storage";
-import { collectSlideshowFromUrl, sbHeaders } from "@/lib/viral-slideshows";
+import {
+  collectSlideshowFromUrl,
+  detectPlatform,
+  sbHeaders,
+} from "@/lib/viral-slideshows";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,9 +20,13 @@ const SERVICE_ROLE =
     process.env.SUPABASE_SERVICE_ROLE_KEY) ??
   "";
 
-const CreateBody = z.object({
-  tiktokUrl: z.string().url().max(500),
-});
+const CreateBody = z
+  .object({
+    // `url` is the platform-neutral field; `tiktokUrl` kept for back-compat.
+    url: z.string().url().max(500).optional(),
+    tiktokUrl: z.string().url().max(500).optional(),
+  })
+  .refine((b) => b.url || b.tiktokUrl, { message: "url is required" });
 
 export async function GET(req: Request) {
   if (!checkIngestAuth(req)) {
@@ -65,12 +74,6 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
-  if (!apifyConfigured()) {
-    return NextResponse.json(
-      { ok: false, error: "APIFY_KEY not set" },
-      { status: 500 },
-    );
-  }
   if (!storageConfigured()) {
     return NextResponse.json(
       { ok: false, error: "Storage not configured" },
@@ -94,13 +97,28 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const tiktokUrl = parsed.data.tiktokUrl;
+  const postUrl = (parsed.data.url ?? parsed.data.tiktokUrl)!;
+  const platform = detectPlatform(postUrl);
+
+  // Instagram needs ScrapeCreators; TikTok needs SC or Apify.
+  if (platform === "instagram" && !scConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "Instagram requires a ScrapeCreators API key." },
+      { status: 500 },
+    );
+  }
+  if (platform === "tiktok" && !scConfigured() && !apifyConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "No TikTok scraper configured (ScrapeCreators or Apify)." },
+      { status: 500 },
+    );
+  }
 
   try {
-    const result = await collectSlideshowFromUrl(tiktokUrl);
+    const result = await collectSlideshowFromUrl(postUrl);
     if (result.status === "duplicate") {
       return NextResponse.json(
-        { ok: false, error: "This slideshow is already in your collection." },
+        { ok: false, error: "This post is already in your collection." },
         { status: 409 },
       );
     }
@@ -109,7 +127,9 @@ export async function POST(req: Request) {
         {
           ok: false,
           error:
-            "Only TikTok slideshow (photo) posts are supported. This URL looks like a single video.",
+            platform === "instagram"
+              ? "Only Instagram carousel (multi-image) posts are supported. This looks like a single image or reel."
+              : "Only TikTok slideshow (photo) posts are supported. This URL looks like a single video.",
         },
         { status: 400 },
       );

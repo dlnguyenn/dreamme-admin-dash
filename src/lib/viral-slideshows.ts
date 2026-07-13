@@ -29,6 +29,12 @@ import {
   scProfilePopularSlideshows,
   scTopComments,
 } from "@/lib/scrapecreators-tiktok";
+import {
+  igConfigured,
+  igPostDetail,
+  igProfileTopCarousels,
+  igTopComments,
+} from "@/lib/scrapecreators-instagram";
 import { fetchToStorage } from "@/lib/storage";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -38,6 +44,13 @@ const SERVICE_ROLE =
   "";
 
 export const TOP_COMMENTS = 20;
+
+export type Platform = "tiktok" | "instagram";
+
+/** Which platform a post URL belongs to (defaults to tiktok). */
+export function detectPlatform(url: string): Platform {
+  return /instagram\.com/i.test(url) ? "instagram" : "tiktok";
+}
 
 type Provider = "scrapecreators" | "apify";
 
@@ -70,6 +83,7 @@ export interface StoredComment {
  * pipeline needs, regardless of which scraper produced it.
  */
 export interface NormalizedSlideshow {
+  platform: Platform;
   tiktokUrl: string;
   isSlideshow: boolean;
   slideUrls: string[];
@@ -103,6 +117,7 @@ function apifyItemToNormalized(
     if (u) slideUrls.push(u);
   }
   return {
+    platform: "tiktok",
     tiktokUrl: item.webVideoUrl ?? fallbackUrl,
     isSlideshow: !!item.isSlideshow && slideUrls.length > 0,
     slideUrls,
@@ -149,30 +164,52 @@ async function apifyTopComments(
  * Top comments for a post, pinned-first then by likes desc. Best-effort:
  * returns [] on total failure so a comment hiccup never blocks a collect.
  */
+/** Hard wall-clock cap: comments are best-effort and must never stall a
+ *  collect (SC's IG-comments endpoint 500s intermittently under IG blocks). */
+const COMMENT_CAP_MS = 12000;
+function withCap<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export async function scrapeTopComments(
   postUrl: string,
   n: number = TOP_COMMENTS,
 ): Promise<StoredComment[]> {
-  const provider = activeProvider();
-  try {
-    if (provider === "scrapecreators") {
-      return await scTopComments(postUrl, n);
+  const fetchComments = async (): Promise<StoredComment[]> => {
+    // Instagram only has one provider (ScrapeCreators); no Apify fallback.
+    if (detectPlatform(postUrl) === "instagram") {
+      try {
+        return await igTopComments(postUrl, n);
+      } catch (e) {
+        console.error(`[viral-slideshows] IG comment scrape failed for ${postUrl}:`, e);
+        return [];
+      }
     }
-    return await apifyTopComments(postUrl, n);
-  } catch (e) {
-    console.error(
-      `[viral-slideshows] ${provider} comment scrape failed for ${postUrl}:`,
-      e,
-    );
-    // Fall back to the other provider before giving up.
+    const provider = activeProvider();
     try {
-      return provider === "scrapecreators"
-        ? await apifyTopComments(postUrl, n)
-        : await scTopComments(postUrl, n);
-    } catch {
-      return [];
+      if (provider === "scrapecreators") {
+        return await scTopComments(postUrl, n);
+      }
+      return await apifyTopComments(postUrl, n);
+    } catch (e) {
+      console.error(
+        `[viral-slideshows] ${provider} comment scrape failed for ${postUrl}:`,
+        e,
+      );
+      // Fall back to the other provider before giving up.
+      try {
+        return provider === "scrapecreators"
+          ? await apifyTopComments(postUrl, n)
+          : await scTopComments(postUrl, n);
+      } catch {
+        return [];
+      }
     }
-  }
+  };
+  return withCap(fetchComments(), COMMENT_CAP_MS, []);
 }
 
 /** Single pasted post URL → normalized, via the active provider (fallback). */
@@ -212,6 +249,13 @@ async function fetchPostNormalized(
 export function canonicalTikTokUrl(url: string): string {
   try {
     const u = new URL(url.trim());
+    // Instagram: key on the /p|reel/{shortcode}.
+    if (/instagram\.com/i.test(u.hostname)) {
+      const ig = u.pathname.match(/\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/);
+      if (ig) return `https://www.instagram.com/p/${ig[1]}/`;
+      return `https://www.instagram.com${u.pathname.replace(/\/+$/, "")}/`;
+    }
+    // TikTok: key on @user + numeric id (photo/video share a namespace).
     const m = u.pathname.match(/@([A-Za-z0-9._]+)\/(?:photo|video)\/(\d+)/);
     if (m) return `https://www.tiktok.com/@${m[1]}/photo/${m[2]}`;
     return `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
@@ -263,6 +307,7 @@ export async function saveNormalized(
     headers: { ...sbHeaders(), Prefer: "return=representation" },
     body: JSON.stringify({
       id,
+      platform: n.platform,
       tiktok_url: tiktokUrl,
       author_username: n.author,
       caption: n.caption ?? "",
@@ -286,29 +331,43 @@ export async function saveNormalized(
   return { status: "saved", slideshow, tiktokUrl };
 }
 
-/** Collect a single slideshow from a pasted post URL. */
+/** Collect a single slideshow/carousel from a pasted post URL (any platform). */
 export async function collectSlideshowFromUrl(
-  tiktokUrl: string,
+  postUrl: string,
 ): Promise<CollectResult> {
-  const norm = await fetchPostNormalized(tiktokUrl);
+  if (detectPlatform(postUrl) === "instagram") {
+    if (!igConfigured()) {
+      return {
+        status: "error",
+        tiktokUrl: postUrl,
+        error: "Instagram requires a ScrapeCreators API key.",
+      };
+    }
+    let norm: NormalizedSlideshow | null = null;
+    try {
+      norm = await igPostDetail(postUrl);
+    } catch (e) {
+      return { status: "error", tiktokUrl: postUrl, error: (e as Error).message };
+    }
+    return saveNormalized(norm, postUrl);
+  }
+  const norm = await fetchPostNormalized(postUrl);
   if (!norm) {
     return {
       status: "error",
-      tiktokUrl,
-      error:
-        "Scraper returned no data. Check the URL is a public TikTok post.",
+      tiktokUrl: postUrl,
+      error: "Scraper returned no data. Check the URL is a public TikTok post.",
     };
   }
-  return saveNormalized(norm, tiktokUrl);
+  return saveNormalized(norm, postUrl);
 }
 
-/** Normalize a pasted handle or profile URL to a bare TikTok username. */
+/** Normalize a pasted handle or profile URL to a bare username (TikTok or IG). */
 export function normalizeProfile(input: string): string {
-  let s = input.trim();
-  const m = s.match(/tiktok\.com\/@([A-Za-z0-9._]+)/i);
+  const s = input.trim();
+  const m = s.match(/(?:tiktok\.com|instagram\.com)\/@?([A-Za-z0-9._]+)/i);
   if (m) return m[1];
-  s = s.replace(/^@/, "");
-  return s;
+  return s.replace(/^@/, "");
 }
 
 export interface ProfileCollectSummary {
@@ -359,8 +418,15 @@ async function fetchProfileSlideshows(
 export async function collectTopSlideshowsFromProfile(
   profile: string,
   limit: number = 10,
+  platform: Platform = "tiktok",
 ): Promise<ProfileCollectSummary> {
-  const top = await fetchProfileSlideshows(profile, limit);
+  let top: NormalizedSlideshow[];
+  if (platform === "instagram") {
+    if (!igConfigured()) throw new Error("Instagram requires a ScrapeCreators API key.");
+    top = await igProfileTopCarousels(profile, limit);
+  } else {
+    top = await fetchProfileSlideshows(profile, limit);
+  }
 
   const saved: unknown[] = [];
   let skipped = 0;
