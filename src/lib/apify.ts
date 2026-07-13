@@ -3,6 +3,9 @@ import type { ApifyTikTokItem } from "./schemas/apify";
 
 const APIFY_TOKEN = process.env.APIFY_KEY ?? "";
 const ACTOR_ID = process.env.APIFY_TIKTOK_ACTOR_ID ?? "clockworks~tiktok-scraper";
+const COMMENTS_ACTOR_ID =
+  process.env.APIFY_TIKTOK_COMMENTS_ACTOR_ID ??
+  "clockworks~tiktok-comments-scraper";
 
 export const PERSONA_TIKTOK_PROFILES: Record<PersonaId, string> = {
   andrea: "andreaglp1",
@@ -34,14 +37,18 @@ export function apifyConfigured() {
 export async function runTikTokScrape(opts: {
   profiles: string[];
   resultsPerPage?: number;
+  /** "latest" (default) | "popular" | "oldest". "popular" surfaces a
+   *  creator's most-viewed posts (used to find their top slideshows). */
+  profileSorting?: "latest" | "popular" | "oldest";
 }): Promise<unknown[]> {
   if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
   const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
     ACTOR_ID,
   )}/run-sync-get-dataset-items`;
-  const body = {
+  const body: Record<string, unknown> = {
     profiles: opts.profiles,
     resultsPerPage: opts.resultsPerPage ?? 30,
+    ...(opts.profileSorting ? { profileSorting: opts.profileSorting } : {}),
     shouldDownloadCovers: false,
     shouldDownloadVideos: false,
     shouldDownloadSlideshowImages: true,
@@ -90,6 +97,42 @@ export async function runTikTokPostScrape(opts: {
   });
   if (!res.ok) {
     throw new Error(`Apify post scrape failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Scrape the top comments on a single TikTok post via the dedicated
+ * clockworks comments actor (returns comment items directly in the
+ * dataset, unlike the main scraper which offloads them to a side dataset).
+ * `topLevelComments` caps top-level (non-reply) comments; replies are off.
+ */
+export async function runTikTokCommentsScrape(opts: {
+  postUrl: string;
+  topLevelComments?: number;
+}): Promise<unknown[]> {
+  if (!APIFY_TOKEN) throw new Error("APIFY_KEY not set");
+  const url = `https://api.apify.com/v2/acts/${encodeURIComponent(
+    COMMENTS_ACTOR_ID,
+  )}/run-sync-get-dataset-items`;
+  const body = {
+    postURLs: [opts.postUrl],
+    topLevelCommentsPerPost: opts.topLevelComments ?? 20,
+    maxRepliesPerComment: 0,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${APIFY_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Apify comments scrape failed: ${res.status} ${await res.text()}`,
+    );
   }
   const data = (await res.json()) as unknown;
   return Array.isArray(data) ? data : [];

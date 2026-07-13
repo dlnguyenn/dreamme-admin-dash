@@ -10,6 +10,15 @@ interface Slide {
   image_url: string;
 }
 
+interface Comment {
+  text: string;
+  likes: number;
+  username: string | null;
+  created: string | null;
+  pinned: boolean;
+  reply_count: number;
+}
+
 interface ViralSlideshow {
   id: string;
   tiktok_url: string;
@@ -22,6 +31,7 @@ interface ViralSlideshow {
   post_created_at: string | null;
   slide_count: number;
   slides: Slide[];
+  comments: Comment[];
   created_at: string;
 }
 
@@ -32,14 +42,17 @@ function compact(n: number | null | undefined): string {
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`;
 }
 
+type Mode = "url" | "profile";
+
 export function ViralSlideshows() {
   const toast = useToast();
   const [rows, setRows] = React.useState<ViralSlideshow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [url, setUrl] = React.useState("");
-  const [collecting, setCollecting] = React.useState(false);
-  const [collectMsg, setCollectMsg] = React.useState<string | null>(null);
+  const [mode, setMode] = React.useState<Mode>("url");
+  const [input, setInput] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [busyMsg, setBusyMsg] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -59,31 +72,62 @@ export function ViralSlideshows() {
     refresh();
   }, [refresh]);
 
-  const collect = async () => {
-    const trimmed = url.trim();
-    if (!trimmed || collecting) return;
-    setCollecting(true);
-    setCollectMsg(null);
+  const patchRow = React.useCallback((updated: ViralSlideshow) => {
+    setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+  }, []);
+
+  const submit = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setBusyMsg(null);
     try {
-      const res = await fetch("/api/viral-slideshows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tiktokUrl: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error ?? `Request failed (${res.status})`);
+      if (mode === "url") {
+        const res = await fetch("/api/viral-slideshows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tiktokUrl: trimmed }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error ?? `Request failed (${res.status})`);
+        }
+        const s = data.slideshow as ViralSlideshow;
+        setRows((prev) => [s, ...prev.filter((r) => r.id !== s.id)]);
+        setInput("");
+        toast(`Collected ${s.slide_count} slides · ${s.comments?.length ?? 0} comments`);
+      } else {
+        const res = await fetch("/api/viral-slideshows/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile: trimmed }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error ?? `Request failed (${res.status})`);
+        }
+        const added = (data.slideshows as ViralSlideshow[]) ?? [];
+        if (added.length > 0) {
+          const ids = new Set(added.map((s) => s.id));
+          setRows((prev) => [...added, ...prev.filter((r) => !ids.has(r.id))]);
+        }
+        setInput("");
+        toast(
+          `@${data.profile}: saved ${data.saved} slideshow${data.saved === 1 ? "" : "s"}` +
+            (data.skipped ? ` · ${data.skipped} skipped` : ""),
+        );
       }
-      const slideshow = data.slideshow as ViralSlideshow;
-      setRows((prev) => [slideshow, ...prev.filter((r) => r.id !== slideshow.id)]);
-      setUrl("");
-      toast(`Collected ${slideshow.slide_count} slides`);
     } catch (e) {
-      setCollectMsg((e as Error).message);
+      setBusyMsg((e as Error).message);
     } finally {
-      setCollecting(false);
+      setBusy(false);
     }
   };
+
+  const placeholder =
+    mode === "url"
+      ? "https://www.tiktok.com/@creator/photo/..."
+      : "@creator  or  https://www.tiktok.com/@creator";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -95,9 +139,9 @@ export function ViralSlideshows() {
           Viral Slideshows
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 4 }}>
-          Paste a TikTok slideshow (photo) URL. Every slide image is downloaded
-          into our library so you can study viral posts slide-by-slide, even
-          after the original expires.
+          Collect TikTok slideshows for analysis. Paste a single photo-post URL,
+          or pull a creator&rsquo;s top 10 slideshows. Every slide image and the
+          top 20 comments are downloaded into our library.
         </div>
       </div>
 
@@ -114,19 +158,41 @@ export function ViralSlideshows() {
           boxShadow: "var(--shadow-sm)",
         }}
       >
+        {/* Mode toggle */}
+        <div style={{ display: "inline-flex", gap: 4, alignSelf: "flex-start" }}>
+          {(["url", "profile"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => !busy && setMode(m)}
+              style={{
+                padding: "5px 12px",
+                fontSize: 12,
+                fontWeight: 500,
+                borderRadius: 8,
+                cursor: busy ? "not-allowed" : "pointer",
+                border: "1px solid var(--line)",
+                background: mode === m ? "var(--ink)" : "var(--surface-2)",
+                color: mode === m ? "var(--surface)" : "var(--ink-2)",
+              }}
+            >
+              {m === "url" ? "Single URL" : "Profile · top 10"}
+            </button>
+          ))}
+        </div>
+
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !collecting) {
+              if (e.key === "Enter" && !busy) {
                 e.preventDefault();
-                void collect();
+                void submit();
               }
             }}
-            placeholder="https://www.tiktok.com/@creator/photo/..."
-            disabled={collecting}
+            placeholder={placeholder}
+            disabled={busy}
             style={{
               flex: "1 1 320px",
               minWidth: 0,
@@ -143,18 +209,20 @@ export function ViralSlideshows() {
           <Button
             variant="primary"
             icon={<Icons.Download />}
-            onClick={collect}
-            disabled={collecting || !url.trim()}
+            onClick={submit}
+            disabled={busy || !input.trim()}
           >
-            {collecting ? "Collecting…" : "Collect"}
+            {busy ? "Collecting…" : mode === "url" ? "Collect" : "Collect top 10"}
           </Button>
         </div>
-        {collecting && (
+        {busy && (
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-            Scraping slides… this can take 5–15 seconds.
+            {mode === "url"
+              ? "Scraping slides + comments… this can take 5–15 seconds."
+              : "Scraping the profile, then downloading each slideshow + comments… this can take up to a couple of minutes."}
           </div>
         )}
-        {collectMsg && (
+        {busyMsg && (
           <div
             style={{
               padding: "8px 12px",
@@ -167,7 +235,7 @@ export function ViralSlideshows() {
               borderRadius: 10,
             }}
           >
-            {collectMsg}
+            {busyMsg}
           </div>
         )}
       </div>
@@ -212,13 +280,14 @@ export function ViralSlideshows() {
             No slideshows yet
           </div>
           <div style={{ fontSize: 13 }}>
-            Paste a TikTok slideshow URL above to start your collection.
+            Paste a TikTok slideshow URL or a creator handle above to start your
+            collection.
           </div>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {rows.map((r) => (
-            <SlideshowCard key={r.id} slideshow={r} />
+            <SlideshowCard key={r.id} slideshow={r} onPatch={patchRow} />
           ))}
         </div>
       )}
@@ -226,13 +295,42 @@ export function ViralSlideshows() {
   );
 }
 
-function SlideshowCard({ slideshow }: { slideshow: ViralSlideshow }) {
+function SlideshowCard({
+  slideshow,
+  onPatch,
+}: {
+  slideshow: ViralSlideshow;
+  onPatch: (s: ViralSlideshow) => void;
+}) {
+  const toast = useToast();
   const isMobile = useIsMobile();
   const [open, setOpen] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
   const author = slideshow.author_username
     ? `@${slideshow.author_username}`
     : "TikTok creator";
   const cover = slideshow.slides[0]?.image_url;
+  const comments = slideshow.comments ?? [];
+
+  const refreshComments = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/viral-slideshows/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: slideshow.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed");
+      onPatch(data.slideshow as ViralSlideshow);
+      toast(`Fetched ${data.count} comments`);
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div
@@ -294,7 +392,8 @@ function SlideshowCard({ slideshow }: { slideshow: ViralSlideshow }) {
             }}
           >
             {author} · {slideshow.slide_count} slide
-            {slideshow.slide_count === 1 ? "" : "s"}
+            {slideshow.slide_count === 1 ? "" : "s"} · {comments.length} comment
+            {comments.length === 1 ? "" : "s"}
           </div>
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -340,7 +439,7 @@ function SlideshowCard({ slideshow }: { slideshow: ViralSlideshow }) {
         )}
       </div>
 
-      {/* Expanded: all slides + link */}
+      {/* Expanded: slides, comments, link */}
       {open && (
         <div
           style={{
@@ -348,9 +447,10 @@ function SlideshowCard({ slideshow }: { slideshow: ViralSlideshow }) {
             padding: isMobile ? 12 : 14,
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 14,
           }}
         >
+          {/* Slides */}
           <div
             style={{
               overflowX: "auto",
@@ -412,6 +512,108 @@ function SlideshowCard({ slideshow }: { slideshow: ViralSlideshow }) {
                 </a>
               ))}
             </div>
+          </div>
+
+          {/* Comments */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "var(--ink-4)",
+                }}
+              >
+                Top comments
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={refreshComments}
+                disabled={refreshing}
+              >
+                {refreshing
+                  ? "Fetching…"
+                  : comments.length
+                    ? "Refresh"
+                    : "Fetch comments"}
+              </Button>
+            </div>
+
+            {comments.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--ink-4)",
+                  fontStyle: "italic",
+                }}
+              >
+                No comments saved yet.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {comments.map((c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      padding: "8px 10px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 10,
+                      background: "var(--surface-2)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        flex: "0 0 auto",
+                        fontSize: 11,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        color: "var(--ink-4)",
+                        minWidth: 44,
+                        textAlign: "right",
+                      }}
+                      title="Likes"
+                    >
+                      ♥ {compact(c.likes)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--ink-4)",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {c.username ? `@${c.username}` : "user"}
+                        {c.pinned ? " · 📌 pinned" : ""}
+                        {c.reply_count ? ` · ${compact(c.reply_count)} replies` : ""}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          color: "var(--ink-2)",
+                          lineHeight: 1.4,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {c.text}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <a

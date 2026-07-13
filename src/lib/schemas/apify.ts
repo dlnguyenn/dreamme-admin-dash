@@ -43,6 +43,23 @@ export const ApifyTikTokItemSchema = z
 
 export type ApifyTikTokItem = z.infer<typeof ApifyTikTokItemSchema>;
 
+// A single comment from clockworks~tiktok-comments-scraper. `.passthrough()`
+// so extra fields (avatars, mentions, secUid…) survive without validation.
+export const ApifyTikTokCommentSchema = z
+  .object({
+    cid: z.string().optional(),
+    text: z.string().optional(),
+    diggCount: z.number().optional(),
+    replyCommentTotal: z.number().optional(),
+    uniqueId: z.string().optional(),
+    createTimeISO: z.string().optional(),
+    pinnedByAuthor: z.boolean().optional(),
+    likedByAuthor: z.boolean().optional(),
+  })
+  .passthrough();
+
+export type ApifyTikTokComment = z.infer<typeof ApifyTikTokCommentSchema>;
+
 export interface ParseResult {
   items: ApifyTikTokItem[];
   failed: number;
