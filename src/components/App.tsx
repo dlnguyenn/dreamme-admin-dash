@@ -15,6 +15,7 @@ import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
 import { SpyTool } from "./SpyTool";
+import { ViralSlideshows } from "./ViralSlideshows";
 import { SpendDashboard } from "./SpendDashboard";
 import { GrowthAI } from "./GrowthAI";
 import { MarketingEfficiency } from "./MarketingEfficiency";
@@ -203,6 +204,10 @@ export function App() {
     screen = <HookAnalytics />;
   } else if (current === "spy") {
     screen = <SpyTool />;
+  } else if (current === "viral-slideshows") {
+    // Defense-in-depth: nav hides it for non-admins, but the dash id persists
+    // in localStorage so re-check the role at render time.
+    screen = role === "admin" ? <ViralSlideshows /> : <ComingSoon item={currentItem} />;
   } else if (current === "spend") {
     screen = <SpendDashboard />;
   } else if (current === "growth") {
