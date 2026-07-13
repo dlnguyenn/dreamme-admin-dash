@@ -155,13 +155,14 @@ export async function igPostDetail(url: string): Promise<NormalizedSlideshow> {
 
 /**
  * A creator's most-liked carousels: paginate recent posts, keep carousels,
- * rank by like count desc, take top `limit`. IG has no popular sort, so this
- * is "top of recent" — we scan up to maxPages of the feed.
+ * rank by like count desc, take top `limit`. IG has no popular sort, so we
+ * scan a deep window (~maxPages*12 posts) and rank within it — approximating
+ * an all-time top-N for most creators. ~1 credit per page (12 posts).
  */
 export async function igProfileTopCarousels(
   handle: string,
   limit: number,
-  maxPages = 5,
+  maxPages = 20,
 ): Promise<NormalizedSlideshow[]> {
   const out: NormalizedSlideshow[] = [];
   let cursor: string | undefined;
