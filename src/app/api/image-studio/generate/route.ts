@@ -9,6 +9,7 @@ import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   ASPECT_RATIOS,
+  IMAGE_SIZES,
   RateLimitError,
   generateImage,
   generateImageBatch,
@@ -35,6 +36,8 @@ const RefInputSchema = z.object({
 const Body = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  // Output resolution. Omitted → the lib default ("2K").
+  imageSize: z.enum(IMAGE_SIZES).optional(),
   // Up to 4 references (URL or inline base64). Preferred over the single
   // referenceImage* fields below, which are kept for back-compat.
   referenceImages: z.array(RefInputSchema).max(4).optional(),
@@ -91,6 +94,7 @@ export async function POST(req: Request) {
       const result = await generateImage({
         prompt: parsed.prompt,
         aspectRatio: parsed.aspectRatio,
+        imageSize: parsed.imageSize,
         referenceImages: parsed.referenceImages,
         referenceImageUrl: parsed.referenceImageUrl,
         referenceImageBase64: parsed.referenceImageBase64,
@@ -107,6 +111,7 @@ export async function POST(req: Request) {
     const { results, errors } = await generateImageBatch({
       prompt: parsed.prompt,
       aspectRatio: parsed.aspectRatio,
+      imageSize: parsed.imageSize,
       referenceImages: parsed.referenceImages,
       referenceImageUrl: parsed.referenceImageUrl,
       referenceImageBase64: parsed.referenceImageBase64,

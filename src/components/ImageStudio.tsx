@@ -17,6 +17,18 @@ import type { Avatar, Pose } from "@/lib/types";
 const ASPECT_OPTIONS = ["9:16", "16:9", "4:3", "3:4", "1:1"] as const;
 type AspectRatio = (typeof ASPECT_OPTIONS)[number];
 
+// Output resolution. Mirrors IMAGE_SIZES in src/lib/image-generation.ts
+// (the lib also supports "0.5K", omitted here — rarely useful for our
+// social-video work). 2K is the default: sharper sources survive TikTok's
+// recompression better than the model's 1K default.
+const IMAGE_SIZE_OPTIONS = ["1K", "2K", "4K"] as const;
+type ImageSizeOpt = (typeof IMAGE_SIZE_OPTIONS)[number];
+const IMAGE_SIZE_LABELS: Record<ImageSizeOpt, string> = {
+  "1K": "1K · ~768px",
+  "2K": "2K · ~1536px",
+  "4K": "4K · ~3072px",
+};
+
 // Mirror of MAX_REFERENCE_IMAGES in src/lib/image-generation.ts. Kept as a
 // local literal so this client component doesn't import the server-only lib.
 const MAX_REFERENCE_IMAGES = 4;
@@ -55,6 +67,7 @@ type BatchStatus =
 interface BatchItemInputClient {
   prompt: string;
   aspectRatio?: string;
+  imageSize?: string;
   referenceImageUrl?: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
@@ -152,6 +165,7 @@ export function ImageStudio() {
 
   const [prompt, setPrompt] = React.useState("");
   const [aspectRatio, setAspectRatio] = React.useState<AspectRatio>("9:16");
+  const [imageSize, setImageSizeState] = React.useState<ImageSizeOpt>("2K");
   const [refUrl, setRefUrl] = React.useState("");
   // Local file picker — up to MAX_REFERENCE_IMAGES uploads, sent as base64
   // to /api/image-studio/generate. Combinable with a selected avatar and an
@@ -270,6 +284,17 @@ export function ImageStudio() {
     const rawPose = window.localStorage.getItem("dreamme.imageStudio.pose");
     if (rawPose && (POSE_IDS as readonly string[]).includes(rawPose)) {
       setSelectedPoseState(rawPose as PoseId);
+    }
+    const rawSize = window.localStorage.getItem("dreamme.imageStudio.imageSize");
+    if (rawSize && (IMAGE_SIZE_OPTIONS as readonly string[]).includes(rawSize)) {
+      setImageSizeState(rawSize as ImageSizeOpt);
+    }
+  }, []);
+
+  const setImageSize = React.useCallback((size: ImageSizeOpt) => {
+    setImageSizeState(size);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("dreamme.imageStudio.imageSize", size);
     }
   }, []);
 
@@ -434,6 +459,7 @@ export function ImageStudio() {
         body: JSON.stringify({
           prompt: prompt.trim(),
           aspectRatio,
+          imageSize,
           referenceImages: referenceImages.length ? referenceImages : undefined,
           avatar: selectedAvatar ?? undefined,
           pose: selectedPose ?? undefined,
@@ -528,6 +554,7 @@ export function ImageStudio() {
     const items = Array.from({ length: count }, () => ({
       prompt: trimmedPrompt,
       aspectRatio,
+      imageSize,
     }));
     const body = {
       items,
@@ -1181,6 +1208,18 @@ export function ImageStudio() {
                 {ASPECT_OPTIONS.map((a) => (
                   <option key={a} value={a}>
                     {a}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={imageSize}
+                onChange={(e) => setImageSize(e.target.value as ImageSizeOpt)}
+                style={{ ...inputStyle, width: "auto" }}
+                title="Output resolution. 2K (~1536px wide at 9:16) keeps detail through TikTok recompression; 1K is the model default; 4K is largest (slowest + priciest)."
+              >
+                {IMAGE_SIZE_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {IMAGE_SIZE_LABELS[s]}
                   </option>
                 ))}
               </select>

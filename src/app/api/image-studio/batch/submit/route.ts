@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { ASPECT_RATIOS, RateLimitError } from "@/lib/image-generation";
+import { ASPECT_RATIOS, IMAGE_SIZES, RateLimitError } from "@/lib/image-generation";
 import {
   submitImageBatch,
   type BatchItemInput,
@@ -34,6 +34,8 @@ const RefInputSchema = z.object({
 const Item = z.object({
   prompt: z.string().min(1).max(2000),
   aspectRatio: z.enum(ASPECT_RATIOS).optional(),
+  // Output resolution. Omitted → the lib default ("2K").
+  imageSize: z.enum(IMAGE_SIZES).optional(),
   // Up to 4 references per item. Preferred over the single fields below.
   referenceImages: z.array(RefInputSchema).max(4).optional(),
   referenceImageUrl: z
@@ -105,6 +107,7 @@ export async function POST(req: Request) {
       return {
         prompt: it.prompt,
         aspectRatio: it.aspectRatio,
+        imageSize: it.imageSize,
         // Item-level refs win; otherwise fan out the shared set.
         referenceImages: hasOwnRef
           ? it.referenceImages
