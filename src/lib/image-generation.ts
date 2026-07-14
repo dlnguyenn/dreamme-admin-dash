@@ -37,6 +37,17 @@ const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 529]);
 export const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 export type AspectRatio = (typeof ASPECT_RATIOS)[number];
 
+/**
+ * Output resolution passed to Gemini via
+ * `generationConfig.imageConfig.imageSize` (uppercase K required —
+ * lowercase is rejected). 1K is the model's own default (~768x1376 for
+ * 9:16); we default to 2K (~1536x2752) so social-video slideshows keep
+ * detail after TikTok's recompression. 4K is ~2304x4096.
+ */
+export const IMAGE_SIZES = ["0.5K", "1K", "2K", "4K"] as const;
+export type ImageSize = (typeof IMAGE_SIZES)[number];
+export const DEFAULT_IMAGE_SIZE: ImageSize = "2K";
+
 export class RateLimitError extends Error {
   constructor(
     message: string,
@@ -328,6 +339,7 @@ export async function fetchReferenceImage(url: string): Promise<ReferenceImage> 
 async function callGemini(
   prompt: string,
   aspectRatio: AspectRatio | undefined,
+  imageSize: ImageSize,
   referenceImages: ReferenceImage[],
   signal: AbortSignal,
 ): Promise<{ bytes: Buffer; mimeType: string; usage: GeminiResponse["usageMetadata"] }> {
@@ -349,7 +361,13 @@ async function callGemini(
     contents: [{ parts }],
     generationConfig: {
       responseModalities: ["IMAGE"],
-      ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}),
+      // imageConfig is always present now (carries imageSize); aspectRatio
+      // stays conditional so we don't force a ratio when the caller
+      // omitted one.
+      imageConfig: {
+        ...(aspectRatio ? { aspectRatio } : {}),
+        imageSize,
+      },
     },
   };
   const maxRetries = 3;
@@ -525,6 +543,8 @@ function isTransientGeminiError(err: unknown): boolean {
 export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Output resolution. Defaults to DEFAULT_IMAGE_SIZE ("2K") when omitted. */
+  imageSize?: ImageSize;
   /** Up to MAX_REFERENCE_IMAGES references (URL or inline base64). Preferred
    *  over the single-field params below; those remain for back-compat. */
   referenceImages?: RefInput[];
@@ -568,6 +588,7 @@ export async function generateImage(params: {
   // retry. Each attempt gets its own AbortController so the second
   // call isn't cancelled by the first attempt's already-fired timer.
   const totalTimeoutMs = params.timeoutMs ?? 60_000;
+  const imageSize = params.imageSize ?? DEFAULT_IMAGE_SIZE;
   const startedAt = Date.now();
   const runOnce = async (budgetMs: number) => {
     const controller = new AbortController();
@@ -576,6 +597,7 @@ export async function generateImage(params: {
       return await callGemini(
         prompt,
         params.aspectRatio,
+        imageSize,
         referenceImages,
         controller.signal,
       );
@@ -647,6 +669,7 @@ export async function generateImage(params: {
       source: params.source,
       has_reference: referenceImages.length > 0,
       reference_count: referenceImages.length,
+      image_size: imageSize,
     },
   });
 
@@ -686,6 +709,7 @@ export interface BatchItemError {
 export async function generateImageBatch(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
+  imageSize?: ImageSize;
   referenceImages?: RefInput[];
   referenceImageUrl?: string;
   referenceImageBase64?: string;
@@ -712,6 +736,7 @@ export async function generateImageBatch(params: {
       generateImage({
         prompt: params.prompt,
         aspectRatio: params.aspectRatio,
+        imageSize: params.imageSize,
         referenceImages: params.referenceImages,
         referenceImageUrl: params.referenceImageUrl,
         referenceImageBase64: params.referenceImageBase64,

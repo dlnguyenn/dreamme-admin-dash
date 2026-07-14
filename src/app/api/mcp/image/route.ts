@@ -18,12 +18,14 @@
 import { NextResponse } from "next/server";
 import {
   ASPECT_RATIOS,
+  IMAGE_SIZES,
   MAX_REFERENCE_IMAGES,
   RateLimitError,
   generateImage,
   generateImageBatch,
   imageGenerationConfigured,
   type AspectRatio,
+  type ImageSize,
   type RefInput,
 } from "@/lib/image-generation";
 import { originFromRequest, validateBearer } from "@/lib/mcp-oauth";
@@ -81,6 +83,13 @@ const TOOL_DEFINITION = {
         type: "string",
         enum: [...ASPECT_RATIOS],
         description: "Optional aspect ratio. Defaults to 1:1.",
+      },
+      image_size: {
+        type: "string",
+        enum: [...IMAGE_SIZES],
+        default: "2K",
+        description:
+          "Output resolution. 2K (~1536x2752 for 9:16) recommended for social video; 1K is the model default.",
       },
       image_url: {
         type: "string",
@@ -192,6 +201,13 @@ const SUBMIT_IMAGE_BATCH_TOOL = {
             aspect_ratio: {
               type: "string",
               enum: [...ASPECT_RATIOS],
+            },
+            image_size: {
+              type: "string",
+              enum: [...IMAGE_SIZES],
+              default: "2K",
+              description:
+                "Output resolution. 2K (~1536x2752 for 9:16) recommended for social video; 1K is the model default.",
             },
             image_url: { type: "string", format: "uri" },
             image_base64: { type: "string" },
@@ -392,11 +408,33 @@ function parseRefInputs(
   return { refs };
 }
 
+/**
+ * Validate an optional `image_size` arg against the supported enum.
+ * Returns `undefined` when omitted (the generation lib then applies its
+ * "2K" default). `label` prefixes errors for per-item batch context.
+ */
+function parseImageSize(
+  raw: unknown,
+  label = "",
+): { imageSize: ImageSize | undefined } | { error: string } {
+  if (raw === undefined) return { imageSize: undefined };
+  if (
+    typeof raw !== "string" ||
+    !(IMAGE_SIZES as readonly string[]).includes(raw)
+  ) {
+    return {
+      error: `${label}image_size must be one of ${IMAGE_SIZES.join(", ")}`,
+    };
+  }
+  return { imageSize: raw as ImageSize };
+}
+
 async function handleGenerateImageStreaming(
   reqId: string | number | null,
   args: {
     prompt?: unknown;
     aspect_ratio?: unknown;
+    image_size?: unknown;
     image_url?: unknown;
     image_base64?: unknown;
     image_mime_type?: unknown;
@@ -427,6 +465,11 @@ async function handleGenerateImageStreaming(
     return formatResponse(rpcError(reqId, -32602, parsedRefs.error), true);
   }
   const referenceImages = parsedRefs.refs;
+
+  const parsedSize = parseImageSize(args.image_size);
+  if ("error" in parsedSize) {
+    return formatResponse(rpcError(reqId, -32602, parsedSize.error), true);
+  }
 
   let count = 1;
   if (args.count !== undefined) {
@@ -501,6 +544,7 @@ async function handleGenerateImageStreaming(
         const { results, errors } = await generateImageBatch({
           prompt,
           aspectRatio,
+          imageSize: parsedSize.imageSize,
           referenceImages: referenceImages.length ? referenceImages : undefined,
           source: "mcp",
           count,
@@ -692,9 +736,14 @@ async function handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | nul
         if ("error" in itemRefs) {
           return rpcError(id, -32602, itemRefs.error);
         }
+        const itemSize = parseImageSize(raw.image_size, `items[${i}].`);
+        if ("error" in itemSize) {
+          return rpcError(id, -32602, itemSize.error);
+        }
         items.push({
           prompt: raw.prompt,
           aspectRatio,
+          imageSize: itemSize.imageSize,
           referenceImages: itemRefs.refs.length ? itemRefs.refs : undefined,
         });
       }
@@ -838,6 +887,7 @@ export async function POST(req: Request): Promise<Response> {
           arguments?: {
             prompt?: unknown;
             aspect_ratio?: unknown;
+            image_size?: unknown;
             image_url?: unknown;
             image_base64?: unknown;
             image_mime_type?: unknown;
@@ -864,9 +914,15 @@ export async function POST(req: Request): Promise<Response> {
             responses.push(rpcError(id, -32602, parsedRefs.error));
             continue;
           }
+          const parsedSize = parseImageSize(args.image_size);
+          if ("error" in parsedSize) {
+            responses.push(rpcError(id, -32602, parsedSize.error));
+            continue;
+          }
           const result = await generateImage({
             prompt,
             aspectRatio,
+            imageSize: parsedSize.imageSize,
             referenceImages: parsedRefs.refs.length
               ? parsedRefs.refs
               : undefined,

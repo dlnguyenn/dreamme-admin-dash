@@ -18,6 +18,7 @@ import { priceGeminiUsage } from "./vendors/gemini-pricing";
 import {
   ASPECT_RATIOS,
   BUCKET,
+  DEFAULT_IMAGE_SIZE,
   GOOGLE_API_KEY,
   MAX_REFERENCE_IMAGES,
   MODEL,
@@ -25,6 +26,7 @@ import {
   SUPABASE_ANON,
   SUPABASE_URL,
   type AspectRatio,
+  type ImageSize,
   type RefInput,
   type ReferenceImage,
   checkRateLimit,
@@ -55,6 +57,8 @@ export type BatchStatus =
 export interface BatchItemInput {
   prompt: string;
   aspectRatio?: AspectRatio;
+  /** Output resolution. Defaults to DEFAULT_IMAGE_SIZE ("2K") when omitted. */
+  imageSize?: ImageSize;
   /** Up to MAX_REFERENCE_IMAGES references (URL or base64). Preferred over
    *  the single-field params below, which remain for back-compat. */
   referenceImages?: RefInput[];
@@ -267,9 +271,11 @@ export async function submitImageBatch(params: {
       contents: [{ parts: buildRequestParts(item.prompt, itemRefs[i]) }],
       generationConfig: {
         responseModalities: ["IMAGE"],
-        ...(item.aspectRatio
-          ? { imageConfig: { aspectRatio: item.aspectRatio } }
-          : {}),
+        // imageConfig always carries imageSize; aspectRatio stays optional.
+        imageConfig: {
+          ...(item.aspectRatio ? { aspectRatio: item.aspectRatio } : {}),
+          imageSize: item.imageSize ?? DEFAULT_IMAGE_SIZE,
+        },
       },
     },
     metadata: { key: String(i) },
