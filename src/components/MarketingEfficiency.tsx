@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { PageHeader } from "./Shell";
+import { PricingExperiments } from "./PricingExperiments";
 import { API } from "@/lib/supabase";
 import type {
   BlendedEfficiencyRow,
@@ -188,6 +189,8 @@ export function MarketingEfficiency() {
       <MarketingAlerts />
 
       <ActiveExperiments />
+
+      <PricingExperiments />
 
       <div
         style={{
