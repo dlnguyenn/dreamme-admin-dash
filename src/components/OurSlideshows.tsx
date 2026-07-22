@@ -14,19 +14,25 @@ interface OurSlideshow {
   id: string;
   platform?: string;
   tiktok_url: string;
+  public_url?: string | null;
   author_username: string | null;
   caption: string | null;
   post_created_at: string | null;
   slide_count: number;
   slides: Slide[];
   created_at: string;
+  play_count?: number | null;
+  digg_count?: number | null;
+  comment_count?: number | null;
+  share_count?: number | null;
 }
 
-type StyleName = "flamingo" | "gradient" | "unknown";
+type StyleName = "flamingo" | "gradient" | "mascot" | "unknown";
 
 const STYLE_COLOR: Record<StyleName, string> = {
   flamingo: "#D84668",
   gradient: "#F43678",
+  mascot: "#E8705F",
   unknown: "var(--ink-3)",
 };
 
@@ -38,7 +44,9 @@ const STYLE_COLOR: Record<StyleName, string> = {
 function parseRef(url: string): { style: StyleName; deck: string; date: string | null } {
   const m = /^generated:\/\/([^/]+)\/([^/]+)(?:\/([^/]+))?/.exec(url ?? "");
   if (!m) return { style: "unknown", deck: url ?? "deck", date: null };
-  const style = (m[1] === "flamingo" || m[1] === "gradient" ? m[1] : "unknown") as StyleName;
+  const style = (
+    m[1] === "flamingo" || m[1] === "gradient" || m[1] === "mascot" ? m[1] : "unknown"
+  ) as StyleName;
   return { style, deck: m[2], date: m[3] ?? null };
 }
 
@@ -74,10 +82,10 @@ export function OurSlideshows() {
       : rows.filter((r) => parseRef(r.tiktok_url).style === filter);
 
   const counts = React.useMemo(() => {
-    const c = { flamingo: 0, gradient: 0 };
+    const c = { flamingo: 0, gradient: 0, mascot: 0 };
     for (const r of rows) {
       const s = parseRef(r.tiktok_url).style;
-      if (s === "flamingo" || s === "gradient") c[s] += 1;
+      if (s === "flamingo" || s === "gradient" || s === "mascot") c[s] += 1;
     }
     return c;
   }, [rows]);
@@ -92,15 +100,16 @@ export function OurSlideshows() {
           Our Slideshows
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 4 }}>
-          Text-card carousels we generate in-house. The 5am job produces one
-          flamingo and one gradient deck each day and posts them here, ready to
-          download and publish.
+          Slideshows we generate in-house. The daily jobs post one flamingo and
+          one gradient text-card deck plus the coral-mascot GLP-1 slideshow
+          (auto-queued to @dreammeglp1app) here, with live TikTok stats once
+          posted.
         </div>
       </div>
 
       {/* Style filter */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {(["all", "flamingo", "gradient"] as const).map((f) => (
+        {(["all", "flamingo", "gradient", "mascot"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -119,7 +128,7 @@ export function OurSlideshows() {
             {f}
             {f === "all"
               ? ` · ${rows.length}`
-              : ` · ${counts[f as "flamingo" | "gradient"]}`}
+              : ` · ${counts[f as "flamingo" | "gradient" | "mascot"]}`}
           </button>
         ))}
       </div>
@@ -181,6 +190,9 @@ function DeckCard({ deck }: { deck: OurSlideshow }) {
   const [open, setOpen] = React.useState(false);
   const { style, deck: name, date } = parseRef(deck.tiktok_url);
   const cover = deck.slides[0]?.image_url;
+  // Mascot decks are 3:4 slideshow slides; text-card decks are 4:5 carousels.
+  const aspect = style === "mascot" ? "3 / 4" : "4 / 5";
+  const aspectLabel = style === "mascot" ? "1080 × 1446 · 3:4" : "1080 × 1350 · 4:5";
 
   return (
     <div
@@ -203,11 +215,11 @@ function DeckCard({ deck }: { deck: OurSlideshow }) {
           cursor: "pointer",
         }}
       >
-        {/* 4:5 cover — our decks are portrait carousels, not 9:16 video */}
+        {/* portrait cover — our decks are carousels, not 9:16 video */}
         <div
           style={{
             width: isMobile ? 84 : 104,
-            aspectRatio: "4 / 5",
+            aspectRatio: aspect,
             borderRadius: 10,
             overflow: "hidden",
             background: "var(--surface-2)",
@@ -272,9 +284,35 @@ function DeckCard({ deck }: { deck: OurSlideshow }) {
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Chip title="Aspect ratio">1080 × 1350 · 4:5</Chip>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <Chip title="Aspect ratio">{aspectLabel}</Chip>
             {date && <Chip title="Generated">{date}</Chip>}
+            {typeof deck.play_count === "number" && (
+              <Chip title="TikTok stats">
+                {deck.play_count.toLocaleString()} views ·{" "}
+                {(deck.digg_count ?? 0).toLocaleString()} likes ·{" "}
+                {(deck.comment_count ?? 0).toLocaleString()} comments
+              </Chip>
+            )}
+            {deck.public_url && (
+              <a
+                href={deck.public_url}
+                target="_blank"
+                rel="noreferrer noopener"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "2px 9px",
+                  borderRadius: 999,
+                  textDecoration: "none",
+                  color: "#fff",
+                  background: STYLE_COLOR[style],
+                }}
+              >
+                Live on TikTok ↗
+              </a>
+            )}
           </div>
         </div>
 
@@ -324,7 +362,7 @@ function DeckCard({ deck }: { deck: OurSlideshow }) {
                     width: isMobile ? 150 : 190,
                     scrollSnapAlign: "start",
                     position: "relative",
-                    aspectRatio: "4 / 5",
+                    aspectRatio: aspect,
                     borderRadius: 10,
                     overflow: "hidden",
                     background: "var(--surface-2)",
