@@ -12,6 +12,7 @@ export type DashId =
   | "hooks"
   | "spy"
   | "viral-slideshows"
+  | "our-slideshows"
   | "poster"
   | "resources"
   | "spend"
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas", adminOnly: true },
   { id: "spy", label: "Spy Tool", icon: "Search", status: "live", desc: "What's going viral in GLP-1", adminOnly: true },
   { id: "viral-slideshows", label: "Viral Slideshows", icon: "Image", status: "live", desc: "Collect TikTok slideshow images for analysis", adminOnly: true },
+  { id: "our-slideshows", label: "Our Slideshows", icon: "Image", status: "live", desc: "Text-card decks we generate daily", adminOnly: true },
   { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
   { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },

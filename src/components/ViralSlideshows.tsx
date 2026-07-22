@@ -60,7 +60,9 @@ export function ViralSlideshows() {
   const refresh = React.useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch("/api/viral-slideshows", { cache: "no-store" });
+      const res = await fetch("/api/viral-slideshows?source=collected", {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed to load");
       setRows(data.slideshows as ViralSlideshow[]);

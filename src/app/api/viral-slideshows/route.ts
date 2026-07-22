@@ -41,9 +41,20 @@ export async function GET(req: Request) {
       { status: 500 },
     );
   }
+  // `source` splits the two tabs: slideshows we generated in-house
+  // (platform='generated', posted by text-cards/publish-to-dash.py) vs the
+  // competitor posts we collected by scraping. Defaults to collected so the
+  // Viral Slideshows tab never mixes our own decks in.
+  const source = new URL(req.url).searchParams.get("source");
+  const filter =
+    source === "generated"
+      ? "&platform=eq.generated"
+      : source === "all"
+        ? ""
+        : "&platform=neq.generated";
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/viral_slideshows?select=*&order=created_at.desc`,
+      `${SUPABASE_URL}/rest/v1/viral_slideshows?select=*${filter}&order=created_at.desc`,
       { headers: sbHeaders(), cache: "no-store" },
     );
     if (!res.ok) {
