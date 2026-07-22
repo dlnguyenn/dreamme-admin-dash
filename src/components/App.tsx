@@ -31,6 +31,7 @@ import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
 import { API } from "@/lib/supabase";
+import { devAuthBypass } from "@/lib/dev-auth";
 import type { DashState } from "@/lib/types";
 
 const TWEAK_DEFAULTS: Tweaks = { theme: "light", gridSize: 4 };
@@ -63,8 +64,13 @@ export function App() {
   // Hydrate from storage after mount to avoid SSR/CSR mismatch
   React.useEffect(() => {
     try {
-      if (sessionStorage.getItem("dreamme.auth") === "1") setAuthed(true);
-      const savedRole = sessionStorage.getItem("dreamme.role");
+      // On localhost in dev, skip the password gate (see lib/dev-auth).
+      // Compiles away in production builds, so deployed prod stays gated.
+      const bypass = devAuthBypass();
+      if (bypass || sessionStorage.getItem("dreamme.auth") === "1") setAuthed(true);
+      const stored = sessionStorage.getItem("dreamme.role");
+      const savedRole =
+        stored === "admin" || stored === "user" ? stored : bypass ? "admin" : null;
       if (savedRole === "admin" || savedRole === "user") {
         setRole(savedRole);
         const savedView = localStorage.getItem("dreamme.viewAs");
@@ -111,7 +117,6 @@ export function App() {
   }, [tweaks, hydrated]);
 
   const refresh = React.useCallback(async () => {
-    if (typeof document !== "undefined" && document.hidden) return;
     try {
       setSyncError(null);
       const data = await API.fetchAll();
@@ -127,7 +132,13 @@ export function App() {
   React.useEffect(() => {
     if (!authed) return;
     refresh();
-    const id = setInterval(refresh, 120000);
+    // Skip background polls while the tab is hidden (saves Supabase quota).
+    // The guard lives here, not inside refresh(), so the *initial* load always
+    // runs — otherwise a tab that starts hidden is stranded on the loading
+    // screen forever, since the early return skipped setLoading(false).
+    const id = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 120000);
     const onVisible = () => {
       if (!document.hidden) refresh();
     };
@@ -151,6 +162,30 @@ export function App() {
   }, []);
 
   if (!hydrated) return null;
+
+  // Make the dev bypass obvious so it's never silently "logged in".
+  const devBadge = devAuthBypass() ? (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 8,
+        left: 8,
+        zIndex: 9999,
+        padding: "3px 8px",
+        borderRadius: 6,
+        fontSize: 10,
+        fontFamily: "var(--font-geist-mono), monospace",
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        background: "#8B5CF6",
+        color: "#fff",
+        pointerEvents: "none",
+        opacity: 0.85,
+      }}
+    >
+      dev · localhost · auth bypassed
+    </div>
+  ) : null;
 
   if (!authed) {
     return (
@@ -253,6 +288,7 @@ export function App() {
 
   return (
     <ToastProvider>
+      {devBadge}
       <AppShell
         current={current}
         setCurrent={setCurrent}
