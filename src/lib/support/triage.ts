@@ -29,6 +29,11 @@ const CATEGORIES: ThreadCategory[] = [
 // Spam / non-user deny-list (checked before the Anthropic call)
 
 const DENY_SENDERS = [
+  // The in-app feedback notifier mails feedback@ → itself; the feedback
+  // TABLE leg already ingests the same item, so the email mirror is a
+  // duplicate. User replies on a mirror thread come from real addresses
+  // and still reopen it.
+  "feedback@dreamme.life",
   "mailer-daemon@",
   "postmaster@",
   "noreply@email.apple.com",
