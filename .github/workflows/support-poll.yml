@@ -1,0 +1,29 @@
+# Support Inbox poll — every 20 minutes.
+#
+# Vercel Hobby only allows once-daily crons, so the frequent cadence lives
+# here; vercel.json keeps a daily run as a backstop. GitHub cron is
+# best-effort (runs can lag a few minutes under load), which is fine for
+# support triage.
+#
+# Requires repo secrets:
+#   SUPPORT_POLL_URL  — https://<prod-domain>/api/cron/support-poll
+#   CRON_SECRET       — same value as the Vercel env var
+name: support-poll
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Poll support inbox
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/out.json -w "%{http_code}" -m 300 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SUPPORT_POLL_URL }}")
+          cat /tmp/out.json
+          [ "$code" = "200" ]
