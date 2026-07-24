@@ -27,6 +27,7 @@ import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
 import { Integrations } from "./Integrations";
 import { ClipperAdmin } from "./ClipperAdmin";
+import { SupportInbox } from "./SupportInbox";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { ToastProvider } from "./ui";
@@ -60,6 +61,8 @@ export function App() {
   const [mobilePipelineMode, setMobilePipelineMode] = React.useState<
     "after" | "before"
   >("after");
+  // Unread support-thread count for the sidebar badge (admin only).
+  const [supportUnread, setSupportUnread] = React.useState(0);
 
   // Hydrate from storage after mount to avoid SSR/CSR mismatch
   React.useEffect(() => {
@@ -148,6 +151,33 @@ export function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [authed, refresh]);
+
+  // Poll the support unread count for the sidebar badge (admin only).
+  React.useEffect(() => {
+    if (!authed || role !== "admin") return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/support/threads?countOnly=1", {
+          cache: "no-store",
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { ok?: boolean; unreadCount?: number }
+          | null;
+        if (!cancelled && body?.ok && typeof body.unreadCount === "number") {
+          setSupportUnread(body.unreadCount);
+        }
+      } catch {}
+    };
+    poll();
+    const id = setInterval(() => {
+      if (!document.hidden) poll();
+    }, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [authed, role]);
 
   // Keyboard shortcut: Cmd/Ctrl+. to toggle Tweaks panel
   React.useEffect(() => {
@@ -282,6 +312,10 @@ export function App() {
     screen = role === "admin"
       ? <ClipperAdmin />
       : <ComingSoon item={currentItem} />;
+  } else if (current === "support") {
+    screen = role === "admin"
+      ? <SupportInbox onUnreadChange={setSupportUnread} />
+      : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;
   }
@@ -300,6 +334,7 @@ export function App() {
         setViewAs={setViewAs}
         mobilePipelineMode={mobilePipelineMode}
         setMobilePipelineMode={setMobilePipelineMode}
+        badges={supportUnread > 0 ? { support: supportUnread } : undefined}
       >
         {screen}
       </AppShell>
@@ -324,6 +359,7 @@ function AppShell({
   setViewAs,
   mobilePipelineMode,
   setMobilePipelineMode,
+  badges,
   children,
 }: {
   current: DashId;
@@ -336,6 +372,7 @@ function AppShell({
   setViewAs: (v: "admin" | "user") => void;
   mobilePipelineMode: "after" | "before";
   setMobilePipelineMode: (v: "after" | "before") => void;
+  badges?: Partial<Record<DashId, number>>;
   children: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -422,6 +459,7 @@ function AppShell({
         role={role}
         viewAs={viewAs}
         setViewAs={setViewAs}
+        badges={badges}
       />
       <main
         key={current}

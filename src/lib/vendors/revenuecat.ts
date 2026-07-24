@@ -300,6 +300,29 @@ export async function getCustomerActiveEntitlements(
   return r.items;
 }
 
+export interface CustomerSubscriptionRow {
+  id: string;
+  product_id: string;
+  store: string; // app_store | play_store | stripe | …
+  status: string; // trialing | active | expired | in_grace_period | …
+  auto_renewal_status: string | null;
+  current_period_ends_at: number | null;
+  gives_access: boolean;
+  store_subscription_identifier: string | null;
+  total_revenue_in_usd?: { gross: number | null } | null;
+}
+
+/** v2 GET customer subscriptions — authoritative fallback when rc_events has no rows. */
+export async function getCustomerSubscriptions(
+  customerId: string,
+): Promise<CustomerSubscriptionRow[]> {
+  const projectId = getProjectId();
+  const r: ListResponse<CustomerSubscriptionRow> = await rcGetUrl(
+    `${BASE_URL}/projects/${projectId}/customers/${encodeURIComponent(customerId)}/subscriptions`,
+  );
+  return r.items;
+}
+
 export async function getCustomerEmail(
   customerId: string,
 ): Promise<string | null> {

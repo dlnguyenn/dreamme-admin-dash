@@ -28,7 +28,7 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callClaude(params: {
+export async function callClaude(params: {
   model: string;
   system?: string;
   content: Array<Record<string, unknown>>;
@@ -77,7 +77,7 @@ async function callClaude(params: {
   }
 }
 
-function firstJson(text: string): unknown {
+export function firstJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = (fenced ? fenced[1] : text).trim();
   try {

@@ -23,7 +23,8 @@ export type DashId =
   | "synthid-research"
   | "image-studio"
   | "integrations"
-  | "clippers";
+  | "clippers"
+  | "support";
 
 export interface NavItem {
   id: DashId;
@@ -54,6 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "image-studio", label: "Image Studio", icon: "Image", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "integrations", label: "Integrations", icon: "Bookmark", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
   { id: "clippers", label: "Clippers", icon: "Chart", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
+  { id: "support", label: "Support Inbox", icon: "Message", status: "live", desc: "help@ email + in-app feedback triage", adminOnly: true },
 ];
 
 export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
@@ -69,6 +71,7 @@ export function Sidebar({
   role,
   viewAs,
   setViewAs,
+  badges,
 }: {
   current: DashId;
   setCurrent: (id: DashId) => void;
@@ -78,6 +81,8 @@ export function Sidebar({
   role: "admin" | "user";
   viewAs: "admin" | "user";
   setViewAs: (v: "admin" | "user") => void;
+  /** optional per-tab count pills (e.g. unread support threads) */
+  badges?: Partial<Record<DashId, number>>;
 }) {
   const w = collapsed ? 76 : 260;
   const items = visibleNavItems(viewAs);
@@ -235,6 +240,26 @@ export function Sidebar({
               {!collapsed && (
                 <>
                   <span style={{ flex: 1 }}>{item.label}</span>
+                  {!!badges?.[item.id] && (
+                    <span
+                      style={{
+                        minWidth: 18,
+                        height: 18,
+                        padding: "0 5px",
+                        borderRadius: 999,
+                        background: "var(--accent)",
+                        color: "white",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {badges[item.id]! > 99 ? "99+" : badges[item.id]}
+                    </span>
+                  )}
                   {item.status === "soon" && (
                     <span
                       style={{
@@ -252,6 +277,19 @@ export function Sidebar({
                     </span>
                   )}
                 </>
+              )}
+              {collapsed && !!badges?.[item.id] && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                  }}
+                />
               )}
               {collapsed && item.status === "soon" && (
                 <span
