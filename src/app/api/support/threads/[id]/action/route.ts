@@ -30,9 +30,9 @@ import {
   type StripeSubscription,
 } from "@/lib/vendors/stripe";
 import {
-  rcV1Configured,
   refundAndRevokePlaySubscription,
-} from "@/lib/vendors/revenuecat-v1";
+  revenueCatConfigured,
+} from "@/lib/vendors/revenuecat-actions";
 import type { SupportThreadRow } from "@/lib/support/types";
 
 export const runtime = "nodejs";
@@ -124,9 +124,9 @@ export async function POST(
       { status: 503 },
     );
   }
-  if (body.type === "rc_play_refund_revoke" && !rcV1Configured()) {
+  if (body.type === "rc_play_refund_revoke" && !revenueCatConfigured()) {
     return NextResponse.json(
-      { ok: false, error: "REVENUECAT_V1_API_KEY not set" },
+      { ok: false, error: "REVENUECAT_API_KEY / REVENUECAT_PROJECT_ID not set" },
       { status: 503 },
     );
   }
@@ -203,13 +203,14 @@ export async function POST(
         break;
       }
       case "rc_play_refund_revoke": {
-        if (!body.productId) throw new Error("productId required");
         if (!thread.resolved_app_user_id) throw new Error("no resolved app_user_id");
         const result = await refundAndRevokePlaySubscription(
           thread.resolved_app_user_id,
-          body.productId,
         );
-        response = { status: result.status, body: result.body } as Record<string, unknown>;
+        response = {
+          subscriptionId: result.subscriptionId,
+          body: result.response,
+        } as Record<string, unknown>;
         break;
       }
       default:
