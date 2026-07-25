@@ -78,11 +78,8 @@ export function SectionLabel({
     >
       <div
         style={{
-          fontSize: 11,
-          fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          color: "var(--ink-3)",
+          font: "650 15px var(--font-ui)",
+          color: "var(--ink)",
         }}
       >
         {children}
@@ -106,24 +103,23 @@ export function DeltaChip({
   if (pct == null || !Number.isFinite(pct)) return null;
   const up = pct >= 0;
   const good = goodWhen === "up" ? up : !up;
-  const tone = good ? "var(--accent-2)" : "var(--accent)";
+  const flat = Math.abs(pct) < 0.5;
+  // Porcelain: arrow = direction, color = sentiment.
+  const fam = flat ? "neutral" : good ? "success" : "danger";
   return (
     <span
       style={{
         display: "inline-block",
-        fontSize: 11,
-        fontWeight: 600,
-        fontFamily: "var(--font-geist-mono), monospace",
-        padding: "2px 7px",
+        font: "650 12px var(--font-ui)",
+        fontVariantNumeric: "tabular-nums",
+        padding: "2.5px 7px",
         borderRadius: 999,
-        color: `color-mix(in oklab, ${tone} 85%, var(--ink))`,
-        background: `color-mix(in oklab, ${tone} 14%, var(--surface))`,
-        border: `1px solid color-mix(in oklab, ${tone} 30%, var(--line))`,
+        color: `var(--${fam}-text)`,
+        background: `var(--${fam}-soft)`,
         whiteSpace: "nowrap",
       }}
     >
-      {up ? "+" : ""}
-      {Math.round(pct)}%
+      {flat ? "→" : up ? "↑" : "↓"} {Math.abs(Math.round(pct))}%
     </span>
   );
 }
@@ -146,12 +142,12 @@ export function KpiCard({
   return (
     <div
       style={{
-        padding: "18px 20px",
-        borderRadius: 14,
-        background: hero ? "var(--ink)" : "var(--surface)",
-        color: hero ? "var(--surface)" : "var(--ink)",
-        border: hero ? "1px solid var(--ink)" : "1px solid var(--line)",
-        boxShadow: "var(--shadow-sm)",
+        padding: "16px 18px",
+        borderRadius: 16,
+        background: hero ? "var(--hero-bg)" : "var(--surface)",
+        color: hero ? "var(--hero-ink)" : "var(--ink)",
+        border: hero ? "1px solid transparent" : "1px solid var(--line)",
+        boxShadow: "var(--shadow-card)",
         // In the mobile horizontal-scroll KPI rail these keep cards readable;
         // in the desktop grid they're inert.
         minWidth: 150,
@@ -161,12 +157,11 @@ export function KpiCard({
     >
       <div
         style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "650 10.5px var(--font-ui)",
+          letterSpacing: "0.05em",
           textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          opacity: hero ? 0.7 : 0.6,
-          marginBottom: 8,
+          color: hero ? "var(--hero-mut)" : "var(--ink-3)",
+          marginBottom: 7,
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -176,15 +171,24 @@ export function KpiCard({
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <div
-          className="serif"
-          style={{ fontSize: 30, fontWeight: 400, letterSpacing: "-0.025em", lineHeight: 1 }}
+          style={{
+            font: "700 26px/1 var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: "-0.01em",
+          }}
         >
           {value}
         </div>
         {delta !== undefined && <DeltaChip pct={delta ?? null} goodWhen={goodWhen} />}
       </div>
       {sub && (
-        <div style={{ fontSize: 11, marginTop: 6, opacity: hero ? 0.65 : 1, color: hero ? undefined : "var(--ink-3)" }}>
+        <div
+          style={{
+            fontSize: 11,
+            marginTop: 6,
+            color: hero ? "var(--hero-mut)" : "var(--ink-4)",
+          }}
+        >
           {sub}
         </div>
       )}
@@ -194,7 +198,8 @@ export function KpiCard({
 
 export function StatusDot({ status }: { status: string }) {
   const active = status === "ACTIVE";
-  const tone = active ? "var(--accent-2)" : "var(--ink-4)";
+  const dot = active ? "var(--success)" : "var(--ink-4)";
+  const text = active ? "var(--success-text)" : "var(--ink-4)";
   return (
     <span
       title={status || "unknown"}
@@ -202,21 +207,20 @@ export function StatusDot({ status }: { status: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        fontSize: 10,
-        fontFamily: "var(--font-geist-mono), monospace",
+        font: "650 10.5px var(--font-ui)",
         textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: tone,
+        letterSpacing: "0.05em",
+        color: text,
         whiteSpace: "nowrap",
       }}
     >
       <span
         style={{
-          width: 7,
-          height: 7,
+          width: 6,
+          height: 6,
           borderRadius: "50%",
-          background: tone,
-          boxShadow: active ? `0 0 0 3px color-mix(in oklab, ${tone} 20%, transparent)` : "none",
+          background: dot,
+          animation: active ? "dmPulse 2s infinite" : "none",
         }}
       />
       {active ? "Live" : status === "PAUSED" ? "Paused" : status.toLowerCase() || "—"}
@@ -231,9 +235,8 @@ export function ErrorBanner({ children }: { children: React.ReactNode }) {
         marginBottom: 16,
         padding: "10px 14px",
         fontSize: 13,
-        color: "var(--accent)",
-        background: "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-        border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
+        color: "var(--danger-text)",
+        background: "var(--danger-soft)",
         borderRadius: 10,
       }}
     >
@@ -294,11 +297,12 @@ export function Thumb({
   );
 }
 
+// Porcelain categorical palette (--cat-N) — distinguishable but harmonious.
 const TAG_TONES: Record<string, string> = {
-  format: "var(--p-emma)",
-  theme: "var(--p-sydney)",
-  audience: "var(--p-olivia)",
-  hook: "var(--p-abby)",
+  format: "var(--cat-2)",
+  theme: "var(--cat-5)",
+  audience: "var(--cat-4)",
+  hook: "var(--cat-3)",
 };
 
 /** Motion-style colored tag chip. kind picks the tone family. */
@@ -317,13 +321,12 @@ export function TagChip({
       title={title}
       style={{
         display: "inline-block",
-        fontSize: 10.5,
-        fontWeight: 500,
+        font: "600 10.5px var(--font-ui)",
+        letterSpacing: "0.02em",
         padding: "3px 9px",
         borderRadius: 999,
-        color: `color-mix(in oklab, ${tone} 45%, var(--ink))`,
-        background: `color-mix(in oklab, ${tone} 16%, var(--surface))`,
-        border: `1px solid color-mix(in oklab, ${tone} 28%, var(--line))`,
+        color: `color-mix(in oklab, ${tone} 62%, var(--ink))`,
+        background: `color-mix(in oklab, ${tone} 13%, var(--surface))`,
         whiteSpace: "nowrap",
         maxWidth: 180,
         overflow: "hidden",
@@ -358,7 +361,7 @@ export function EmptyState({
         lineHeight: 1.6,
       }}
     >
-      <div className="serif" style={{ fontStyle: "italic", fontSize: 17, marginBottom: 4, color: "var(--ink-2)" }}>
+      <div style={{ font: "650 15px var(--font-ui)", marginBottom: 4, color: "var(--ink-2)" }}>
         {title}
       </div>
       {children}
@@ -492,13 +495,11 @@ export function MarkdownLite({ text }: { text: string }) {
                       style={{
                         textAlign: ci === 0 ? "left" : "right",
                         padding: "6px 12px",
-                        fontSize: 10,
-                        fontFamily: "var(--font-geist-mono), monospace",
+                        font: "650 10.5px var(--font-ui)",
                         textTransform: "uppercase",
-                        letterSpacing: "0.08em",
+                        letterSpacing: "0.04em",
                         color: "var(--ink-3)",
                         borderBottom: "1px solid var(--line)",
-                        background: "var(--surface-2)",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -540,10 +541,9 @@ export function MarkdownLite({ text }: { text: string }) {
       blocks.push(
         <div
           key={key++}
-          className={level <= 2 ? "serif" : undefined}
           style={{
-            fontSize: level <= 2 ? 18 : 13.5,
-            fontWeight: level <= 2 ? 400 : 600,
+            fontSize: level <= 2 ? 16 : 13.5,
+            fontWeight: 650,
             letterSpacing: level <= 2 ? "-0.01em" : undefined,
             margin: "14px 0 4px",
             color: "var(--ink)",

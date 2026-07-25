@@ -6,7 +6,15 @@ import type { Persona } from "@/lib/personas";
 
 // -------- Chip --------
 
-type ChipTone = "neutral" | "ink" | "accent" | "success";
+type ChipTone =
+  | "neutral"
+  | "ink"
+  | "accent"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "attention";
 
 export function Chip({
   children,
@@ -21,25 +29,44 @@ export function Chip({
   onClick?: () => void;
   title?: string;
 }) {
-  const tones: Record<
-    ChipTone,
-    { bg: string; fg: string; border: string }
-  > = {
+  // Porcelain: soft fill + AA text per semantic family; "ink"/"attention"
+  // are the only solid chips (loudest element on a calm screen).
+  const tones: Record<ChipTone, { bg: string; fg: string; border: string }> = {
     neutral: {
-      bg: "var(--surface-2)",
-      fg: "var(--ink-2)",
-      border: "var(--line)",
+      bg: "var(--neutral-soft)",
+      fg: "var(--neutral-text)",
+      border: "transparent",
     },
-    ink: { bg: "var(--ink)", fg: "var(--surface)", border: "var(--ink)" },
+    ink: { bg: "var(--attention)", fg: "var(--on-solid)", border: "transparent" },
+    attention: {
+      bg: "var(--attention)",
+      fg: "var(--on-solid)",
+      border: "transparent",
+    },
     accent: {
-      bg: "color-mix(in oklab, var(--accent) 12%, var(--surface))",
-      fg: "var(--accent)",
-      border: "color-mix(in oklab, var(--accent) 30%, var(--surface))",
+      bg: "var(--accent-soft)",
+      fg: "var(--accent-text)",
+      border: "transparent",
     },
     success: {
-      bg: "color-mix(in oklab, var(--p-olivia) 18%, var(--surface))",
-      fg: "color-mix(in oklab, var(--p-olivia) 60%, var(--ink))",
-      border: "color-mix(in oklab, var(--p-olivia) 35%, var(--surface))",
+      bg: "var(--success-soft)",
+      fg: "var(--success-text)",
+      border: "transparent",
+    },
+    warning: {
+      bg: "var(--warning-soft)",
+      fg: "var(--warning-text)",
+      border: "transparent",
+    },
+    danger: {
+      bg: "var(--danger-soft)",
+      fg: "var(--danger-text)",
+      border: "transparent",
+    },
+    info: {
+      bg: "var(--info-soft)",
+      fg: "var(--info-text)",
+      border: "transparent",
     },
   };
   const t = tones[tone];
@@ -56,11 +83,10 @@ export function Chip({
         background: t.bg,
         color: t.fg,
         border: `1px solid ${t.border}`,
-        fontSize: 11,
-        fontWeight: 500,
-        fontFamily: "var(--font-geist-mono), monospace",
+        font: "700 10.5px var(--font-ui)",
+        fontVariantNumeric: "tabular-nums",
         textTransform: "uppercase",
-        letterSpacing: "0.06em",
+        letterSpacing: "0.05em",
         cursor: onClick ? "pointer" : "default",
         ...style,
       }}
@@ -125,7 +151,7 @@ export function PersonaChip({
 
 // -------- Button --------
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "tertiary" | "danger";
 type Size = "sm" | "md" | "lg";
 
 export function Button({
@@ -154,21 +180,26 @@ export function Button({
     md: { pad: "9px 14px", font: 13, iconSize: 16, gap: 8 },
     lg: { pad: "12px 18px", font: 14, iconSize: 18, gap: 10 },
   };
+  // Porcelain button spec (component sheet):
+  // Primary = accent fill · Secondary = surface + hairline · Ghost = quiet
+  // text · Tertiary = accent text, soft-accent hover · Destructive =
+  // danger-soft + danger-text · Disabled = bg-2 + ink-4.
   const variants: Record<
     Variant,
-    { bg: string; fg: string; border: string; hover: string }
+    { bg: string; fg: string; border: string; hover: string; shadow?: string }
   > = {
     primary: {
-      bg: "var(--ink)",
-      fg: "var(--surface)",
-      border: "var(--ink)",
-      hover: "var(--ink-2)",
+      bg: "var(--accent)",
+      fg: "var(--on-accent)",
+      border: "var(--accent)",
+      hover: "var(--accent-2)",
     },
     secondary: {
       bg: "var(--surface)",
       fg: "var(--ink)",
       border: "var(--line-2)",
       hover: "var(--surface-2)",
+      shadow: "var(--shadow-xs)",
     },
     ghost: {
       bg: "transparent",
@@ -176,16 +207,25 @@ export function Button({
       border: "transparent",
       hover: "var(--surface-2)",
     },
-    danger: {
+    tertiary: {
       bg: "transparent",
-      fg: "var(--accent)",
-      border: "color-mix(in oklab, var(--accent) 30%, transparent)",
-      hover: "color-mix(in oklab, var(--accent) 8%, var(--surface))",
+      fg: "var(--accent-text)",
+      border: "transparent",
+      hover: "var(--accent-soft)",
+    },
+    danger: {
+      bg: "var(--danger-soft)",
+      fg: "var(--danger-text)",
+      border: "transparent",
+      hover: "var(--danger-soft)",
     },
   };
   const s = sizes[size];
   const v = variants[variant];
   const [hover, setHover] = React.useState(false);
+  const disabledStyle = disabled
+    ? { background: "var(--bg-2)", color: "var(--ink-4)", border: "1px solid transparent" }
+    : null;
   return (
     <button
       type={type ?? "button"}
@@ -200,17 +240,21 @@ export function Button({
         justifyContent: "center",
         gap: s.gap,
         padding: s.pad,
+        fontFamily: "var(--font-ui)",
         fontSize: s.font,
-        fontWeight: 500,
+        fontWeight: 600,
         background: hover && !disabled ? v.hover : v.bg,
         color: v.fg,
-        border: `1px solid ${v.border}`,
+        border:
+          variant === "danger" && hover && !disabled
+            ? "1px solid var(--danger-text)"
+            : `1px solid ${v.border}`,
+        boxShadow: v.shadow,
         borderRadius: 10,
         cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-        transition: "background 160ms ease, transform 120ms ease",
-        transform: hover && !disabled ? "translateY(-1px)" : "none",
+        transition: "background 160ms ease, border-color 160ms ease",
         whiteSpace: "nowrap",
+        ...disabledStyle,
         ...style,
       }}
     >

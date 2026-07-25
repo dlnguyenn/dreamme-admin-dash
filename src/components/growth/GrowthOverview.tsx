@@ -31,9 +31,26 @@ import {
   Thumb,
   ErrorBanner,
 } from "./shared";
+import { FilterPill, SectionHeader, StatStrip, type Family } from "../porcelain";
+import { Icons } from "../Icons";
 
 function pctDelta(cur: number, prev: number): number | null {
   return prev > 0 ? ((cur - prev) / prev) * 100 : null;
+}
+
+// "↑ 24%" / "↓ 7%" for the flat stat strip; null → no chip.
+function deltaText(pct: number | null): string | undefined {
+  if (pct == null || !Number.isFinite(pct)) return undefined;
+  const flat = Math.abs(pct) < 0.5;
+  return `${flat ? "→" : pct >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(pct))}%`;
+}
+
+// Sentiment family: arrow = direction, color = sentiment.
+function famFor(pct: number | null, goodWhen: "up" | "down"): Family | undefined {
+  if (pct == null || !Number.isFinite(pct)) return undefined;
+  if (Math.abs(pct) < 0.5) return "neutral";
+  const good = goodWhen === "up" ? pct >= 0 : pct < 0;
+  return good ? "success" : "danger";
 }
 
 export function GrowthOverview({
@@ -123,146 +140,144 @@ export function GrowthOverview({
 
       {alerts.length > 0 && <AlertsStrip alerts={alerts} onAsk={onAsk} />}
 
-      {/* ---- KPI glance ---- */}
-      <SectionLabel
+      {/* ---- KPI glance: ONE flat strip, hairline column dividers ---- */}
+      <SectionHeader
+        family="accent"
+        icon="Chart"
+        title="This week at a glance"
         right={
-          <span style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--font-geist-mono), monospace" }}>
+          <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>
             last 7 days vs prior 7
           </span>
         }
-      >
-        This week at a glance
-      </SectionLabel>
-      <div
-        style={
-          isMobile
-            ? {
-                display: "flex",
-                gap: 12,
-                overflowX: "auto",
-                scrollSnapType: "x mandatory",
-                margin: "0 -16px 24px",
-                padding: "0 16px 6px",
-              }
-            : {
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                gap: 14,
-                marginBottom: 28,
-              }
-        }
-      >
-        <KpiCard hero label="Total spend" value={fmtUSD(weekly.spend)} delta={weekly.spendDelta} goodWhen="up" />
-        <KpiCard
-          label="Cost / trial · Meta"
-          value={fmtUSD(weekly.cpt)}
-          delta={weekly.cptDelta}
-          goodWhen="down"
-          sub="spend ÷ Meta-reported trials"
+        style={{ margin: "26px 0 12px" }}
+      />
+      <div style={{ marginBottom: 26 }}>
+        <StatStrip
+          minColWidth={isMobile ? 140 : 150}
+          stats={[
+            {
+              label: "Total spend",
+              value: fmtUSD(weekly.spend),
+              delta: deltaText(weekly.spendDelta),
+              deltaFamily: weekly.spendDelta == null ? undefined : "neutral",
+              note: "vs prior 7d",
+            },
+            {
+              label: "Cost / trial · Meta",
+              value: fmtUSD(weekly.cpt),
+              delta: deltaText(weekly.cptDelta),
+              deltaFamily: famFor(weekly.cptDelta, "down"),
+              note: "spend ÷ Meta trials",
+            },
+            {
+              label: "Trials · RC truth",
+              value: fmtInt(weekly.rcTrials),
+              delta: deltaText(weekly.rcTrialsDelta),
+              deltaFamily: famFor(weekly.rcTrialsDelta, "up"),
+              note: "incl. organic",
+            },
+            {
+              label: "Blended CAC / trial",
+              value: fmtUSD(weekly.blendedCac),
+              note: "spend ÷ RC trials",
+            },
+            {
+              label: "MER · 7d",
+              value: fmtX(mer7),
+              note: "RC rev ÷ spend",
+            },
+            {
+              label: "Creatives launched",
+              value: fmtInt(weekly.launched),
+              note: `${weekly.activeAds} ads live`,
+            },
+            ...(payback && payback.ltv30_to_cac != null
+              ? [
+                  {
+                    label: "LTV : CAC · 35d",
+                    value: fmtX(num(payback.ltv30_to_cac)),
+                    note: payback.payback_verdict ?? "30d LTV ÷ CAC/sub",
+                  },
+                ]
+              : []),
+          ]}
         />
-        <KpiCard
-          label="Trials · RC truth"
-          value={fmtInt(weekly.rcTrials)}
-          delta={weekly.rcTrialsDelta}
-          goodWhen="up"
-          sub="all sources incl. organic"
-        />
-        <KpiCard
-          label="Blended CAC / trial"
-          value={fmtUSD(weekly.blendedCac)}
-          sub="spend ÷ RC trials"
-        />
-        <KpiCard label="MER · 7d" value={fmtX(mer7)} sub="RC revenue ÷ Meta spend" />
-        <KpiCard
-          label="Creatives launched"
-          value={fmtInt(weekly.launched)}
-          sub={`${weekly.activeAds} ads live`}
-        />
-        {payback && payback.ltv30_to_cac != null && (
-          <KpiCard
-            label="LTV : CAC · 35d"
-            value={fmtX(num(payback.ltv30_to_cac))}
-            sub={payback.payback_verdict ?? "30d LTV ÷ blended CAC/sub"}
-          />
-        )}
       </div>
 
       {/* ---- spend vs trials chart ---- */}
-      <SectionLabel
-        right={
-          <span style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--ink-3)" }}>
-            <LegendSwatch color="color-mix(in oklab, var(--ink) 80%, transparent)" label="Meta spend" square />
-            <LegendSwatch color="var(--accent)" label="RC trials" />
-          </span>
-        }
-      >
-        Spend vs trials · last 28 days
-      </SectionLabel>
       <div
         style={{
           border: "1px solid var(--line)",
-          borderRadius: 14,
+          borderRadius: 16,
           background: "var(--surface)",
-          boxShadow: "var(--shadow-sm)",
-          padding: isMobile ? "14px 10px 8px" : "20px 20px 12px",
-          marginBottom: 28,
+          boxShadow: "var(--shadow-card)",
+          padding: isMobile ? "14px 10px 8px" : "18px 20px 12px",
+          marginBottom: 26,
         }}
       >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 14,
+            flexWrap: "wrap",
+            padding: isMobile ? "0 6px" : 0,
+          }}
+        >
+          <span style={{ font: "650 14px var(--font-ui)" }}>Spend vs trials</span>
+          <span style={{ font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>
+            Last 28 days
+          </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              gap: 14,
+              font: "500 12px var(--font-ui)",
+              color: "var(--ink-2)",
+            }}
+          >
+            <LegendSwatch color="var(--chart-bar)" label="Meta spend" square />
+            <LegendSwatch color="var(--chart-line)" label="RC trials" />
+          </span>
+        </div>
         <SpendTrialsChart daily={daily} />
       </div>
 
       {/* ---- performance shifts ---- */}
-      <SectionLabel>Performance shifts · week over week</SectionLabel>
+      <SectionHeader
+        family="warning"
+        icon="Trend"
+        title="Performance shifts"
+        meta="Week over week"
+        style={{ margin: "26px 0 12px" }}
+      />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        {shiftOrder.map(({ id, label }) => {
-          const count = shifts[id].length;
-          const active = shiftTab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setShiftTab(id)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                padding: "7px 14px",
-                fontSize: 13,
-                fontWeight: 500,
-                borderRadius: 999,
-                border: "1px solid",
-                borderColor: active ? "var(--ink)" : "var(--line)",
-                background: active ? "var(--ink)" : "var(--surface)",
-                color: active ? "var(--surface)" : "var(--ink-2)",
-                cursor: "pointer",
-              }}
-            >
-              {label}
-              <span
-                style={{
-                  fontSize: 11,
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  opacity: 0.7,
-                }}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+        {shiftOrder.map(({ id, label }) => (
+          <FilterPill
+            key={id}
+            label={label}
+            count={shifts[id].length}
+            selected={shiftTab === id}
+            onClick={() => setShiftTab(id)}
+          />
+        ))}
       </div>
       {shifts[shiftTab].length === 0 ? (
         <div
           style={{
             padding: "22px 24px",
-            borderRadius: 14,
-            border: "1px dashed var(--line)",
+            borderRadius: 16,
+            border: "1px dashed var(--line-2)",
             background: "var(--surface)",
             color: "var(--ink-3)",
             fontSize: 13,
-            marginBottom: 28,
+            marginBottom: 26,
           }}
         >
-          <span className="serif" style={{ fontStyle: "italic", fontSize: 16, marginRight: 8 }}>
+          <span style={{ font: "650 14px var(--font-ui)", color: "var(--ink-2)", marginRight: 8 }}>
             Nothing here this week.
           </span>
           No ads match this shift right now.
@@ -309,72 +324,91 @@ function AlertsStrip({
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const visible = expanded ? alerts : alerts.slice(0, 4);
-  const toneOf = (sev: string) =>
-    sev === "critical" ? "var(--accent)" : sev === "warn" ? "var(--p-sarah)" : "var(--ink-4)";
+  // Porcelain: quiet two-column dot list — dot color = severity.
+  const dotOf = (sev: string) =>
+    sev === "critical"
+      ? "var(--danger)"
+      : sev === "warn"
+        ? "var(--warning)"
+        : "var(--info)";
   return (
     <div style={{ marginBottom: 22 }}>
-      <SectionLabel
+      <SectionHeader
+        family="info"
+        icon="InfoCircle"
+        title="Alerts"
+        meta="Last 7 days"
         right={
           alerts.length > 4 ? (
             <button
               onClick={() => setExpanded((v) => !v)}
               style={{
-                fontSize: 11,
+                font: "600 12.5px var(--font-ui)",
                 border: "none",
                 background: "transparent",
-                color: "var(--ink-3)",
+                color: "var(--link)",
                 cursor: "pointer",
-                fontFamily: "var(--font-geist-mono), monospace",
+                padding: 0,
               }}
             >
-              {expanded ? "collapse" : `show all ${alerts.length}`}
+              {expanded ? "Collapse" : `Show all ${alerts.length}`}
             </button>
           ) : undefined
         }
+        style={{ margin: "0 0 10px" }}
+      />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "7px 32px",
+          maxWidth: 1020,
+        }}
       >
-        Alerts · last 7 days
-      </SectionLabel>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {visible.map((a) => {
-          const tone = toneOf(a.severity);
-          return (
-            <button
-              key={a.id}
-              onClick={() =>
-                onAsk(
-                  `Investigate this alert from ${a.alert_date}: "${a.message}". What caused it and what should we do?`,
-                )
-              }
-              title="Ask the AI analyst to investigate"
+        {visible.map((a) => (
+          <button
+            key={a.id}
+            onClick={() =>
+              onAsk(
+                `Investigate this alert from ${a.alert_date}: "${a.message}". What caused it and what should we do?`,
+              )
+            }
+            title="Ask the AI analyst to investigate"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 9,
+              minWidth: 0,
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "7px 12px",
-                fontSize: 12,
+                width: 6,
+                height: 6,
                 borderRadius: 999,
-                border: `1px solid color-mix(in oklab, ${tone} 35%, var(--line))`,
-                background: `color-mix(in oklab, ${tone} 10%, var(--surface))`,
+                background: dotOf(a.severity),
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                font: "400 13px var(--font-ui)",
+                fontVariantNumeric: "tabular-nums",
                 color: "var(--ink-2)",
-                cursor: "pointer",
-                maxWidth: 480,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: tone,
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {a.message}
-              </span>
-            </button>
-          );
-        })}
+              {a.message}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -457,15 +491,21 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
             x2={W - padR}
             y1={innerH - f * (innerH - 10)}
             y2={innerH - f * (innerH - 10)}
-            stroke="var(--line)"
+            stroke="var(--chart-grid)"
             strokeWidth={1}
-            strokeDasharray={f === 0 ? undefined : "3 5"}
+            strokeDasharray={f === 0 ? undefined : "3 4"}
           />
           <text
             x={padL - 6}
             y={innerH - f * (innerH - 10) + 3}
             textAnchor="end"
-            style={{ fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", fill: "var(--ink-4)" }}
+            style={{
+              fontSize: 10,
+              fontFamily: "var(--font-ui)",
+              fontWeight: 500,
+              fontVariantNumeric: "tabular-nums",
+              fill: "var(--ink-3)",
+            }}
           >
             ${Math.round(maxSpend * f)}
           </text>
@@ -482,9 +522,9 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
             y={innerH - h}
             width={barW}
             height={Math.max(h, d.spend > 0 ? 2 : 0)}
-            rx={2}
-            fill="color-mix(in oklab, var(--ink) 80%, transparent)"
-            opacity={0.85}
+            rx={3}
+            fill="var(--chart-bar)"
+            opacity={0.9}
           >
             <title>{`${d.date} · ${fmtUSD(d.spend)} spend · ${d.trials} trials`}</title>
           </rect>
@@ -494,8 +534,8 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
       <polyline
         points={trialPoints}
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth={2}
+        stroke="var(--chart-line)"
+        strokeWidth={2.5}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
@@ -503,7 +543,7 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
         const x = padL + i * slot + slot / 2;
         const y = innerH - (d.trials / maxTrials) * (innerH - 10);
         return (
-          <circle key={`c-${d.date}`} cx={x} cy={y} r={2.4} fill="var(--accent)">
+          <circle key={`c-${d.date}`} cx={x} cy={y} r={2.4} fill="var(--chart-line)">
             <title>{`${d.date} · ${d.trials} trials`}</title>
           </circle>
         );
@@ -517,9 +557,11 @@ function SpendTrialsChart({ daily }: { daily: Array<{ date: string; spend: numbe
             y={H - 6}
             textAnchor="middle"
             style={{
-              fontSize: 10,
-              fontFamily: "var(--font-geist-mono), monospace",
-              fill: "var(--ink-4)",
+              fontSize: 10.5,
+              fontFamily: "var(--font-ui)",
+              fontWeight: 500,
+              fontVariantNumeric: "tabular-nums",
+              fill: "var(--ink-3)",
             }}
           >
             {d.date.slice(5)}
@@ -638,9 +680,8 @@ function ShiftCard({
         {note && (
           <div
             style={{
-              fontSize: 10.5,
-              color: "var(--accent)",
-              fontFamily: "var(--font-geist-mono), monospace",
+              font: "500 11px var(--font-ui)",
+              color: "var(--ink-3)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -724,7 +765,12 @@ function TopCreativeCard({
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div className="serif" style={{ fontSize: isMobile ? 19 : 23, letterSpacing: "-0.02em" }}>
+          <div
+            style={{
+              font: `650 ${isMobile ? 17 : 19}px var(--font-ui)`,
+              letterSpacing: "-0.01em",
+            }}
+          >
             {agg.ad_name || agg.ad_id}
           </div>
           <StatusDot status={agg.effective_status} />
@@ -751,11 +797,10 @@ function TopCreativeCard({
         </div>
         <div
           style={{
-            fontSize: 10,
-            fontFamily: "var(--font-geist-mono), monospace",
+            font: "650 11px var(--font-ui)",
             textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--ink-4)",
+            letterSpacing: "0.05em",
+            color: "var(--ink-3)",
             marginBottom: 8,
           }}
         >
@@ -790,17 +835,16 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     <div>
       <div
         style={{
-          fontSize: 9,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "650 10px var(--font-ui)",
           textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          letterSpacing: "0.05em",
           color: "var(--ink-3)",
           marginBottom: 2,
         }}
       >
         {label}
       </div>
-      <div style={{ fontSize: 15, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 15, fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }

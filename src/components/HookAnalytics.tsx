@@ -4,6 +4,7 @@ import * as React from "react";
 import { PageHeader } from "./Shell";
 import { Button, Chip, PersonaChip, useCopy, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { Card, CategoryTag, SectionHeader, StatStrip } from "./porcelain";
 import {
   HOOK_CATEGORIES,
   HOOK_CATEGORY_LABELS,
@@ -131,6 +132,12 @@ export function HookAnalytics() {
     return arr;
   }, [posts, tab, sort, categoryFilter]);
 
+  // Top view count in the current filter — drives the relative hold bars.
+  const maxViews = React.useMemo(
+    () => filteredPosts.reduce((m, p) => Math.max(m, p.viewCount), 1),
+    [filteredPosts],
+  );
+
   const stats = React.useMemo(() => {
     const withHook = posts.filter((p) => p.firstSlideText);
     const totalViews = withHook.reduce((s, p) => s + p.viewCount, 0);
@@ -196,21 +203,24 @@ export function HookAnalytics() {
   return (
     <div>
       <PageHeader
-        eyebrow="Dashboard · 05"
-        title={
-          <>
-            Hook <span style={{ fontStyle: "italic" }}>analytics</span>
-          </>
-        }
+        eyebrow="Admin / Content"
+        title="Hook Analytics"
         subtitle="Scrapes the tracked TikTok accounts, OCRs the first-slide hook, categorizes it, and uses top performers to generate two new hooks per persona per day."
-        tint="color-mix(in oklab, var(--p-emma) 40%, transparent)"
         actions={
           <>
             {error && (
-              <Chip tone="accent" title={error}>
+              <Chip tone="danger" title={error}>
                 Sync error
               </Chip>
             )}
+            <Button
+              variant="secondary"
+              icon={<Icons.Refresh />}
+              onClick={refresh}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
             <Button
               variant="secondary"
               icon={<Icons.Search />}
@@ -225,22 +235,13 @@ export function HookAnalytics() {
 
       {(() => {
         const kpis = [
-          { label: "Posts analyzed", value: stats.posts.toLocaleString(), accent: null as string | null },
-          {
-            label: "Avg views / post",
-            value: stats.avgViews.toLocaleString(),
-            accent: null as string | null,
-          },
+          { label: "Posts analyzed", value: stats.posts.toLocaleString() },
+          { label: "Avg views / post", value: stats.avgViews.toLocaleString() },
           {
             label: "Top category",
             value: stats.topCat ? HOOK_CATEGORY_LABELS[stats.topCat] : "—",
-            accent: "var(--p-emma)",
           },
-          {
-            label: "Hooks this week",
-            value: stats.thisWeek.toLocaleString(),
-            accent: "var(--p-olivia)",
-          },
+          { label: "Hooks this week", value: stats.thisWeek.toLocaleString() },
         ];
         if (isMobile) {
           // Horizontal-scroll KPI strip: 2 wide cards visible, rest peek off
@@ -267,29 +268,28 @@ export function HookAnalytics() {
                     padding: "14px 16px",
                     background: "var(--surface)",
                     border: "1px solid var(--line)",
-                    borderRadius: 14,
+                    borderRadius: 16,
+                    boxShadow: "var(--shadow-card)",
                     scrollSnapAlign: "start",
                   }}
                 >
                   <div
-                    className="mono"
                     style={{
-                      fontSize: 9,
+                      font: "650 10.5px var(--font-ui)",
                       textTransform: "uppercase",
-                      letterSpacing: "0.1em",
-                      color: "var(--ink-4)",
+                      letterSpacing: "0.05em",
+                      color: "var(--ink-3)",
                     }}
                   >
                     {s.label}
                   </div>
                   <div
-                    className="serif"
                     style={{
-                      fontSize: 24,
-                      fontWeight: 500,
-                      letterSpacing: "-0.02em",
-                      marginTop: 4,
-                      color: s.accent || "var(--ink)",
+                      font: "700 22px/1.1 var(--font-ui)",
+                      fontVariantNumeric: "tabular-nums",
+                      letterSpacing: "-0.01em",
+                      marginTop: 6,
+                      color: "var(--ink)",
                     }}
                   >
                     {s.value}
@@ -300,48 +300,8 @@ export function HookAnalytics() {
           );
         }
         return (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 1,
-              background: "var(--line)",
-              border: "1px solid var(--line)",
-              borderRadius: 14,
-              overflow: "hidden",
-              marginBottom: 28,
-            }}
-          >
-            {kpis.map((s, i) => (
-              <div
-                key={i}
-                style={{ background: "var(--surface)", padding: "18px 20px" }}
-              >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    color: "var(--ink-4)",
-                  }}
-                >
-                  {s.label}
-                </div>
-                <div
-                  className="serif"
-                  style={{
-                    fontSize: 28,
-                    fontWeight: 400,
-                    letterSpacing: "-0.02em",
-                    marginTop: 4,
-                    color: s.accent || "var(--ink)",
-                  }}
-                >
-                  {s.value}
-                </div>
-              </div>
-            ))}
+          <div style={{ marginBottom: 28 }}>
+            <StatStrip stats={kpis} />
           </div>
         );
       })()}
@@ -381,10 +341,11 @@ export function HookAnalytics() {
                     border: "none",
                     borderRadius: 7,
                     background: active ? "var(--surface)" : "transparent",
-                    boxShadow: active ? "var(--shadow-sm)" : "none",
+                    boxShadow: active ? "var(--shadow-xs)" : "none",
                     color: active ? "var(--ink)" : "var(--ink-3)",
+                    fontFamily: "var(--font-ui)",
                     fontSize: 13,
-                    fontWeight: active ? 600 : 500,
+                    fontWeight: active ? 650 : 500,
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -394,13 +355,13 @@ export function HookAnalytics() {
                 >
                   {s.label}
                   <span
-                    className="mono"
                     style={{
-                      fontSize: 10,
+                      font: "650 10.5px var(--font-ui)",
+                      fontVariantNumeric: "tabular-nums",
                       color: "var(--ink-4)",
                       padding: "1px 6px",
                       background: active ? "var(--bg-2)" : "transparent",
-                      borderRadius: 4,
+                      borderRadius: 999,
                     }}
                   >
                     {s.count}
@@ -428,8 +389,11 @@ export function HookAnalytics() {
       <section style={{ marginBottom: 40 }}>
         {!isMobile && (
           <SectionHeader
+            family="accent"
+            icon="Spark"
             title="Today's generated hooks"
-            hint={`${generated.length} total · 2 per persona per day`}
+            meta={`${generated.length} total · 2 per persona per day`}
+            style={{ marginTop: 0 }}
           />
         )}
         {loading ? (
@@ -460,15 +424,15 @@ export function HookAnalytics() {
                       flexWrap: "wrap",
                     }}
                   >
-                    <div
-                      className="serif"
-                      style={{ fontSize: 18, fontStyle: "italic" }}
-                    >
+                    <div style={{ font: "650 15px var(--font-ui)", color: "var(--ink)" }}>
                       {PERSONAS[pid].name}&apos;s hooks
                     </div>
                     <span
-                      className="mono"
-                      style={{ fontSize: 10, color: "var(--ink-4)" }}
+                      style={{
+                        font: "400 11px var(--font-ui)",
+                        fontVariantNumeric: "tabular-nums",
+                        color: "var(--ink-4)",
+                      }}
                       title={`${pUnused.length} unused · ${pHooks.length - pUnused.length} used`}
                     >
                       {pUnused.length} active · {pBankCount} in bank
@@ -546,9 +510,9 @@ export function HookAnalytics() {
                   <PersonaChip persona={PERSONAS[pid]} size="sm" />
                   <span
                     style={{
-                      fontSize: 11,
+                      font: "400 11px var(--font-ui)",
+                      fontVariantNumeric: "tabular-nums",
                       color: "var(--ink-4)",
-                      fontFamily: "var(--font-geist-mono), monospace",
                     }}
                     title={`${unused.length} unused · ${all.length - unused.length} used · ${all.length} total`}
                   >
@@ -635,8 +599,11 @@ export function HookAnalytics() {
       {!isMobile && (
         <section style={{ marginBottom: 40 }}>
           <SectionHeader
+            family="warning"
+            icon="TriAlert"
             title="Fatigued hook families"
-            hint="In cooldown — generator avoids these"
+            meta="In cooldown — generator avoids these"
+            style={{ marginTop: 0 }}
           />
           <FatiguePanel supabaseUrl={SUPABASE_URL} supabaseAnon={SUPABASE_ANON} />
         </section>
@@ -647,8 +614,11 @@ export function HookAnalytics() {
       <section>
         {!isMobile && (
           <SectionHeader
+            family="accent"
+            icon="Music"
             title="Top performing hooks"
-            hint={`${filteredPosts.length} of ${posts.length} posts`}
+            meta={`${filteredPosts.length} of ${posts.length} posts`}
+            style={{ marginTop: 0 }}
           />
         )}
         {!isMobile && (
@@ -679,13 +649,14 @@ export function HookAnalytics() {
                   onClick={() => setTab(t.id)}
                   style={{
                     padding: "6px 12px",
-                    borderRadius: 7,
+                    borderRadius: 9,
                     background: active ? "var(--surface)" : "transparent",
-                    boxShadow: active ? "var(--shadow-sm)" : "none",
+                    boxShadow: active ? "var(--shadow-xs)" : "none",
                     border: "none",
-                    color: "var(--ink)",
-                    fontSize: 12,
-                    fontWeight: active ? 500 : 400,
+                    color: active ? "var(--ink)" : "var(--ink-2)",
+                    fontFamily: "var(--font-ui)",
+                    fontSize: 12.5,
+                    fontWeight: active ? 650 : 500,
                     cursor: "pointer",
                   }}
                 >
@@ -803,18 +774,11 @@ export function HookAnalytics() {
             ))}
           </div>
         ) : (
-          <div
-            style={{
-              border: "1px solid var(--line)",
-              borderRadius: 12,
-              overflow: "hidden",
-              background: "var(--surface)",
-            }}
-          >
+          <Card pad={0} style={{ overflow: "hidden" }}>
             {filteredPosts.slice(0, 50).map((p, i) => (
-              <PostRow key={p.id} post={p} rank={i + 1} />
+              <PostRow key={p.id} post={p} rank={i + 1} maxViews={maxViews} />
             ))}
-          </div>
+          </Card>
         )}
       </section>
       )}
@@ -873,45 +837,6 @@ export function HookAnalytics() {
   );
 }
 
-function SectionHeader({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 16,
-        marginBottom: 16,
-      }}
-    >
-      <h2
-        className="serif"
-        style={{
-          fontSize: 24,
-          fontWeight: 400,
-          letterSpacing: "-0.02em",
-          margin: 0,
-        }}
-      >
-        {title}
-      </h2>
-      {hint && (
-        <div
-          style={{
-            fontSize: 11,
-            fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "var(--ink-4)",
-          }}
-        >
-          {hint}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function EmptyBlock({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -920,8 +845,8 @@ function EmptyBlock({ children }: { children: React.ReactNode }) {
         textAlign: "center",
         color: "var(--ink-3)",
         border: "1px dashed var(--line-2)",
-        borderRadius: 14,
-        fontSize: 13,
+        borderRadius: 12,
+        font: "400 13px var(--font-ui)",
       }}
     >
       {children}
@@ -930,10 +855,32 @@ function EmptyBlock({ children }: { children: React.ReactNode }) {
 }
 
 
-function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
+function PostRow({
+  post,
+  rank,
+  maxViews,
+}: {
+  post: TikTokPost;
+  rank: number;
+  maxViews: number;
+}) {
   const persona = PERSONAS[post.personaId];
   const cat = (HOOK_CATEGORY_LABELS as Record<string, string>)[post.category] ??
     post.category;
+  // Views relative to the top post in the current filter — semantic bar color.
+  const share = Math.min(1, post.viewCount / Math.max(1, maxViews));
+  const barFill =
+    share >= 0.7
+      ? "var(--success)"
+      : share >= 0.5
+        ? "var(--accent)"
+        : "var(--warning)";
+  const pctColor =
+    share >= 0.7
+      ? "var(--success-text)"
+      : share >= 0.5
+        ? "var(--accent-text)"
+        : "var(--warning-text)";
   return (
     <a
       href={post.postUrl}
@@ -941,11 +888,11 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
       rel="noopener noreferrer"
       style={{
         display: "grid",
-        gridTemplateColumns: "38px 70px minmax(0, 1fr) 140px 90px 140px",
+        gridTemplateColumns: "24px 70px minmax(0, 1fr) 130px 150px 96px",
         alignItems: "center",
-        gap: 16,
-        padding: "14px 18px",
-        borderBottom: "1px solid var(--line)",
+        gap: 14,
+        padding: "13px 18px",
+        borderTop: rank > 1 ? "1px solid var(--line)" : "none",
         textDecoration: "none",
         color: "var(--ink)",
         transition: "background 120ms ease",
@@ -957,13 +904,13 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
     >
       <div
         style={{
-          fontSize: 11,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "700 13px var(--font-ui)",
+          fontVariantNumeric: "tabular-nums",
           color: "var(--ink-4)",
           textAlign: "right",
         }}
       >
-        {rank.toString().padStart(2, "0")}
+        {rank}
       </div>
       <div>
         {post.firstSlideUrl ? (
@@ -996,12 +943,10 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
       </div>
       <div style={{ minWidth: 0 }}>
         <div
-          className="serif"
           style={{
-            fontSize: 15,
-            fontWeight: 400,
-            lineHeight: 1.35,
-            marginBottom: 4,
+            font: "600 13.5px/1.4 var(--font-ui)",
+            color: "var(--ink)",
+            marginBottom: 5,
             overflow: "hidden",
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -1012,38 +957,81 @@ function PostRow({ post, rank }: { post: TikTokPost; rank: number }) {
         </div>
         <div
           style={{
-            fontSize: 11,
-            color: "var(--ink-4)",
-            fontFamily: "var(--font-geist-mono), monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: 0,
           }}
         >
-          {formatRelative(post.postedAt ?? post.createdAt)}
+          <CategoryTag family="neutral" size={9.5}>
+            {cat.toUpperCase()}
+          </CategoryTag>
+          <span
+            style={{
+              font: "400 12px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--ink-4)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {formatRelative(post.postedAt ?? post.createdAt)}
+          </span>
         </div>
       </div>
       <div>
         <PersonaChip persona={persona} size="sm" />
       </div>
-      <Chip tone="neutral" style={{ fontSize: 10 }}>
-        {cat}
-      </Chip>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            height: 6,
+            borderRadius: 99,
+            background: "var(--bg-2)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${(share * 100).toFixed(0)}%`,
+              height: "100%",
+              borderRadius: 99,
+              background: barFill,
+            }}
+          />
+        </div>
+        <span
+          style={{
+            font: "650 13px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            color: pctColor,
+            width: 42,
+            textAlign: "right",
+            flex: "none",
+          }}
+        >
+          {(share * 100).toFixed(0)}%
+        </span>
+      </div>
       <div style={{ textAlign: "right" }}>
         <div
-          className="serif"
           style={{
-            fontSize: 20,
-            fontWeight: 400,
+            font: "650 15px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
             letterSpacing: "-0.01em",
+            color: "var(--ink)",
           }}
         >
           {post.viewCount.toLocaleString()}
         </div>
         <div
           style={{
-            fontSize: 10,
+            font: "500 10px var(--font-ui)",
             color: "var(--ink-4)",
-            fontFamily: "var(--font-geist-mono), monospace",
             textTransform: "uppercase",
-            letterSpacing: "0.08em",
+            letterSpacing: "0.06em",
           }}
         >
           views
@@ -1107,11 +1095,9 @@ function MobilePostRow({ post }: { post: TikTokPost }) {
       )}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div
-          className="serif"
           style={{
-            fontSize: 14,
-            fontWeight: 400,
-            lineHeight: 1.35,
+            font: "600 13.5px/1.4 var(--font-ui)",
+            color: "var(--ink)",
             marginBottom: 6,
             overflow: "hidden",
             display: "-webkit-box",
@@ -1133,32 +1119,34 @@ function MobilePostRow({ post }: { post: TikTokPost }) {
           }}
         >
           <span
-            className="mono"
             style={{
-              fontSize: 9,
-              padding: "2px 6px",
-              borderRadius: 4,
+              font: "700 9.5px var(--font-ui)",
+              padding: "2px 7px",
+              borderRadius: 6,
               background: "var(--bg-2)",
               color: "var(--ink-3)",
               textTransform: "uppercase",
-              letterSpacing: "0.08em",
+              letterSpacing: "0.04em",
             }}
           >
             {cat}
           </span>
           <span
-            className="mono"
-            style={{ fontSize: 10, color: "var(--ink-4)" }}
+            style={{
+              font: "400 11px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--ink-4)",
+            }}
           >
             {persona.name} · {formatRelative(post.postedAt ?? post.createdAt)}
           </span>
           <div style={{ flex: 1 }} />
           <span
-            className="serif"
             style={{
-              fontSize: 15,
-              fontWeight: 500,
+              font: "650 15px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               letterSpacing: "-0.01em",
+              color: "var(--ink)",
             }}
           >
             {formatViewCount(post.viewCount)}

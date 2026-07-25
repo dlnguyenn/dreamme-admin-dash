@@ -190,10 +190,7 @@ export function ResourceAddModal({
             gap: 12,
           }}
         >
-          <div
-            className="serif"
-            style={{ fontSize: 20, fontStyle: "italic", fontWeight: 400 }}
-          >
+          <div style={{ font: "650 17px var(--font-ui)", color: "var(--ink)" }}>
             {isEdit ? "Edit resource" : "Add resource"}
           </div>
           <button
@@ -348,15 +345,11 @@ export function ResourceAddModal({
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
-                    fontSize: 11,
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "var(--ink-2)",
+                    font: "600 11.5px var(--font-ui)",
+                    color: "var(--neutral-text)",
                     padding: "3px 4px 3px 9px",
                     borderRadius: 999,
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--line)",
+                    background: "var(--neutral-soft)",
                   }}
                 >
                   {t}
@@ -416,13 +409,10 @@ export function ResourceAddModal({
             <div
               style={{
                 padding: "9px 12px",
-                fontSize: 12,
-                color: "var(--accent)",
-                background:
-                  "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-                border:
-                  "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-                borderRadius: 8,
+                font: "400 12.5px var(--font-ui)",
+                color: "var(--danger-text)",
+                background: "var(--danger-soft)",
+                borderRadius: 10,
               }}
             >
               {error}
@@ -631,10 +621,9 @@ function Field({
     <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span
         style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "650 10.5px var(--font-ui)",
           textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          letterSpacing: "0.05em",
           color: "var(--ink-3)",
         }}
       >

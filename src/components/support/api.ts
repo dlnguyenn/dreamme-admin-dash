@@ -93,7 +93,6 @@ export interface StripeLookupResult {
     created: number;
     refunded: boolean;
     amountRefunded: number;
-    invoiceId: string | null;
   } | null;
 }
 

@@ -99,7 +99,7 @@ export function SpendImportCsvModal({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.4)",
+        background: "color-mix(in oklab, var(--ink) 40%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -111,8 +111,9 @@ export function SpendImportCsvModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--surface)",
-          borderRadius: 14,
+          borderRadius: 16,
           border: "1px solid var(--line)",
+          boxShadow: "var(--shadow-card)",
           width: "100%",
           maxWidth: 560,
           maxHeight: "90vh",
@@ -121,10 +122,9 @@ export function SpendImportCsvModal({
         }}
       >
         <div
-          className="serif"
           style={{
-            fontSize: 24,
-            fontStyle: "italic",
+            font: "650 17px var(--font-ui)",
+            color: "var(--ink)",
             marginBottom: 6,
           }}
         >
@@ -147,10 +147,9 @@ export function SpendImportCsvModal({
         <label
           style={{
             display: "block",
-            fontSize: 11,
-            fontFamily: "var(--font-geist-mono), monospace",
+            font: "650 10.5px var(--font-ui)",
             textTransform: "uppercase",
-            letterSpacing: "0.12em",
+            letterSpacing: "0.05em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}
@@ -170,10 +169,9 @@ export function SpendImportCsvModal({
         <label
           style={{
             display: "block",
-            fontSize: 11,
-            fontFamily: "var(--font-geist-mono), monospace",
+            font: "650 10.5px var(--font-ui)",
             textTransform: "uppercase",
-            letterSpacing: "0.12em",
+            letterSpacing: "0.05em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}
@@ -189,9 +187,9 @@ export function SpendImportCsvModal({
             width: "100%",
             padding: 10,
             fontSize: 12,
-            fontFamily: "var(--font-geist-mono), monospace",
-            border: "1px solid var(--line)",
-            borderRadius: 8,
+            fontFamily: "var(--font-mono)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 10,
             background: "var(--surface-2)",
             color: "var(--ink)",
             marginBottom: 14,
@@ -222,14 +220,11 @@ export function SpendImportCsvModal({
         {error && (
           <div
             style={{
-              padding: 10,
-              background:
-                "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-              border:
-                "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-              borderRadius: 8,
-              fontSize: 12,
-              color: "var(--accent)",
+              padding: "8px 12px",
+              background: "var(--danger-soft)",
+              borderRadius: 10,
+              font: "400 12.5px var(--font-ui)",
+              color: "var(--danger-text)",
               marginBottom: 14,
             }}
           >
@@ -240,10 +235,9 @@ export function SpendImportCsvModal({
         {result && (
           <div
             style={{
-              padding: 14,
+              padding: "12px 16px",
               background: "var(--surface-2)",
-              border: "1px solid var(--line)",
-              borderRadius: 8,
+              borderRadius: 12,
               fontSize: 13,
               marginBottom: 14,
               lineHeight: 1.6,
@@ -267,9 +261,8 @@ export function SpendImportCsvModal({
                       <span>{VENDOR_LABELS[v] ?? v}</span>
                       <span
                         style={{
-                          fontFamily:
-                            "var(--font-geist-mono), monospace",
-                          fontSize: 12,
+                          fontVariantNumeric: "tabular-nums",
+                          fontSize: 12.5,
                         }}
                       >
                         {fmtUSD(amt)}
@@ -288,7 +281,7 @@ export function SpendImportCsvModal({
             {result.parseErrors.length > 0 && (
               <div
                 style={{
-                  color: "var(--accent)",
+                  color: "var(--danger-text)",
                   fontSize: 11,
                   marginTop: 6,
                 }}

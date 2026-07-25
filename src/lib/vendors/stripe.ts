@@ -175,7 +175,6 @@ export interface LatestChargeInfo {
   refunded: boolean;
   /** cents already refunded (partial refunds) */
   amountRefunded: number;
-  invoiceId: string | null;
 }
 
 export interface StripeChargeRow {
@@ -187,7 +186,6 @@ export interface StripeChargeRow {
   created: number;
   status: string; // succeeded | pending | failed
   refunded: boolean;
-  invoice: string | null;
 }
 
 /**
@@ -233,7 +231,6 @@ export async function getLatestCharge(
     created: charge.created,
     refunded: charge.refunded,
     amountRefunded: charge.amount_refunded,
-    invoiceId: charge.invoice,
   };
 }
 

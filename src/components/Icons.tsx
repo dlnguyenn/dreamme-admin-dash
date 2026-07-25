@@ -11,7 +11,7 @@ export interface IconProps extends React.SVGAttributes<SVGSVGElement> {
 const Icon = ({
   size = 20,
   stroke = "currentColor",
-  strokeWidth = 1.5,
+  strokeWidth = 1.7,
   fill = "none",
   viewBox = "0 0 24 24",
   style,
@@ -206,6 +206,112 @@ export const Icons = {
   Menu: (p: IconProps) => (
     <Icon {...p}>
       <path d="M4 6h16M4 12h16M4 18h16" />
+    </Icon>
+  ),
+  // ---- Porcelain nav/section glyphs (design-handoff path set) ----
+  Chat: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9.5L4 20Z" />
+    </Icon>
+  ),
+  ChatLines: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9.5L4 20ZM8.5 9h7M8.5 12h4" />
+    </Icon>
+  ),
+  Film: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5ZM10 9.2l4.8 2.8-4.8 2.8Z" />
+    </Icon>
+  ),
+  Layers: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3.5 21 8.5l-9 5-9-5ZM4.5 13 12 17l7.5-4" />
+    </Icon>
+  ),
+  Music: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M9 17.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0ZM19.5 15.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0ZM9 17.5V6l10.5-2v11.5" />
+    </Icon>
+  ),
+  Dollar: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 7v10M14.6 9c-.5-.7-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.5 5.4 1.3 5.4 3.8 0 1.2-1.2 2-2.7 2-1.1 0-2.1-.5-2.6-1.2" />
+    </Icon>
+  ),
+  Spark: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3.5c.6 3.9 2.6 5.9 6.5 6.5-3.9.6-5.9 2.6-6.5 6.5-.6-3.9-2.6-5.9-6.5-6.5 3.9-.6 5.9-2.6 6.5-6.5Z" />
+    </Icon>
+  ),
+  Trend: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M4 17.5l5.5-5.5 3.5 3.4L19.5 9M14.2 8.5H20v5.8" />
+    </Icon>
+  ),
+  Flag: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M6 21V4.5c4-2 8 2 12 .2V14c-4 1.8-8-2.2-12-.2" />
+    </Icon>
+  ),
+  Flask: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M10 3.5h4M10.5 3.5v5L5.2 17.6A1.8 1.8 0 0 0 6.8 20.5h10.4a1.8 1.8 0 0 0 1.6-2.9L13.5 8.5v-5M7.5 14.5h9" />
+    </Icon>
+  ),
+  Aperture: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z" />
+    </Icon>
+  ),
+  Scissors: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M6 4.2a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8ZM6 15a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8ZM8.2 8.2 20 19.6M8.2 15.8 20 4.4" />
+    </Icon>
+  ),
+  Inbox: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M4.5 13.5 7 5.5h10l2.5 8M4.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-4.5M4.5 13.5H9l1.6 2.6h2.8l1.6-2.6h4.5" />
+    </Icon>
+  ),
+  Octagon: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M8.6 3.5h6.8L20.5 8.6v6.8l-5.1 5.1H8.6L3.5 15.4V8.6ZM12 8v4.6M12 15.8v.2" />
+    </Icon>
+  ),
+  TriAlert: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 4 2.8 19.5h18.4ZM12 10v3.6M12 16.4v.2" />
+    </Icon>
+  ),
+  InfoCircle: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 11v5M12 7.8v.2" />
+    </Icon>
+  ),
+  Refresh: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4.5h-4.5" />
+    </Icon>
+  ),
+  UserOutline: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4.5 20c.8-3.5 3.8-5.5 7.5-5.5s6.7 2 7.5 5.5" />
+    </Icon>
+  ),
+  CardOutline: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M4 6h16v12H4ZM4 10h16" />
+    </Icon>
+  ),
+  ChevronDown: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M6 9l6 6 6-6" />
+    </Icon>
+  ),
+  SignOut: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10.5 12H20M20 12l-3.2-3.2M20 12l-3.2 3.2" />
     </Icon>
   ),
 } satisfies Record<string, React.FC<IconProps>>;

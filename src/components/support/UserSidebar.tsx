@@ -16,6 +16,8 @@
 import * as React from "react";
 import { Button, Chip, useToast } from "../ui";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { Icons, type IconName } from "../Icons";
+import { fam, type Family } from "../porcelain";
 import type {
   SubscriptionInfo,
   SupportActionRow,
@@ -66,7 +68,7 @@ export function UserSidebar({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* User card */}
-      <Card title="User">
+      <Card title="User" glyph="UserOutline" glyphFamily="accent">
         {!ctx || ctx.noAccount ? (
           <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
             No DreamMe account matched{" "}
@@ -85,7 +87,7 @@ export function UserSidebar({
             <Row label="Journey" value={ctx.journeyStage ?? "—"} />
             <Row label="Total spent" value={`$${ctx.totalSpentUsd.toFixed(2)}`} />
             {ctx.sandboxOnly && (
-              <Chip tone="accent" style={{ alignSelf: "flex-start" }}>
+              <Chip tone="warning" style={{ alignSelf: "flex-start" }}>
                 sandbox only
               </Chip>
             )}
@@ -113,14 +115,17 @@ export function UserSidebar({
 
       {/* Action log */}
       {actions.length > 0 && (
-        <Card title="Action log">
+        <Card title="Action log" glyph="InfoCircle" glyphFamily="neutral">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {actions.map((a) => (
-              <div key={a.id} style={{ fontSize: 12 }}>
+              <div key={a.id} style={{ fontSize: 12.5 }}>
                 <span
                   style={{
-                    color: a.status === "success" ? "var(--ink)" : "var(--accent)",
-                    fontWeight: 500,
+                    color:
+                      a.status === "success"
+                        ? "var(--ink)"
+                        : "var(--danger-text)",
+                    fontWeight: 600,
                   }}
                 >
                   {a.action_type}
@@ -129,7 +134,9 @@ export function UserSidebar({
                   · {a.status} · {timeAgo(a.created_at)}
                 </span>
                 {a.error && (
-                  <div style={{ color: "var(--accent)", marginTop: 2 }}>{a.error}</div>
+                  <div style={{ color: "var(--danger-text)", marginTop: 2 }}>
+                    {a.error}
+                  </div>
                 )}
               </div>
             ))}
@@ -196,8 +203,8 @@ function SubscriptionCard({
     const lookup = await lookupStripe();
     setBusy(false);
     if (!lookup) return;
-    if (!lookup.latestCharge?.paymentIntentId) {
-      toast("No charge found to refund (trial with $0 invoice?)");
+    if (!lookup.latestCharge) {
+      toast("Nothing refundable — no successful charge on this customer");
       return;
     }
     if (lookup.latestCharge.refunded) {
@@ -220,6 +227,7 @@ function SubscriptionCard({
       } else if (pending.kind === "stripe_refund") {
         await runAction(thread.id, {
           type: "stripe_refund",
+          chargeId: pending.lookup.latestCharge!.chargeId,
           paymentIntentId: pending.lookup.latestCharge!.paymentIntentId,
         });
         toast("Refund issued");
@@ -244,7 +252,7 @@ function SubscriptionCard({
       title={
         <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
           {storeLabel}
-          {sub.isTrial && <Chip tone="accent">trial</Chip>}
+          {sub.isTrial && <Chip tone="info">trial</Chip>}
           {sub.isActive ? <Chip tone="success">active</Chip> : <Chip>inactive</Chip>}
         </span>
       }
@@ -392,31 +400,62 @@ function PendingSummary({
 
 function Card({
   title,
+  glyph = "CardOutline",
+  glyphFamily = "neutral",
   children,
 }: {
   title: React.ReactNode;
+  glyph?: IconName;
+  glyphFamily?: Family;
   children: React.ReactNode;
 }) {
+  const f = fam(glyphFamily);
+  const IconComp = Icons[glyph];
   return (
     <div
       style={{
         border: "1px solid var(--line)",
-        borderRadius: 12,
-        padding: 14,
+        borderRadius: 16,
+        padding: "16px 18px",
         background: "var(--surface)",
+        boxShadow: "var(--shadow-card)",
       }}
     >
       <div
         style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: "var(--ink-4)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
           marginBottom: 10,
         }}
       >
-        {title}
+        <span
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 7,
+            background: f.soft,
+            color: f.text,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none",
+          }}
+        >
+          <IconComp size={12} strokeWidth={2} />
+        </span>
+        <span
+          style={{
+            font: "650 13px var(--font-ui)",
+            color: "var(--ink)",
+            display: "inline-flex",
+            gap: 8,
+            alignItems: "center",
+            minWidth: 0,
+          }}
+        >
+          {title}
+        </span>
       </div>
       {children}
     </div>
@@ -433,24 +472,51 @@ function Row({
   mono?: boolean;
 }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-      <span style={{ color: "var(--ink-4)" }}>{label}</span>
-      <span
-        style={{
-          color: "var(--ink)",
-          textAlign: "right",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          maxWidth: 170,
-          ...(mono
-            ? { fontFamily: "var(--font-geist-mono), monospace", fontSize: 11 }
-            : {}),
-        }}
-        title={value}
-      >
-        {value}
-      </span>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span style={{ color: "var(--ink-3)" }}>{label}</span>
+      {mono ? (
+        <span
+          className="mono"
+          style={{
+            font: "500 11.5px var(--font-mono)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--line)",
+            color: "var(--ink-2)",
+            padding: "2px 7px",
+            borderRadius: 6,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 170,
+          }}
+          title={value}
+        >
+          {value}
+        </span>
+      ) : (
+        <span
+          style={{
+            color: "var(--ink)",
+            fontWeight: /^\$/.test(value) ? 650 : 400,
+            fontVariantNumeric: "tabular-nums",
+            textAlign: "right",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 170,
+          }}
+          title={value}
+        >
+          {value}
+        </span>
+      )}
     </div>
   );
 }

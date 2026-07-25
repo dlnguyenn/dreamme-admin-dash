@@ -3,7 +3,8 @@
 import * as React from "react";
 import { PageHeader } from "./Shell";
 import { Button, Chip, useToast } from "./ui";
-import { Icons } from "./Icons";
+import { Icons, type IconName } from "./Icons";
+import { CategoryTag, ErrorBanner, Segmented, fam, type Family } from "./porcelain";
 import { ResourceAddModal } from "./ResourceAddModal";
 import { References } from "./References";
 import { API } from "@/lib/supabase";
@@ -12,6 +13,15 @@ import type { Resource } from "@/lib/types";
 
 type SubtabId = "library" | "references";
 const SUBTAB_KEY = "dreamme.resourcesSubtab";
+
+// One family + glyph per resource type (Porcelain soft tile + matching tag).
+const KIND_META: Record<
+  "link" | "image",
+  { family: Family; icon: IconName; label: string }
+> = {
+  link: { family: "info", icon: "Link", label: "LINK" },
+  image: { family: "accent", icon: "Image", label: "IMAGE" },
+};
 
 export function Resources({ isAdmin }: { isAdmin: boolean }) {
   const toast = useToast();
@@ -106,10 +116,9 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
   return (
     <>
       <PageHeader
-        eyebrow="Creator toolkit"
-        title={<em>Resources</em>}
+        eyebrow="Admin / Ops"
+        title="Resources"
         subtitle="Reference images, templates, and external links — curated to help creators ship faster."
-        tint="color-mix(in oklab, var(--p-olivia) 45%, transparent)"
         actions={
           isAdmin && subtab === "library" ? (
             <Button
@@ -123,29 +132,22 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
         }
       />
 
-      <SubtabNav active={subtab} onChange={setSubtab} />
+      <div style={{ marginBottom: 20 }}>
+        <Segmented
+          options={[
+            { value: "library", label: "Library" },
+            { value: "references", label: "References" },
+          ]}
+          value={subtab}
+          onChange={(v) => setSubtab(v as SubtabId)}
+        />
+      </div>
 
       {subtab === "references" && <References isAdmin={isAdmin} />}
 
       {subtab === "library" && (
         <>
-      {error && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--accent)",
-            background:
-              "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-            border:
-              "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-            borderRadius: 10,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       <div
         style={{
@@ -183,9 +185,8 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
             style={{
               width: "100%",
               padding: "10px 12px 10px 32px",
-              fontSize: 13,
-              fontFamily: "inherit",
-              border: "1px solid var(--line)",
+              font: "400 13px var(--font-ui)",
+              border: "1px solid var(--line-2)",
               borderRadius: 10,
               background: "var(--surface)",
               color: "var(--ink)",
@@ -207,11 +208,10 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
         >
           <span
             style={{
-              fontSize: 10,
-              fontFamily: "var(--font-geist-mono), monospace",
+              font: "650 10.5px var(--font-ui)",
               textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "var(--ink-4)",
+              letterSpacing: "0.05em",
+              color: "var(--ink-3)",
               marginRight: 4,
             }}
           >
@@ -237,29 +237,29 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
 
       {loading ? (
         <div
-          style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}
+          style={{
+            padding: 60,
+            textAlign: "center",
+            color: "var(--ink-3)",
+            font: "400 14px var(--font-ui)",
+          }}
         >
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
-            Loading resources…
-          </div>
+          Loading resources…
         </div>
       ) : visible.length === 0 ? (
         <div
           style={{
             padding: "60px 20px",
             textAlign: "center",
-            border: "1px dashed var(--line)",
-            borderRadius: 14,
+            border: "1px dashed var(--line-2)",
+            borderRadius: 16,
             color: "var(--ink-3)",
           }}
         >
-          <div
-            className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
-          >
+          <div style={{ font: "650 15px var(--font-ui)", marginBottom: 6 }}>
             {rows.length === 0 ? "No resources yet" : "Nothing matches"}
           </div>
-          <div style={{ fontSize: 13 }}>
+          <div style={{ font: "400 13px var(--font-ui)" }}>
             {rows.length === 0
               ? isAdmin
                 ? "Add reference images, drive links, or templates to get started."
@@ -271,7 +271,7 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
             gap: 16,
           }}
         >
@@ -303,56 +303,6 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function SubtabNav({
-  active,
-  onChange,
-}: {
-  active: SubtabId;
-  onChange: (id: SubtabId) => void;
-}) {
-  const options: Array<{ id: SubtabId; label: string }> = [
-    { id: "library", label: "Library" },
-    { id: "references", label: "References" },
-  ];
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        gap: 4,
-        padding: 4,
-        marginBottom: 20,
-        border: "1px solid var(--line)",
-        borderRadius: 12,
-        background: "var(--surface)",
-      }}
-    >
-      {options.map((opt) => {
-        const isActive = active === opt.id;
-        return (
-          <button
-            key={opt.id}
-            onClick={() => onChange(opt.id)}
-            style={{
-              padding: "7px 14px",
-              fontSize: 12.5,
-              fontFamily: "inherit",
-              fontWeight: 500,
-              border: "none",
-              borderRadius: 8,
-              cursor: "pointer",
-              background: isActive ? "var(--ink)" : "transparent",
-              color: isActive ? "var(--surface)" : "var(--ink-2)",
-              transition: "background 140ms ease, color 140ms ease",
-            }}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function ResourceCard({
   resource,
   isAdmin,
@@ -367,6 +317,9 @@ function ResourceCard({
   const [hover, setHover] = React.useState(false);
   const isLink = resource.kind === "link";
   const href = isLink ? resource.linkUrl ?? "#" : resource.imageUrl ?? "#";
+  const meta = KIND_META[isLink ? "link" : "image"];
+  const f = fam(meta.family);
+  const GlyphIcon = Icons[meta.icon];
 
   return (
     <div
@@ -375,13 +328,13 @@ function ResourceCard({
       style={{
         display: "flex",
         flexDirection: "column",
-        border: "1px solid var(--line)",
-        borderRadius: 14,
+        gap: 10,
+        border: `1px solid ${hover ? "var(--line-2)" : "var(--line)"}`,
+        borderRadius: 16,
+        padding: 18,
         background: "var(--surface)",
-        overflow: "hidden",
-        transition: "transform 180ms ease, box-shadow 180ms ease",
-        transform: hover ? "translateY(-2px)" : "none",
-        boxShadow: hover ? "var(--shadow-lg)" : "var(--shadow-sm)",
+        boxShadow: "var(--shadow-card)",
+        transition: "border-color 140ms ease",
         position: "relative",
       }}
     >
@@ -389,8 +342,8 @@ function ResourceCard({
         <div
           style={{
             position: "absolute",
-            top: 8,
-            right: 8,
+            top: 10,
+            right: 10,
             display: "flex",
             gap: 4,
             zIndex: 2,
@@ -412,24 +365,61 @@ function ResourceCard({
         target="_blank"
         rel="noreferrer noopener"
         style={{
-          display: "block",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
           textDecoration: "none",
           color: "inherit",
+          minHeight: 0,
+          flex: 1,
         }}
       >
-        <div
-          style={{
-            aspectRatio: "16 / 10",
-            background: "var(--surface-2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
-          {resource.kind === "image" && resource.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              background: f.soft,
+              color: f.text,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flex: "none",
+            }}
+          >
+            <GlyphIcon size={17} />
+          </span>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              font: "650 14px/1.35 var(--font-ui)",
+              color: "var(--ink)",
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {resource.title}
+          </div>
+          <CategoryTag family={meta.family} size={9.5}>
+            {meta.label}
+          </CategoryTag>
+        </div>
+
+        {resource.kind === "image" && resource.imageUrl && (
+          <div
+            style={{
+              aspectRatio: "16 / 10",
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "var(--surface-2)",
+              border: "1px solid var(--line)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={resource.imageUrl}
               alt={resource.title}
@@ -442,150 +432,72 @@ function ResourceCard({
                 display: "block",
               }}
             />
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 10,
-                padding: 20,
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 14,
-                  background:
-                    "color-mix(in oklab, var(--p-andrea) 20%, var(--surface))",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--ink-2)",
-                }}
-              >
-                <Icons.Link size={24} />
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  color: "var(--ink-4)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  wordBreak: "break-all",
-                  maxWidth: "100%",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {hostOf(resource.linkUrl)}
-              </div>
-            </div>
-          )}
-          <div
-            style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-            }}
-          >
-            <Chip tone={isLink ? "neutral" : "ink"}>
-              {isLink ? "Link" : "Image"}
-            </Chip>
           </div>
-        </div>
+        )}
 
-        <div
-          style={{
-            padding: "12px 14px 14px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
+        {resource.description && (
           <div
             style={{
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: 1.35,
-              color: "var(--ink)",
+              font: "400 12.5px/1.5 var(--font-ui)",
+              color: "var(--ink-2)",
               overflow: "hidden",
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
             }}
           >
-            {resource.title}
+            {resource.description}
           </div>
-          {resource.description && (
-            <div
-              style={{
-                fontSize: 12.5,
-                color: "var(--ink-3)",
-                lineHeight: 1.45,
-                overflow: "hidden",
-                display: "-webkit-box",
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: "vertical",
-              }}
-            >
-              {resource.description}
-            </div>
-          )}
-          {resource.tags.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 4,
-                marginTop: 4,
-              }}
-            >
-              {resource.tags.slice(0, 4).map((t) => (
-                <span
-                  key={t}
-                  style={{
-                    fontSize: 10,
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--ink-3)",
-                    padding: "2px 7px",
-                    borderRadius: 999,
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--line)",
-                  }}
-                >
-                  {t}
-                </span>
-              ))}
-              {resource.tags.length > 4 && (
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: "var(--ink-4)",
-                    fontFamily: "var(--font-geist-mono), monospace",
-                  }}
-                >
-                  +{resource.tags.length - 4}
-                </span>
-              )}
-            </div>
-          )}
+        )}
+
+        {resource.tags.length > 0 && (
           <div
             style={{
-              fontSize: 10,
-              color: "var(--ink-4)",
-              fontFamily: "var(--font-geist-mono), monospace",
-              marginTop: 4,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 4,
             }}
           >
-            Added {formatRelative(resource.createdAt)}
+            {resource.tags.slice(0, 4).map((t) => (
+              <span
+                key={t}
+                style={{
+                  font: "700 9.5px var(--font-ui)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-3)",
+                  padding: "2.5px 7px",
+                  borderRadius: 7,
+                  border: "1px solid var(--line-2)",
+                  background: "transparent",
+                }}
+              >
+                {t}
+              </span>
+            ))}
+            {resource.tags.length > 4 && (
+              <span
+                style={{
+                  font: "400 10.5px var(--font-ui)",
+                  color: "var(--ink-4)",
+                  alignSelf: "center",
+                }}
+              >
+                +{resource.tags.length - 4}
+              </span>
+            )}
           </div>
+        )}
+
+        <div
+          style={{
+            font: "400 11.5px var(--font-ui)",
+            color: "var(--ink-4)",
+            marginTop: "auto",
+          }}
+        >
+          Added {formatRelative(resource.createdAt)}
+          {isLink ? ` · ${hostOf(resource.linkUrl)}` : ""}
         </div>
       </a>
     </div>
@@ -620,9 +532,9 @@ function CardIconButton({
         border: "1px solid var(--line)",
         borderRadius: 8,
         background: "var(--surface)",
-        color: danger ? "var(--accent)" : "var(--ink-2)",
+        color: danger ? "var(--danger-text)" : "var(--ink-2)",
         cursor: "pointer",
-        boxShadow: "var(--shadow-sm)",
+        boxShadow: "var(--shadow-xs)",
       }}
     >
       {children}

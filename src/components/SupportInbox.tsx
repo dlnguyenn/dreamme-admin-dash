@@ -3,14 +3,23 @@
 /**
  * Support Inbox — help@ email + in-app feedback triage.
  *
- * Left: filterable thread list. Right: thread detail (messages, AI drafts,
- * send) with a user/actions rail. All sends and subscription actions are
- * manual and confirm-gated.
+ * Left: filterable thread list (one card, Apple Mail-style hairline rows).
+ * Right: thread detail (messages, AI drafts, send) with a user/actions rail.
+ * All sends and subscription actions are manual and confirm-gated.
  */
 import * as React from "react";
 import { PageHeader } from "./Shell";
-import { Button, Chip, useToast } from "./ui";
+import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
+import {
+  CategoryTag,
+  ErrorBanner,
+  FilterPill,
+  hueFromName,
+  InitialsAvatar,
+  SourceTag,
+  type Family,
+} from "./porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
 import type { SupportThreadRow, ThreadStatus } from "@/lib/support/types";
 import { fetchThreads, pollNow, timeAgo } from "./support/api";
@@ -27,18 +36,20 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "ignored", label: "Ignored" },
 ];
 
-const CATEGORY_LABEL: Record<string, string> = {
-  refund_request: "refund",
-  cancel_trial: "cancel",
-  question: "question",
-  feedback: "feedback",
-  other: "other",
+// Porcelain: category tags are FILLED soft chips — color carries meaning.
+const CATEGORY_META: Record<string, { label: string; family: Family }> = {
+  refund_request: { label: "REFUND", family: "danger" },
+  cancel_trial: { label: "CANCEL", family: "danger" },
+  question: { label: "QUESTION", family: "info" },
+  feedback: { label: "FEEDBACK", family: "info" },
+  other: { label: "OTHER", family: "neutral" },
 };
 
+// Source tags are OUTLINED ghosts — where it came from, not what it is.
 const STORE_LABEL: Record<string, string> = {
-  STRIPE: "Stripe",
-  PLAY_STORE: "Google",
-  APP_STORE: "Apple",
+  STRIPE: "STRIPE",
+  PLAY_STORE: "GOOGLE",
+  APP_STORE: "APPLE",
 };
 
 export function SupportInbox({
@@ -54,6 +65,8 @@ export function SupportInbox({
   const [error, setError] = React.useState<string | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [polling, setPolling] = React.useState(false);
+  // Per-status counts derived from the "open" superset (no counts endpoint).
+  const [counts, setCounts] = React.useState<Partial<Record<Filter, number>>>({});
 
   const load = React.useCallback(
     async (f: Filter = filter) => {
@@ -62,6 +75,13 @@ export function SupportInbox({
         const { threads, unreadCount } = await fetchThreads(f);
         setThreads(threads);
         onUnreadChange?.(unreadCount);
+        if (f === "open") {
+          const c: Partial<Record<Filter, number>> = { open: threads.length };
+          for (const t of threads) {
+            c[t.status as Filter] = (c[t.status as Filter] ?? 0) + 1;
+          }
+          setCounts(c);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -98,7 +118,7 @@ export function SupportInbox({
   return (
     <div>
       <PageHeader
-        eyebrow="Support"
+        eyebrow="Admin / Support"
         title="Support Inbox"
         subtitle="help@ email and in-app feedback, triaged with two reply drafts each. Nothing sends without your click."
         actions={
@@ -114,37 +134,25 @@ export function SupportInbox({
         }
       />
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
         {FILTERS.map((f) => (
-          <Chip
+          <FilterPill
             key={f.id}
-            tone={filter === f.id ? "ink" : "neutral"}
+            label={f.label}
+            selected={filter === f.id}
+            count={counts[f.id] || undefined}
+            attention={f.id === "drafts_ready"}
             onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-          </Chip>
+          />
         ))}
       </div>
 
-      {error && (
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid color-mix(in oklab, var(--accent) 30%, var(--line))",
-            color: "var(--accent)",
-            fontSize: 13,
-            marginBottom: 14,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       <div
         style={{
           display: "flex",
-          gap: 20,
+          gap: 18,
           alignItems: "flex-start",
           flexDirection: isMobile ? "column" : "row",
         }}
@@ -154,9 +162,6 @@ export function SupportInbox({
             style={{
               width: isMobile ? "100%" : 340,
               minWidth: isMobile ? undefined : 340,
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
             }}
           >
             {loading ? (
@@ -171,20 +176,31 @@ export function SupportInbox({
                   padding: "28px 16px",
                   textAlign: "center",
                   border: "1px dashed var(--line-2)",
-                  borderRadius: 12,
+                  borderRadius: 16,
                 }}
               >
                 Nothing here. Inbox zero.
               </div>
             ) : (
-              threads.map((t) => (
-                <ThreadListItem
-                  key={t.id}
-                  thread={t}
-                  active={t.id === selectedId}
-                  onClick={() => setSelectedId(t.id)}
-                />
-              ))
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 16,
+                  boxShadow: "var(--shadow-card)",
+                  overflow: "hidden",
+                }}
+              >
+                {threads.map((t, i) => (
+                  <ThreadListItem
+                    key={t.id}
+                    thread={t}
+                    first={i === 0}
+                    active={t.id === selectedId}
+                    onClick={() => setSelectedId(t.id)}
+                  />
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -231,12 +247,19 @@ export function SupportInbox({
 function ThreadListItem({
   thread,
   active,
+  first,
   onClick,
 }: {
   thread: SupportThreadRow;
   active: boolean;
+  first: boolean;
   onClick: () => void;
 }) {
+  const [hover, setHover] = React.useState(false);
+  const system =
+    !thread.counterpart_name && !thread.counterpart_email
+      ? true
+      : /feedback|dreamme/i.test(thread.counterpart_name ?? "");
   const name =
     thread.counterpart_name ||
     thread.counterpart_email ||
@@ -245,85 +268,120 @@ function ThreadListItem({
     thread.triage?.summary && thread.triage.summary !== "(no summary)"
       ? thread.triage.summary
       : thread.subject || "";
+  const cat = thread.category ? CATEGORY_META[thread.category] : null;
   return (
-    <button
+    <div
       onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      role="button"
       style={{
-        textAlign: "left",
-        padding: "12px 14px",
-        borderRadius: 12,
-        border: "1px solid",
-        borderColor: active ? "var(--line-2)" : "var(--line)",
-        background: active ? "var(--surface-2)" : "var(--surface)",
+        background: active
+          ? "var(--accent-soft)"
+          : hover
+            ? "var(--surface-2)"
+            : "transparent",
+        borderTop: first ? "none" : "1px solid var(--line)",
+        padding: "11px 16px",
         cursor: "pointer",
         display: "flex",
-        flexDirection: "column",
-        gap: 6,
+        gap: 10,
+        transition: "background 120ms ease",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {thread.unread && (
+      <span style={{ marginTop: 2 }}>
+        <InitialsAvatar
+          name={name}
+          hue={system ? null : hueFromName(name)}
+          size={32}
+        />
+      </span>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {thread.unread && (
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: "var(--accent)",
+                flexShrink: 0,
+              }}
+            />
+          )}
           <span
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--accent)",
+              flex: 1,
+              font: "650 13.5px var(--font-ui)",
+              color: "var(--ink)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {name}
+          </span>
+          <span
+            style={{
+              font: "400 11.5px var(--font-ui)",
+              color: "var(--ink-3)",
               flexShrink: 0,
             }}
-          />
-        )}
-        <span
-          style={{
-            flex: 1,
-            fontSize: 13,
-            fontWeight: thread.unread ? 600 : 500,
-            color: "var(--ink)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {name}
-        </span>
-        <span style={{ fontSize: 11, color: "var(--ink-4)", flexShrink: 0 }}>
-          {timeAgo(thread.last_message_at)}
-        </span>
-      </div>
-      {summary && (
-        <div
-          style={{
-            fontSize: 12,
-            color: "var(--ink-3)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {summary}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {thread.category && (
-          <Chip
-            tone={
-              thread.category === "refund_request" ||
-              thread.category === "cancel_trial"
-                ? "accent"
-                : "neutral"
-            }
           >
-            {CATEGORY_LABEL[thread.category] ?? thread.category}
-          </Chip>
+            {timeAgo(thread.last_message_at)}
+          </span>
+        </div>
+        {summary && (
+          <div
+            style={{
+              font: "400 12.5px var(--font-ui)",
+              color: "var(--ink-2)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {summary}
+          </div>
         )}
-        {thread.resolved_store && (
-          <Chip>{STORE_LABEL[thread.resolved_store] ?? thread.resolved_store}</Chip>
-        )}
-        {thread.source === "feedback" && <Chip>in-app</Chip>}
-        {thread.status === "drafts_ready" && <Chip tone="success">drafts</Chip>}
-        {thread.triage?.internal && <Chip>internal</Chip>}
-        {thread.triage?.error && <Chip tone="accent">triage failed</Chip>}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {cat && (
+            <CategoryTag family={cat.family} size={9.5}>
+              {cat.label}
+            </CategoryTag>
+          )}
+          {thread.category && !cat && (
+            <CategoryTag family="neutral" size={9.5}>
+              {thread.category.toUpperCase()}
+            </CategoryTag>
+          )}
+          {thread.resolved_store && (
+            <SourceTag size={9.5}>
+              {STORE_LABEL[thread.resolved_store] ?? thread.resolved_store}
+            </SourceTag>
+          )}
+          {thread.source === "feedback" && <SourceTag size={9.5}>IN-APP</SourceTag>}
+          {thread.status === "drafts_ready" && (
+            <CategoryTag family="attention" size={9.5}>
+              DRAFTS
+            </CategoryTag>
+          )}
+          {thread.triage?.internal && <SourceTag size={9.5}>INTERNAL</SourceTag>}
+          {thread.triage?.error && (
+            <CategoryTag family="danger" size={9.5}>
+              TRIAGE FAILED
+            </CategoryTag>
+          )}
+        </div>
       </div>
-    </button>
+    </div>
   );
 }

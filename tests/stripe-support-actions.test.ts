@@ -73,7 +73,6 @@ describe("pickRefundableCharge", () => {
     created: 1000,
     status: "succeeded",
     refunded: false,
-    invoice: "in_x",
     ...over,
   });
 

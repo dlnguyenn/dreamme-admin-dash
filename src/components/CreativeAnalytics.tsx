@@ -2,6 +2,15 @@
 
 import * as React from "react";
 import { PageHeader } from "./Shell";
+import { Button } from "./ui";
+import {
+  ErrorBanner,
+  FilterPill,
+  InfoWell,
+  SectionHeader,
+  Segmented,
+  StatStrip,
+} from "./porcelain";
 import { SUPABASE_URL, SUPABASE_ANON } from "@/lib/supabase";
 
 const RANGES = ["1d", "7d", "14d", "30d"] as const;
@@ -501,19 +510,26 @@ export function CreativeAnalytics() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [insights]);
 
+  const metaAdCount = React.useMemo(
+    () => new Set(insights.map((r) => r.ad_id)).size,
+    [insights],
+  );
+  const tiktokAdCount = React.useMemo(
+    () => new Set(tiktokInsights.map((r) => r.ad_id)).size,
+    [tiktokInsights],
+  );
+
   if (loading) {
     return (
-      <div style={{ padding: 80, textAlign: "center", color: "var(--ink-3)" }}>
-        <div
-          className="serif"
-          style={{
-            fontFamily: "var(--font-newsreader), serif",
-            fontSize: 24,
-            fontStyle: "italic",
-          }}
-        >
-          Loading creatives…
-        </div>
+      <div
+        style={{
+          padding: 80,
+          textAlign: "center",
+          font: "400 14px var(--font-ui)",
+          color: "var(--ink-3)",
+        }}
+      >
+        Loading creatives…
       </div>
     );
   }
@@ -521,420 +537,273 @@ export function CreativeAnalytics() {
   return (
     <>
       <PageHeader
-        eyebrow="Admin · Paid Media"
-        title={<em>Creatives</em>}
+        eyebrow="Admin / Paid social"
+        title="Creatives"
         subtitle={`Live ads from ${ACCOUNT_ID}. Joined with the n8n trial-qualified bridge. Window: ${since} → ${until} (UTC).`}
-        tint="color-mix(in oklab, var(--p-andrea) 45%, transparent)"
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSortBy(sortBy === "spend" ? "hook" : "spend")}
+            title="Toggle sort order"
+          >
+            Sort: {sortBy === "spend" ? "Spend" : "Hook rate"} ▾
+          </Button>
+        }
       />
 
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 16,
-          marginBottom: 24,
+          gap: 14,
+          marginBottom: 22,
           flexWrap: "wrap",
         }}
       >
-        <div style={{ display: "flex", gap: 6 }}>
-          {PLATFORMS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPlatform(p)}
-              style={{
-                padding: "6px 14px",
-                fontSize: 13,
-                fontWeight: 500,
-                borderRadius: 999,
-                border: "1px solid var(--line)",
-                background: p === platform ? "var(--accent)" : "var(--surface)",
-                color: p === platform ? "white" : "var(--ink-2)",
-                textTransform: "capitalize",
-              }}
-            >
-              {p}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 8 }}>
+          <FilterPill
+            label="Meta"
+            count={metaAdCount || undefined}
+            selected={platform === "meta"}
+            onClick={() => setPlatform("meta")}
+          />
+          <FilterPill
+            label="TikTok"
+            count={tiktokAdCount || undefined}
+            selected={platform === "tiktok"}
+            onClick={() => setPlatform("tiktok")}
+          />
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {RANGES.map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              style={{
-                padding: "6px 14px",
-                fontSize: 13,
-                fontWeight: 500,
-                borderRadius: 999,
-                border: "1px solid var(--line)",
-                background: r === range ? "var(--ink)" : "var(--surface)",
-                color: r === range ? "var(--surface)" : "var(--ink-2)",
-              }}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span
-            style={{
-              fontSize: 11,
-              fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              color: "var(--ink-3)",
-            }}
-          >
-            Sort
-          </span>
-          {(["spend", "hook"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSortBy(s)}
-              style={{
-                padding: "4px 10px",
-                fontSize: 12,
-                borderRadius: 999,
-                border: "1px solid var(--line)",
-                background: sortBy === s ? "var(--ink)" : "var(--surface)",
-                color: sortBy === s ? "var(--surface)" : "var(--ink-2)",
-              }}
-            >
-              {s === "spend" ? "Spend" : "Hook rate"}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          size="sm"
+          options={RANGES.map((r) => ({ value: r, label: r }))}
+          value={range}
+          onChange={(v) => setRange(v as Range)}
+        />
         {campaigns.length > 1 && (
-          <div
-            style={{
-              display: "flex",
-              gap: 6,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.14em",
-                color: "var(--ink-3)",
-              }}
-            >
-              Campaign
-            </span>
-            <button
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <FilterPill
+              label="All campaigns"
+              selected={!campaignFilter}
               onClick={() => setCampaignFilter(null)}
-              style={{
-                padding: "4px 10px",
-                fontSize: 12,
-                borderRadius: 999,
-                border: "1px solid var(--line)",
-                background: !campaignFilter ? "var(--ink)" : "var(--surface)",
-                color: !campaignFilter ? "var(--surface)" : "var(--ink-2)",
-              }}
-            >
-              All
-            </button>
+            />
             {campaigns.map(([id, label]) => (
-              <button
+              <FilterPill
                 key={id}
+                label={
+                  <span
+                    title={id}
+                    style={{
+                      display: "inline-block",
+                      maxWidth: 200,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      verticalAlign: "bottom",
+                    }}
+                  >
+                    {label}
+                  </span>
+                }
+                selected={campaignFilter === id}
                 onClick={() => setCampaignFilter(id)}
-                title={id}
-                style={{
-                  padding: "4px 10px",
-                  fontSize: 12,
-                  borderRadius: 999,
-                  border: "1px solid var(--line)",
-                  background:
-                    campaignFilter === id ? "var(--ink)" : "var(--surface)",
-                  color:
-                    campaignFilter === id ? "var(--surface)" : "var(--ink-2)",
-                  maxWidth: 220,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {label}
-              </button>
+              />
             ))}
           </div>
         )}
       </div>
 
       {error && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--accent)",
-            background:
-              "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-            border:
-              "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-            borderRadius: 10,
-          }}
-        >
+        <ErrorBanner>
           {error} — run the sync crons (`/api/cron/sync-ad-insights`,{" "}
           `/api/cron/sync-qualified-trials`) to populate data.
-        </div>
+        </ErrorBanner>
       )}
 
-      <div
-        style={{
-          marginBottom: 16,
-          padding: "12px 16px",
-          fontSize: 12,
-          color: "var(--ink-3)",
-          background:
-            "color-mix(in oklab, var(--p-mia) 12%, var(--surface))",
-          border:
-            "1px solid color-mix(in oklab, var(--p-mia) 30%, var(--line))",
-          borderRadius: 10,
-          lineHeight: 1.55,
-        }}
-      >
+      <InfoWell style={{ marginBottom: 16 }}>
         <strong style={{ color: "var(--ink-2)" }}>
           Heads up — Meta is a small share of installs.
         </strong>{" "}
         Most revenue is organic (TikTok), so account-wide ROAS overstates
         Meta-isolated ROAS. Per-ad revenue/payback aren&apos;t computable
         until iOS attribution wires up — see{" "}
-        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+        <code style={{ fontFamily: "var(--font-mono)" }}>
           docs/attribution-handoff.md
         </code>
         .
-      </div>
+      </InfoWell>
 
-      <section
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          padding: 24,
-          marginBottom: 16,
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <SectionLabel>
-          {platform === "meta" ? "Meta" : "TikTok"} acquisition · window
-        </SectionLabel>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: 24,
-          }}
-        >
-          <Metric label="Spend" value={fmtUSD(totalSpend)} />
-          <Metric label="Impressions" value={fmtInt(totalImpressions)} />
-          <Metric label="CTR" value={fmtPct(accountCtr)} />
-          {platform === "meta" && (
-            <Metric
-              label="Hook rate"
-              value={fmtPct(accountHookRate)}
-              sub="3-sec views ÷ impr."
-            />
-          )}
-          <Metric label="Installs" value={fmtInt(totalInstalls)} />
-          <Metric
-            label="Trial starts"
-            value={fmtInt(totalTrialStarts)}
-            sub={
+      <SectionHeader
+        family="accent"
+        icon="Chart"
+        title={`${platform === "meta" ? "Meta" : "TikTok"} acquisition`}
+        meta="This window"
+        style={{ margin: "26px 0 12px" }}
+      />
+      <StatStrip
+        minColWidth={150}
+        stats={[
+          { label: "Spend", value: fmtUSD(totalSpend) },
+          { label: "Impressions", value: fmtInt(totalImpressions) },
+          { label: "CTR", value: fmtPct(accountCtr) },
+          ...(platform === "meta"
+            ? [
+                {
+                  label: "Hook rate",
+                  value: fmtPct(accountHookRate),
+                  note: "3-sec views ÷ impr.",
+                },
+              ]
+            : []),
+          { label: "Installs", value: fmtInt(totalInstalls) },
+          {
+            label: "Trial starts",
+            value: fmtInt(totalTrialStarts),
+            note:
               platform === "meta"
                 ? "Meta SDK in-app event"
-                : "TikTok start_trial event"
-            }
-          />
-          <Metric
-            label="Reported trial CPA"
-            value={fmtUSD(reportedCpa)}
-            sub="spend ÷ trial starts"
-          />
-        </div>
-      </section>
+                : "TikTok start_trial event",
+          },
+          {
+            label: "Reported trial CPA",
+            value: fmtUSD(reportedCpa),
+            note: "spend ÷ trial starts",
+          },
+        ]}
+      />
 
-      <section
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          padding: 24,
-          marginBottom: 16,
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <SectionLabel>
-          Incremental lift · {platform} spend vs organic baseline{" "}
+      <SectionHeader
+        family="warning"
+        icon="Trend"
+        title="Incremental lift"
+        meta={`${platform} spend vs organic baseline`}
+        right={
           <span
             style={{
+              font: "400 12px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               color:
                 baselineConfidence === "low"
-                  ? "var(--accent)"
-                  : "var(--ink-4)",
-              textTransform: "none",
-              letterSpacing: "normal",
-              fontFamily: "var(--font-geist), sans-serif",
-              fontSize: 11,
-              marginLeft: 8,
+                  ? "var(--warning-text)"
+                  : "var(--ink-3)",
             }}
           >
-            baseline = {baseline.sampleDays} day{baseline.sampleDays === 1 ? "" : "s"} of $&lt;{BASELINE_SPEND_THRESHOLD}/d spend ·{" "}
-            {baselineConfidence} confidence
+            baseline = {baseline.sampleDays} day
+            {baseline.sampleDays === 1 ? "" : "s"} of $&lt;
+            {BASELINE_SPEND_THRESHOLD}/d spend · {baselineConfidence} confidence
           </span>
-        </SectionLabel>
+        }
+      />
+      <StatStrip
+        minColWidth={150}
+        stats={[
+          {
+            label: "Baseline (organic)",
+            value: fmtInt(expectedBaselineTrials),
+            note: `${baseline.perDay.toFixed(1)} trials/day expected`,
+          },
+          {
+            label: "Observed trials",
+            value: fmtInt(windowRcTrials),
+            note: "RC · all sources",
+          },
+          {
+            label: "Above baseline",
+            value: fmtInt(incrementalTrials),
+            note: `${incrementalTrials >= 0 ? "+" : ""}${fmtInt(incrementalTrials)} vs expected`,
+          },
+          {
+            label: "Lift over baseline",
+            value: fmtPct(liftRatio),
+            note: "(observed − baseline) ÷ baseline",
+          },
+          {
+            label: "Cost per incremental",
+            value: fmtUSD(costPerIncrementalTrial),
+            note: `${fmtUSD(totalSpend)} ÷ ${fmtInt(incrementalTrials)} extra trials`,
+          },
+        ]}
+      />
+      {baselineConfidence === "low" && (
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: 24,
+            marginTop: 12,
+            padding: "10px 14px",
+            font: "400 12.5px/1.55 var(--font-ui)",
+            color: "var(--warning-text)",
+            background: "var(--warning-soft)",
+            borderRadius: 10,
           }}
         >
-          <Metric
-            label="Baseline (organic)"
-            value={fmtInt(expectedBaselineTrials)}
-            sub={`${baseline.perDay.toFixed(1)} trials/day expected`}
-          />
-          <Metric
-            label="Observed trials"
-            value={fmtInt(windowRcTrials)}
-            sub="RC · all sources"
-          />
-          <Metric
-            label="Above baseline"
-            value={fmtInt(incrementalTrials)}
-            sub={`${incrementalTrials >= 0 ? "+" : ""}${fmtInt(incrementalTrials)} vs expected`}
-          />
-          <Metric
-            label="Lift over baseline"
-            value={fmtPct(liftRatio)}
-            sub="(observed − baseline) ÷ baseline"
-            accent
-          />
-          <Metric
-            label="Cost per incremental"
-            value={fmtUSD(costPerIncrementalTrial)}
-            sub={`${fmtUSD(totalSpend)} ÷ ${fmtInt(incrementalTrials)} extra trials`}
-          />
-        </div>
-        {baselineConfidence === "low" && (
-          <p
-            style={{
-              marginTop: 14,
-              marginBottom: 0,
-              padding: "8px 12px",
-              fontSize: 11,
-              color: "var(--accent)",
-              background:
-                "color-mix(in oklab, var(--accent) 8%, var(--surface))",
-              border:
-                "1px solid color-mix(in oklab, var(--accent) 20%, var(--line))",
-              borderRadius: 8,
-              lineHeight: 1.55,
-            }}
-          >
-            <strong>Low confidence — baseline computed from{" "}
+          <strong>
+            Low confidence — baseline computed from{" "}
             {baseline.sampleDays === 0 ? "no" : `only ${baseline.sampleDays}`}{" "}
-            zero-spend day{baseline.sampleDays === 1 ? "" : "s"}.</strong>{" "}
-            Meta has been running continuously, so we can&apos;t isolate
-            organic trial volume. To establish a real baseline: pause Meta
-            for 3–5 consecutive days. The dashboard auto-detects the
-            zero-spend window and recomputes.
-          </p>
-        )}
-        <p
-          style={{
-            marginTop: 14,
-            marginBottom: 0,
-            fontSize: 11,
-            color: "var(--ink-4)",
-            fontStyle: "italic",
-            lineHeight: 1.5,
-          }}
-        >
-          Baseline assumes organic trial volume stays steady. Trustworthy at
-          window ≥ 14d AND baseline sample ≥ 7 days. Negative lift = paid
-          window underperformed your typical organic day (could be
-          seasonality rather than bad ads). Observed trials come from
-          RevenueCat (all sources).
-        </p>
-      </section>
-
-      <section
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          padding: 24,
-          marginBottom: 28,
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <SectionLabel>
-          Account revenue · all sources{" "}
-          <span
-            style={{
-              color: "var(--ink-4)",
-              textTransform: "none",
-              letterSpacing: "normal",
-              fontFamily: "var(--font-geist), sans-serif",
-              fontSize: 11,
-              marginLeft: 8,
-            }}
-          >
-            RevenueCat · {windowDays}d window · includes organic
-          </span>
-        </SectionLabel>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: 24,
-          }}
-        >
-          <Metric label="Revenue" value={fmtUSD(accountRevenue)} />
-          <Metric
-            label="Trials (account)"
-            value={fmtInt(qualifiedCount)}
-            sub="n8n bridge · all sources"
-          />
-          <Metric
-            label="Trial → paid"
-            value={fmtPct(trialToPaidRate)}
-            sub={`${fmtInt(accountTrialConversions)} conversions`}
-          />
-          <Metric label="30d LTV / paid" value={fmtUSD(accountLtv30d)} />
-          <Metric
-            label="Account ROAS"
-            value={
-              Number.isFinite(blendedRoas)
-                ? `${blendedRoas.toFixed(2)}×`
-                : "—"
-            }
-            sub="all revenue ÷ Meta spend · inflated"
-            accent
-          />
+            zero-spend day{baseline.sampleDays === 1 ? "" : "s"}.
+          </strong>{" "}
+          Meta has been running continuously, so we can&apos;t isolate
+          organic trial volume. To establish a real baseline: pause Meta
+          for 3–5 consecutive days. The dashboard auto-detects the
+          zero-spend window and recomputes.
         </div>
-      </section>
+      )}
+      <InfoWell style={{ marginTop: 12 }}>
+        Baseline assumes organic trial volume stays steady. Trustworthy at
+        window ≥ 14d AND baseline sample ≥ 7 days. Negative lift = paid
+        window underperformed your typical organic day (could be
+        seasonality rather than bad ads). Observed trials come from
+        RevenueCat (all sources).
+      </InfoWell>
+
+      <SectionHeader
+        family="success"
+        icon="Dollar"
+        title="Account revenue"
+        meta={`RevenueCat · ${windowDays}d window · includes organic`}
+      />
+      <div style={{ marginBottom: 28 }}>
+        <StatStrip
+          minColWidth={150}
+          stats={[
+            { label: "Revenue", value: fmtUSD(accountRevenue) },
+            {
+              label: "Trials (account)",
+              value: fmtInt(qualifiedCount),
+              note: "n8n bridge · all sources",
+            },
+            {
+              label: "Trial → paid",
+              value: fmtPct(trialToPaidRate),
+              note: `${fmtInt(accountTrialConversions)} conversions`,
+            },
+            { label: "30d LTV / paid", value: fmtUSD(accountLtv30d) },
+            {
+              label: "Account ROAS",
+              value: Number.isFinite(blendedRoas)
+                ? `${blendedRoas.toFixed(2)}×`
+                : "—",
+              note: "all revenue ÷ Meta spend · inflated",
+            },
+          ]}
+        />
+      </div>
 
       {ads.length === 0 && !error && (
         <div
           style={{
-            padding: 80,
+            padding: "60px 20px",
             textAlign: "center",
+            border: "1px dashed var(--line-2)",
+            borderRadius: 16,
+            background: "var(--surface)",
+            font: "400 13px/1.6 var(--font-ui)",
             color: "var(--ink-3)",
-            fontStyle: "italic",
-            fontFamily: "var(--font-newsreader), serif",
-            fontSize: 20,
           }}
         >
           {platform === "meta" ? (
             <>
               No Meta ads in this window. Run{" "}
-              <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+              <code style={{ fontFamily: "var(--font-mono)" }}>
                 /api/cron/sync-ad-insights
               </code>{" "}
               to backfill.
@@ -942,10 +811,10 @@ export function CreativeAnalytics() {
           ) : (
             <>
               No TikTok ads in this window yet. Once you run Spark Ads, hit{" "}
-              <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+              <code style={{ fontFamily: "var(--font-mono)" }}>
                 /api/cron/sync-tiktok-ads
               </code>{" "}
-              (see <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>docs/tiktok-ads-api-setup.md</code>).
+              (see <code style={{ fontFamily: "var(--font-mono)" }}>docs/tiktok-ads-api-setup.md</code>).
             </>
           )}
         </div>
@@ -971,18 +840,11 @@ export function CreativeAnalytics() {
         ))}
       </div>
 
-      <p
-        style={{
-          marginTop: 28,
-          fontSize: 12,
-          color: "var(--ink-3)",
-          fontStyle: "italic",
-          lineHeight: 1.6,
-        }}
-      >
-        <strong>Notes on the numbers.</strong> Trial starts and Reported CPA
-        are Meta-SDK in-platform signals only (the iOS SDK fires{" "}
-        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+      <InfoWell style={{ marginTop: 28 }}>
+        <strong style={{ color: "var(--ink-2)" }}>Notes on the numbers.</strong>{" "}
+        Trial starts and Reported CPA are Meta-SDK in-platform signals only
+        (the iOS SDK fires{" "}
+        <code style={{ fontFamily: "var(--font-mono)" }}>
           fb_mobile_complete_registration
         </code>{" "}
         for users it attributes back to a Meta ad). Trials (account) and
@@ -990,61 +852,16 @@ export function CreativeAnalytics() {
         and are NOT Meta-isolated — useful as a macro signal of overall app
         health, not as a measure of Meta ad performance. Per-ad ROAS will
         light up once{" "}
-        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+        <code style={{ fontFamily: "var(--font-mono)" }}>
           Purchases.shared.attribution.setAd(...)
         </code>{" "}
         is wired in iOS (see{" "}
-        <code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+        <code style={{ fontFamily: "var(--font-mono)" }}>
           docs/attribution-handoff.md
         </code>
         ).
-      </p>
+      </InfoWell>
     </>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: boolean;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          color: "var(--ink-3)",
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: "var(--font-newsreader), serif",
-          fontSize: 28,
-          fontWeight: 400,
-          color: accent ? "var(--accent)" : "var(--ink)",
-          lineHeight: 1.1,
-        }}
-      >
-        {value}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>
-          {sub}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1082,30 +899,41 @@ function AdCard({
   void accountLtv30d;
   void accountRevenue;
   void totalSpend;
-  const statusTone =
-    ad.effective_status === "ACTIVE"
-      ? "var(--accent-2)"
-      : ad.effective_status === "PAUSED"
-        ? "var(--ink-3)"
-        : "var(--accent)";
+  // Performance chip: soft-success for running ads, neutral for paused,
+  // danger-soft for anything else Meta flags (rejected/with-issues…).
+  const isRunning =
+    ad.effective_status === "ACTIVE" || ad.effective_status === "ENABLE";
+  const isPaused =
+    ad.effective_status === "PAUSED" || ad.effective_status === "DISABLE";
+  const chipBg = isRunning
+    ? "var(--success-soft)"
+    : isPaused
+      ? "var(--neutral-soft)"
+      : "var(--danger-soft)";
+  const chipFg = isRunning
+    ? "var(--success-text)"
+    : isPaused
+      ? "var(--neutral-text)"
+      : "var(--danger-text)";
 
   return (
     <article
       style={{
         background: "var(--surface)",
         border: "1px solid var(--line)",
-        borderRadius: "var(--radius)",
-        overflow: "hidden",
+        borderRadius: 16,
+        padding: 8,
         display: "flex",
         flexDirection: "column",
-        boxShadow: "var(--shadow-sm)",
+        boxShadow: "var(--shadow-card)",
       }}
     >
       <div
         style={{
           position: "relative",
           width: "100%",
-          aspectRatio: "5 / 6.24",
+          height: 200,
+          borderRadius: 10,
           background: "var(--surface-2)",
           overflow: "hidden",
         }}
@@ -1131,7 +959,7 @@ function AdCard({
               alignItems: "center",
               justifyContent: "center",
               color: "var(--ink-4)",
-              fontSize: 12,
+              font: "400 12px var(--font-ui)",
             }}
           >
             no thumbnail
@@ -1144,17 +972,15 @@ function AdCard({
             rel="noreferrer"
             style={{
               position: "absolute",
-              top: 8,
+              bottom: 8,
               left: 8,
-              padding: "3px 8px",
-              fontSize: 10,
-              fontWeight: 700,
+              padding: "2.5px 8px",
+              font: "650 10.5px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               borderRadius: 999,
-              background: "rgba(0, 0, 0, 0.78)",
-              color: "#fff",
-              backdropFilter: "blur(4px)",
+              background: "rgba(29,29,31,0.72)",
+              color: "#F5F5F7",
               textDecoration: "none",
-              letterSpacing: "0.03em",
             }}
             title="Open the original TikTok post"
           >
@@ -1164,15 +990,14 @@ function AdCard({
           <div
             style={{
               position: "absolute",
-              top: 8,
+              bottom: 8,
               left: 8,
-              padding: "3px 8px",
-              fontSize: 10,
-              fontWeight: 600,
+              padding: "2.5px 8px",
+              font: "650 10.5px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               borderRadius: 999,
-              background: "rgba(26, 24, 22, 0.72)",
-              color: "#fff",
-              backdropFilter: "blur(4px)",
+              background: "rgba(29,29,31,0.72)",
+              color: "#F5F5F7",
             }}
           >
             ▶ video
@@ -1184,14 +1009,13 @@ function AdCard({
               position: "absolute",
               top: 8,
               right: 8,
-              padding: "3px 8px",
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              borderRadius: 999,
-              background: "rgba(253, 251, 247, 0.92)",
-              color: statusTone,
-              border: `1px solid ${statusTone}`,
+              padding: "3px 9px",
+              font: "700 12px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
+              borderRadius: 99,
+              background: chipBg,
+              color: chipFg,
+              boxShadow: "var(--shadow-xs)",
             }}
           >
             {ad.effective_status}
@@ -1201,18 +1025,17 @@ function AdCard({
 
       <div
         style={{
-          padding: "14px 14px 12px",
+          padding: "10px 8px 8px",
           display: "flex",
           flexDirection: "column",
-          gap: 10,
+          gap: 8,
           flex: 1,
         }}
       >
         <div>
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 500,
+              font: "600 13px var(--font-ui)",
               color: "var(--ink)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -1224,7 +1047,8 @@ function AdCard({
           </div>
           <div
             style={{
-              fontSize: 11,
+              font: "400 12px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               color: "var(--ink-3)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -1233,7 +1057,8 @@ function AdCard({
             }}
             title={ad.adset_name}
           >
-            {ad.adset_name}
+            {fmtUSD(ad.spend)} · {fmtInt(ad.trial_starts)} trials ·{" "}
+            {ad.effective_status || "—"}
           </div>
         </div>
 
@@ -1304,13 +1129,14 @@ function AdCard({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
+            gap: 6,
             padding: "8px 12px",
-            fontSize: 12,
-            fontWeight: 500,
-            borderRadius: 8,
-            border: "1px solid var(--line)",
-            background: "var(--surface-2)",
-            color: "var(--ink-2)",
+            font: "600 12px var(--font-ui)",
+            borderRadius: 10,
+            border: "1px solid var(--line-2)",
+            background: "var(--surface)",
+            color: "var(--ink)",
+            boxShadow: "var(--shadow-xs)",
             textDecoration: "none",
           }}
         >
@@ -1334,30 +1160,32 @@ function CardMetric({
 }) {
   const valueColor =
     tone === "good"
-      ? "var(--accent-2)"
+      ? "var(--success-text)"
       : tone === "bad"
-        ? "var(--accent)"
+        ? "var(--danger-text)"
         : tone === "warn"
-          ? "var(--ink-2)"
+          ? "var(--warning-text)"
           : "var(--ink)";
   return (
     <div>
       <div
         style={{
-          fontSize: 9,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "650 10px var(--font-ui)",
           textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          letterSpacing: "0.05em",
           color: "var(--ink-3)",
           marginBottom: 2,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         {label}
       </div>
       <div
         style={{
-          fontSize: 14,
-          fontWeight: 500,
+          font: "600 13.5px var(--font-ui)",
+          fontVariantNumeric: "tabular-nums",
           color: valueColor,
           lineHeight: 1.2,
         }}
@@ -1365,27 +1193,17 @@ function CardMetric({
         {value}
       </div>
       {sub && (
-        <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>
+        <div
+          style={{
+            font: "400 10.5px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--ink-4)",
+            marginTop: 1,
+          }}
+        >
           {sub}
         </div>
       )}
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 10,
-        fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.14em",
-        color: "var(--ink-3)",
-        marginBottom: 16,
-      }}
-    >
-      {children}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, Chip, useToast } from "./ui";
+import { FilterPill, Segmented, StatStrip } from "./porcelain";
 import { PageHeader } from "./Shell";
 import { ContentCard } from "./ContentCard";
 import { DetailDrawer } from "./DetailDrawer";
@@ -24,6 +25,24 @@ import type { DashState, Delivery } from "@/lib/types";
 
 type PipelineMode = "after" | "before";
 const MODE_STORAGE_KEY = "dreamme.contentPipeline.mode";
+
+/** Count badge inside Segmented tab labels (650 11.5px tabular per spec). */
+function TabCount({ n }: { n: number }) {
+  return (
+    <span
+      style={{
+        font: "650 11.5px var(--font-ui)",
+        fontVariantNumeric: "tabular-nums",
+        background: "var(--neutral-soft)",
+        color: "var(--ink-3)",
+        padding: "1.5px 8px",
+        borderRadius: 999,
+      }}
+    >
+      {n}
+    </span>
+  );
+}
 
 export function ContentPipeline({
   state,
@@ -264,18 +283,13 @@ export function ContentPipeline({
   return (
     <div>
       <PageHeader
-        eyebrow="Dashboard · 01"
-        title={
-          <>
-            <span style={{ fontStyle: "italic" }}>Daily</span> content pipeline
-          </>
-        }
+        eyebrow="Admin / Content"
+        title="Content Pipeline"
         subtitle="Every morning, the n8n workflow drops three images and a long-form caption here — one per persona. Click an image to see its companion caption and save it to the library."
-        tint="color-mix(in oklab, var(--p-andrea) 40%, transparent)"
         actions={
           <>
             {syncError && (
-              <Chip tone="accent" title={syncError}>
+              <Chip tone="danger" title={syncError}>
                 Sync error
               </Chip>
             )}
@@ -350,86 +364,45 @@ export function ContentPipeline({
         }
       />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
-          gap: 1,
-          background: "var(--line)",
-          border: "1px solid var(--line)",
-          borderRadius: 14,
-          overflow: "hidden",
-          marginBottom: isMobile ? 20 : 28,
-        }}
-      >
-        {(mode === "after"
-          ? [
-              { label: "Total deliveries", value: modeItems.length, accent: null },
-              {
-                label: "This week",
-                value: modeItems.filter(
-                  (x) =>
-                    Date.now() - new Date(x.createdAt).getTime() < 7 * 86400000,
-                ).length,
-                accent: null,
-              },
-              { label: "In library", value: state.savedCaptions.length, accent: "var(--accent)" },
-              {
-                label: "Marked posted",
-                value: modeItems.filter((x) => x.posted).length,
-                accent: "var(--p-olivia)",
-              },
-            ]
-          : [
-              { label: "Before photos", value: modeItems.length, accent: null },
-              {
-                label: "Personas covered",
-                value: new Set(modeItems.map((x) => x.personaId)).size,
-                accent: null,
-              },
-              {
-                label: "Added this week",
-                value: modeItems.filter(
-                  (x) =>
-                    Date.now() - new Date(x.createdAt).getTime() < 7 * 86400000,
-                ).length,
-                accent: null,
-              },
-              { label: "After photos", value: modeCounts.after, accent: "var(--ink-3)" },
-            ]
-        ).map((s, i) => (
-          <div
-            key={i}
-            style={{
-              background: "var(--surface)",
-              padding: isMobile ? "12px 14px" : "18px 20px",
-            }}
-          >
-            <div
-              style={{
-                fontSize: isMobile ? 9 : 10,
-                fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--ink-4)",
-              }}
-            >
-              {s.label}
-            </div>
-            <div
-              className="serif"
-              style={{
-                fontSize: isMobile ? 24 : 32,
-                fontWeight: 400,
-                letterSpacing: "-0.02em",
-                marginTop: 4,
-                color: s.accent || "var(--ink)",
-              }}
-            >
-              {s.value}
-            </div>
-          </div>
-        ))}
+      <div style={{ marginBottom: isMobile ? 20 : 28 }}>
+        <StatStrip
+          minColWidth={isMobile ? 130 : 150}
+          stats={
+            mode === "after"
+              ? [
+                  { label: "Total deliveries", value: modeItems.length },
+                  {
+                    label: "This week",
+                    value: modeItems.filter(
+                      (x) =>
+                        Date.now() - new Date(x.createdAt).getTime() <
+                        7 * 86400000,
+                    ).length,
+                  },
+                  { label: "In library", value: state.savedCaptions.length },
+                  {
+                    label: "Marked posted",
+                    value: modeItems.filter((x) => x.posted).length,
+                  },
+                ]
+              : [
+                  { label: "Before photos", value: modeItems.length },
+                  {
+                    label: "Personas covered",
+                    value: new Set(modeItems.map((x) => x.personaId)).size,
+                  },
+                  {
+                    label: "Added this week",
+                    value: modeItems.filter(
+                      (x) =>
+                        Date.now() - new Date(x.createdAt).getTime() <
+                        7 * 86400000,
+                    ).length,
+                  },
+                  { label: "After photos", value: modeCounts.after },
+                ]
+          }
+        />
       </div>
 
       {!isMobile && (
@@ -442,60 +415,28 @@ export function ContentPipeline({
           marginBottom: 28,
         }}
       >
-        <div
-          role="tablist"
-          aria-label="Photo type"
-          style={{
-            display: "inline-flex",
-            padding: 4,
-            background: "var(--surface-2)",
-            border: "1px solid var(--line)",
-            borderRadius: 12,
-          }}
-        >
-          {([
-            { id: "after" as const, label: "After photos", count: modeCounts.after },
-            { id: "before" as const, label: "Before library", count: modeCounts.before },
-          ]).map((m) => {
-            const active = mode === m.id;
-            return (
-              <button
-                key={m.id}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setMode(m.id)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "7px 14px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: active ? "var(--surface)" : "transparent",
-                  boxShadow: active ? "var(--shadow-sm)" : "none",
-                  color: "var(--ink)",
-                  fontSize: 13,
-                  fontWeight: active ? 500 : 400,
-                  cursor: "pointer",
-                }}
-              >
-                {m.label}
-                <span
-                  style={{
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: 10,
-                    color: "var(--ink-3)",
-                    padding: "1px 6px",
-                    background: active ? "var(--bg-2)" : "transparent",
-                    borderRadius: 4,
-                  }}
-                >
-                  {m.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <Segmented
+          value={mode}
+          onChange={(v) => setMode(v as PipelineMode)}
+          options={[
+            {
+              value: "after",
+              label: (
+                <>
+                  After photos <TabCount n={modeCounts.after} />
+                </>
+              ),
+            },
+            {
+              value: "before",
+              label: (
+                <>
+                  Before library <TabCount n={modeCounts.before} />
+                </>
+              ),
+            },
+          ]}
+        />
       </div>
       )}
 
@@ -511,98 +452,58 @@ export function ContentPipeline({
           />
         </div>
       ) : (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 28 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 28 }}>
         {personaTabGroups.map((group) => (
           <div key={group.label}>
             <div
               style={{
-                fontSize: 11,
-                fontWeight: 600,
-                textTransform: "uppercase",
+                font: "650 11px var(--font-ui)",
                 letterSpacing: "0.05em",
+                textTransform: "uppercase",
                 color: "var(--ink-3)",
-                margin: "0 0 6px 4px",
+                margin: "0 0 8px 2px",
               }}
             >
               {group.label}
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                padding: 5,
-                background: "var(--surface-2)",
-                border: "1px solid var(--line)",
-                borderRadius: 12,
-                maxWidth: "100%",
-                flexWrap: "wrap",
-                rowGap: 6,
-              }}
-            >
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {group.tabs.map((t) => {
-                const active = tab === t.id;
                 const persona = t.personaId ? PERSONAS[t.personaId] : null;
                 return (
-                  <button
+                  <FilterPill
                     key={t.id}
-                    data-tab-active={active ? "true" : "false"}
+                    selected={tab === t.id}
                     onClick={() => setTab(t.id)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "7px 14px 7px 10px",
-                      borderRadius: 8,
-                      border: "none",
-                      background: active ? "var(--surface)" : "transparent",
-                      boxShadow: active ? "var(--shadow-sm)" : "none",
-                      color: "var(--ink)",
-                      fontSize: 13,
-                      fontWeight: active ? 500 : 400,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {persona ? (
+                    count={counts[t.id]}
+                    label={
                       <span
                         style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: persona.color,
                           display: "inline-flex",
                           alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 10,
+                          gap: 7,
                         }}
                       >
-                        {persona.avatar}
+                        {persona ? (
+                          <span
+                            style={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: 999,
+                              background: persona.color,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              flex: "none",
+                            }}
+                          >
+                            {persona.avatar}
+                          </span>
+                        ) : null}
+                        {t.label}
                       </span>
-                    ) : (
-                      <span
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background:
-                            "linear-gradient(135deg, var(--p-andrea), var(--p-emma), var(--p-olivia))",
-                        }}
-                      />
-                    )}
-                    {t.label}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        fontSize: 10,
-                        color: "var(--ink-3)",
-                        padding: "1px 6px",
-                        background: active ? "var(--bg-2)" : "transparent",
-                        borderRadius: 4,
-                      }}
-                    >
-                      {counts[t.id]}
-                    </span>
-                  </button>
+                    }
+                  />
                 );
               })}
             </div>
@@ -629,7 +530,7 @@ export function ContentPipeline({
                     "calc(12px + env(safe-area-inset-bottom))",
                   background: "var(--surface)",
                   borderTop: "1px solid var(--line)",
-                  boxShadow: "0 -12px 32px rgba(26,24,22,0.12)",
+                  boxShadow: "var(--shadow-card)",
                 }
               : {
                   position: "sticky",
@@ -643,11 +544,17 @@ export function ContentPipeline({
                   background: "var(--surface)",
                   border: "1px solid var(--line)",
                   borderRadius: 12,
-                  boxShadow: "var(--shadow-md)",
+                  boxShadow: "var(--shadow-card)",
                 }
           }
         >
-          <div style={{ fontSize: 13, color: "var(--ink)" }}>
+          <div
+            style={{
+              font: "400 13px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--ink)",
+            }}
+          >
             <strong>{selectedIds.size}</strong>{" "}
             <span style={{ color: "var(--ink-3)" }}>
               selected{filtered.length > 0 ? ` of ${filtered.length}` : ""}
@@ -691,12 +598,15 @@ export function ContentPipeline({
           }}
         >
           <div
-            className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
+            style={{
+              font: "600 16px var(--font-ui)",
+              color: "var(--ink-2)",
+              marginBottom: 6,
+            }}
           >
             No deliveries yet.
           </div>
-          <div style={{ fontSize: 13, marginBottom: 16 }}>
+          <div style={{ font: "400 13px var(--font-ui)", marginBottom: 16 }}>
             Click <strong>n8n setup</strong> above to wire the workflow to
             Supabase.
           </div>
@@ -721,14 +631,17 @@ export function ContentPipeline({
           }}
         >
           <div
-            className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
+            style={{
+              font: "600 16px var(--font-ui)",
+              color: "var(--ink-2)",
+              marginBottom: 6,
+            }}
           >
             {tab === "all"
               ? "No before photos yet."
               : `No before photos for ${PERSONAS[tab as PersonaId].name} yet.`}
           </div>
-          <div style={{ fontSize: 13, marginBottom: 16 }}>
+          <div style={{ font: "400 13px var(--font-ui)", marginBottom: 16 }}>
             {tab === "all"
               ? "Pick a persona tab above, then upload before photos to use in transformation exports."
               : "Upload before photos here — they'll be available when exporting a transformation from any after photo of this persona."}
@@ -771,25 +684,15 @@ export function ContentPipeline({
               marginBottom: 14,
             }}
           >
-            <div
-              className="serif"
-              style={{
-                fontSize: 20,
-                fontWeight: 400,
-                fontStyle: "italic",
-                color: "var(--ink-2)",
-              }}
-            >
+            <h3 style={{ font: "650 15px var(--font-ui)", margin: 0 }}>
               {dateLabel}
-            </div>
+            </h3>
             <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
             <div
               style={{
-                fontSize: 11,
-                fontFamily: "var(--font-geist-mono), monospace",
+                font: "400 12px var(--font-ui)",
+                fontVariantNumeric: "tabular-nums",
                 color: "var(--ink-4)",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
               }}
             >
               {items.length} {items.length === 1 ? "delivery" : "deliveries"}

@@ -1,22 +1,23 @@
 type PerformanceClass = "flop" | "mid" | "hit";
 
+// Porcelain: soft fill + AA -text color per semantic family.
 const TONE: Record<
   PerformanceClass,
   { bg: string; fg: string; label: string }
 > = {
   hit: {
-    bg: "color-mix(in oklab, var(--p-emma) 18%, transparent)",
-    fg: "var(--p-emma)",
+    bg: "var(--success-soft)",
+    fg: "var(--success-text)",
     label: "HIT",
   },
   mid: {
-    bg: "var(--surface-2)",
-    fg: "var(--ink-3)",
+    bg: "var(--neutral-soft)",
+    fg: "var(--neutral-text)",
     label: "MID",
   },
   flop: {
-    bg: "color-mix(in oklab, var(--accent) 14%, transparent)",
-    fg: "var(--accent)",
+    bg: "var(--danger-soft)",
+    fg: "var(--danger-text)",
     label: "FLOP",
   },
 };
@@ -45,20 +46,19 @@ export function PerformanceBadge({
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
-        padding: "2px 6px",
+        padding: "2px 7px",
         borderRadius: 6,
         background: tone.bg,
         color: tone.fg,
-        fontSize: 9,
-        fontFamily: "var(--font-geist-mono), monospace",
-        letterSpacing: "0.08em",
+        font: "700 9.5px var(--font-ui)",
+        fontVariantNumeric: "tabular-nums",
+        letterSpacing: "0.04em",
         textTransform: "uppercase",
-        fontWeight: 600,
       }}
     >
       {tone.label}
       {ratioLabel && (
-        <span style={{ opacity: 0.7, fontWeight: 500 }}>{ratioLabel}</span>
+        <span style={{ opacity: 0.8, fontWeight: 600 }}>{ratioLabel}</span>
       )}
     </span>
   );

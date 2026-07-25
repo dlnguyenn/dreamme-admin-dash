@@ -2,10 +2,18 @@
 
 import * as React from "react";
 import { PageHeader } from "./Shell";
-import { Button, Chip, useToast } from "./ui";
+import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { SpendAddModal } from "./SpendAddModal";
 import { SpendImportCsvModal } from "./SpendImportCsvModal";
+import {
+  CategoryTag,
+  DeltaChip,
+  ErrorBanner,
+  SectionHeader,
+  StatStrip,
+  type Family,
+} from "./porcelain";
 import { API } from "@/lib/supabase";
 import type {
   SpendCategory,
@@ -88,6 +96,15 @@ function lineItemsByVendorMonth(items: SpendLineItem[]) {
   return map;
 }
 
+// "↑ 12%" / "↓ 8%" delta vs a prior value; null when no baseline.
+function pctDelta(cur: number, prev: number): string | null {
+  if (!prev) return null;
+  const d = ((cur - prev) / Math.abs(prev)) * 100;
+  if (!Number.isFinite(d)) return null;
+  const arrow = d >= 0 ? "↑" : "↓";
+  return `${arrow} ${Math.abs(d).toFixed(0)}%`;
+}
+
 export function SpendDashboard() {
   const toast = useToast();
   const [items, setItems] = React.useState<SpendLineItem[]>([]);
@@ -129,9 +146,17 @@ export function SpendDashboard() {
   const mtdAll = items
     .filter((it) => monthKey(it.periodStart) === mtd)
     .reduce((s, it) => s + it.amountUsd, 0);
+  const prevAll = items
+    .filter((it) => monthKey(it.periodStart) === prevMonth)
+    .reduce((s, it) => s + it.amountUsd, 0);
 
   const mtdAI = AI_VENDORS.reduce((s, v) => s + vendorTotal(v, mtd), 0);
+  const prevAI = AI_VENDORS.reduce((s, v) => s + vendorTotal(v, prevMonth), 0);
   const mtdBiz = BUSINESS_VENDORS.reduce((s, v) => s + vendorTotal(v, mtd), 0);
+  const prevBiz = BUSINESS_VENDORS.reduce(
+    (s, v) => s + vendorTotal(v, prevMonth),
+    0,
+  );
 
   const runSync = async () => {
     setSyncing(true);
@@ -179,31 +204,52 @@ export function SpendDashboard() {
 
   if (loading) {
     return (
-      <div style={{ padding: 80, textAlign: "center", color: "var(--ink-3)" }}>
-        <div className="serif" style={{ fontSize: 24, fontStyle: "italic" }}>
-          Loading spend…
-        </div>
+      <div
+        style={{
+          padding: 80,
+          textAlign: "center",
+          color: "var(--ink-3)",
+          font: "400 14px var(--font-ui)",
+        }}
+      >
+        Loading spend…
       </div>
     );
   }
 
+  const stripStat = (label: string, value: number, prev: number) => ({
+    label,
+    value: fmtUSD(value),
+    delta: pctDelta(value, prev) ?? undefined,
+    deltaFamily: (pctDelta(value, prev) ? "neutral" : undefined) as
+      | Family
+      | undefined,
+    note: `vs ${monthLabel(prevMonth)} ${fmtUSD(prev)}`,
+  });
+
   return (
     <>
       <PageHeader
-        eyebrow="Admin · Finance"
-        title={<em>Spend</em>}
+        eyebrow="Admin / Finance"
+        title="Spend"
         subtitle="Birds-eye view of AI + business expenses. API-backed where possible, manual entry otherwise."
-        tint="color-mix(in oklab, var(--p-olivia) 45%, transparent)"
         actions={
           <>
             <Button
-              icon={syncing ? undefined : <Icons.Sparkles />}
+              variant="secondary"
+              icon={syncing ? undefined : <Icons.Refresh />}
               onClick={runSync}
               disabled={syncing}
             >
               {syncing ? "Syncing…" : "Sync now"}
             </Button>
-            <Button onClick={() => setShowImport(true)}>Import CSV</Button>
+            <Button
+              variant="secondary"
+              icon={<Icons.Upload />}
+              onClick={() => setShowImport(true)}
+            >
+              Import CSV
+            </Button>
             <Button
               variant="primary"
               icon={<Icons.Plus />}
@@ -215,42 +261,23 @@ export function SpendDashboard() {
         }
       />
 
-      {error && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--accent)",
-            background:
-              "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-            border:
-              "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-            borderRadius: 10,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 14,
-          marginBottom: 28,
-        }}
-      >
-        <HeadlineCard label="Total MTD" value={fmtUSD(mtdAll)} tone="ink" />
-        <HeadlineCard label="AI MTD" value={fmtUSD(mtdAI)} tone="neutral" />
-        <HeadlineCard
-          label="Business MTD"
-          value={fmtUSD(mtdBiz)}
-          tone="neutral"
-        />
-      </div>
+      <StatStrip
+        minColWidth={200}
+        stats={[
+          stripStat("Total MTD", mtdAll, prevAll),
+          stripStat("AI MTD", mtdAI, prevAI),
+          stripStat("Business MTD", mtdBiz, prevBiz),
+        ]}
+      />
 
-      <SectionLabel>AI spend</SectionLabel>
+      <SectionHeader
+        family="success"
+        icon="Dollar"
+        title="AI spend"
+        meta={`${fmtUSD(mtdAI)} MTD`}
+      />
       <CardGrid>
         {AI_VENDORS.map((v) => (
           <VendorCard
@@ -266,9 +293,12 @@ export function SpendDashboard() {
         ))}
       </CardGrid>
 
-      <div style={{ height: 28 }} />
-
-      <SectionLabel>Business spend</SectionLabel>
+      <SectionHeader
+        family="neutral"
+        icon="CardOutline"
+        title="Business spend"
+        meta={`${fmtUSD(mtdBiz)} MTD`}
+      />
       <CardGrid>
         {BUSINESS_VENDORS.map((v) => (
           <VendorCard
@@ -308,23 +338,6 @@ export function SpendDashboard() {
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.14em",
-        color: "var(--ink-3)",
-        marginBottom: 12,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function CardGrid({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -335,53 +348,6 @@ function CardGrid({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </div>
-  );
-}
-
-function HeadlineCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "ink" | "neutral";
-}) {
-  const isInk = tone === "ink";
-  return (
-    <div
-      style={{
-        padding: "18px 20px",
-        borderRadius: 14,
-        background: isInk ? "var(--ink)" : "var(--surface-2)",
-        color: isInk ? "var(--surface)" : "var(--ink)",
-        border: isInk ? "1px solid var(--ink)" : "1px solid var(--line)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          opacity: isInk ? 0.7 : 0.6,
-          marginBottom: 8,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        className="serif"
-        style={{
-          fontSize: 36,
-          fontWeight: 400,
-          letterSpacing: "-0.025em",
-          lineHeight: 1,
-        }}
-      >
-        {value}
-      </div>
     </div>
   );
 }
@@ -398,18 +364,20 @@ function VendorCard({
   series: Array<{ label: string; value: number }>;
 }) {
   const max = Math.max(1, ...series.map((s) => s.value));
-  const delta = prev > 0 ? ((mtd - prev) / prev) * 100 : null;
+  const delta = pctDelta(mtd, prev);
 
   return (
     <div
       style={{
         padding: "16px 18px",
-        borderRadius: 14,
+        borderRadius: 16,
         border: "1px solid var(--line)",
         background: "var(--surface)",
+        boxShadow: "var(--shadow-card)",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 8,
+        minWidth: 0,
       }}
     >
       <div
@@ -417,67 +385,64 @@ function VendorCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          gap: 8,
         }}
       >
         <div
           style={{
-            fontSize: 12,
-            fontWeight: 500,
-            fontFamily: "var(--font-geist-mono), monospace",
+            font: "650 10.5px var(--font-ui)",
+            letterSpacing: "0.05em",
             textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: "var(--ink-2)",
+            color: "var(--ink-3)",
           }}
         >
           {VENDOR_LABELS[vendor]}
         </div>
-        <Chip tone={VENDOR_CATEGORY[vendor] === "ai" ? "accent" : "neutral"}>
-          {VENDOR_CATEGORY[vendor]}
-        </Chip>
+        <CategoryTag
+          family={VENDOR_CATEGORY[vendor] === "ai" ? "accent" : "neutral"}
+        >
+          {VENDOR_CATEGORY[vendor].toUpperCase()}
+        </CategoryTag>
       </div>
       <div
-        className="serif"
         style={{
-          fontSize: 28,
-          fontWeight: 400,
-          letterSpacing: "-0.02em",
-          lineHeight: 1,
+          font: "700 26px/1 var(--font-ui)",
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-0.01em",
+          color: "var(--ink)",
         }}
       >
         {fmtUSD(mtd)}
       </div>
       <div
         style={{
-          fontSize: 11,
-          color: "var(--ink-3)",
           display: "flex",
           gap: 8,
           alignItems: "center",
+          minHeight: 20,
         }}
       >
-        <span>Last month {fmtUSD(prev)}</span>
-        {delta !== null && Number.isFinite(delta) && (
-          <span
-            style={{
-              color:
-                delta > 0
-                  ? "var(--accent)"
-                  : "color-mix(in oklab, var(--p-olivia) 60%, var(--ink))",
-              fontFamily: "var(--font-geist-mono), monospace",
-              fontSize: 10,
-            }}
-          >
-            {delta > 0 ? "+" : ""}
-            {delta.toFixed(0)}%
-          </span>
+        {delta && (
+          <DeltaChip family="neutral" size={11.5}>
+            {delta}
+          </DeltaChip>
         )}
+        <span
+          style={{
+            font: "400 11.5px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--ink-4)",
+          }}
+        >
+          Last month {fmtUSD(prev)}
+        </span>
       </div>
-      <Sparkline series={series} max={max} />
+      <MonthlyBars series={series} max={max} />
     </div>
   );
 }
 
-function Sparkline({
+function MonthlyBars({
   series,
   max,
 }: {
@@ -496,6 +461,8 @@ function Sparkline({
       preserveAspectRatio="none"
       style={{ display: "block", marginTop: 2 }}
     >
+      {/* baseline gridline */}
+      <line x1={0} y1={H} x2={W} y2={H} stroke="var(--chart-grid)" strokeWidth={1} />
       {series.map((pt, i) => {
         const h = max > 0 ? (pt.value / max) * H : 0;
         const x = i * (barW + BAR_GAP);
@@ -508,16 +475,18 @@ function Sparkline({
               width={barW}
               height={Math.max(h, 1)}
               rx={2}
-              fill="var(--ink-3)"
-              opacity={pt.value > 0 ? 0.55 : 0.18}
+              fill="var(--chart-bar)"
+              opacity={pt.value > 0 ? 0.9 : 0.18}
             />
             <text
               x={x + barW / 2}
               y={H + 11}
               textAnchor="middle"
               fontSize={8}
-              fill="var(--ink-4)"
-              fontFamily="var(--font-geist-mono), monospace"
+              fontWeight={500}
+              fill="var(--ink-3)"
+              fontFamily="var(--font-ui)"
+              style={{ fontVariantNumeric: "tabular-nums" }}
             >
               {pt.label}
             </text>

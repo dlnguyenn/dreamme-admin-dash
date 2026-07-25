@@ -72,8 +72,8 @@ export function ContentCard({
         boxShadow: selected
           ? "0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent)"
           : hover
-            ? "var(--shadow-md)"
-            : "var(--shadow-sm)",
+            ? "var(--shadow-card)"
+            : "var(--shadow-xs)",
       }}
     >
       <div
@@ -173,7 +173,7 @@ export function ContentCard({
                   background: "var(--surface)",
                   border: "1px solid var(--line)",
                   borderRadius: 10,
-                  boxShadow: "var(--shadow-md)",
+                  boxShadow: "var(--shadow-card)",
                   padding: 4,
                   zIndex: 10,
                   animation: "fadeIn 120ms ease",
@@ -272,21 +272,17 @@ export function ContentCard({
               position: "absolute",
               top: 10,
               left: 10,
-              padding: "3px 8px",
+              padding: "3px 9px",
               borderRadius: 999,
-              background:
-                "color-mix(in oklab, var(--p-olivia) 40%, var(--surface))",
-              color: "var(--ink)",
-              fontSize: 10,
-              fontFamily: "var(--font-geist-mono), monospace",
+              // Design-specified overlay pill on top of imagery (allowed literals).
+              background: "rgba(29,29,31,.72)",
+              color: "#F5F5F7",
+              font: "700 10px var(--font-ui)",
+              letterSpacing: "0.05em",
               textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              fontWeight: 500,
               display: "inline-flex",
               alignItems: "center",
               gap: 4,
-              border:
-                "1px solid color-mix(in oklab, var(--p-olivia) 50%, transparent)",
             }}
           >
             <Icons.Check size={10} /> Posted
@@ -298,15 +294,14 @@ export function ContentCard({
               position: "absolute",
               top: 10,
               left: 10,
-              padding: "3px 8px",
+              padding: "3px 9px",
               borderRadius: 999,
-              background: "color-mix(in oklab, var(--ink) 70%, transparent)",
-              color: "var(--surface)",
-              fontSize: 10,
-              fontFamily: "var(--font-geist-mono), monospace",
+              // Design-specified overlay pill on top of imagery (allowed literals).
+              background: "rgba(29,29,31,.72)",
+              color: "#F5F5F7",
+              font: "700 10px var(--font-ui)",
+              letterSpacing: "0.05em",
               textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              fontWeight: 500,
               display: "inline-flex",
               alignItems: "center",
               gap: 4,
@@ -328,9 +323,9 @@ export function ContentCard({
           <PersonaChip persona={persona} size="sm" />
           <span
             style={{
-              fontSize: 11,
+              font: "400 11.5px var(--font-ui)",
+              fontVariantNumeric: "tabular-nums",
               color: "var(--ink-4)",
-              fontFamily: "var(--font-geist-mono), monospace",
             }}
           >
             {formatTime(item.createdAt)}
@@ -339,15 +334,13 @@ export function ContentCard({
         <div
           style={{
             marginTop: 10,
-            fontSize: 12,
+            font: "400 12px/1.5 var(--font-ui)",
             color: "var(--ink-3)",
-            lineHeight: 1.5,
             display: "-webkit-box",
             WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            fontStyle: item.isBefore ? "italic" : "normal",
           }}
         >
           {item.isBefore
@@ -386,11 +379,11 @@ function MenuItem({
         border: "none",
         background: hover
           ? destructive
-            ? "color-mix(in oklab, var(--accent) 10%, var(--surface))"
+            ? "var(--danger-soft)"
             : "var(--surface-2)"
           : "transparent",
-        color: destructive ? "var(--accent)" : "var(--ink)",
-        fontSize: 13,
+        color: destructive ? "var(--danger-text)" : "var(--ink)",
+        font: "400 13px var(--font-ui)",
         textAlign: "left",
         cursor: "pointer",
         transition: "background 120ms ease",

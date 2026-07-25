@@ -33,33 +33,57 @@ export interface NavItem {
   status: "live" | "soon";
   desc: string;
   adminOnly?: boolean;
+  /** Porcelain: quiet group label rendered above this item */
+  group?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: "content", label: "Content Pipeline", icon: "Sparkles", status: "live", desc: "Daily 3-persona output" },
-  { id: "captions", label: "Caption Library", icon: "Message", status: "live", desc: "All captions, searchable" },
+  { id: "content", label: "Content Pipeline", icon: "Sun", status: "live", desc: "Daily 3-persona output", group: "Content" },
+  { id: "captions", label: "Caption Library", icon: "Chat", status: "live", desc: "All captions, searchable" },
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },
-  { id: "comments", label: "Comment Monitoring", icon: "Message", status: "soon", desc: "Replies across personas", adminOnly: true },
+  { id: "comments", label: "Comment Monitoring", icon: "ChatLines", status: "soon", desc: "Replies across personas", adminOnly: true },
   { id: "spy", label: "Spy Tool", icon: "Search", status: "live", desc: "What's going viral in GLP-1", adminOnly: true },
-  { id: "viral-slideshows", label: "Viral Slideshows", icon: "Image", status: "live", desc: "Collect TikTok slideshow images for analysis", adminOnly: true },
-  { id: "our-slideshows", label: "Our Slideshows", icon: "Image", status: "live", desc: "Text-card decks we generate daily", adminOnly: true },
-  { id: "hooks", label: "Hook Analytics", icon: "Hook", status: "live", desc: "What's stopping the scroll" },
+  { id: "viral-slideshows", label: "Viral Slideshows", icon: "Film", status: "live", desc: "Collect TikTok slideshow images for analysis", adminOnly: true },
+  { id: "our-slideshows", label: "Our Slideshows", icon: "Layers", status: "live", desc: "Text-card decks we generate daily", adminOnly: true },
+  { id: "hooks", label: "Hook Analytics", icon: "Music", status: "live", desc: "What's stopping the scroll" },
   { id: "resources", label: "Resources", icon: "Bookmark", status: "live", desc: "Creator toolkit & references" },
   { id: "poster", label: "Content Poster", icon: "Send", status: "soon", desc: "Queue + schedule to TikTok" },
-  { id: "spend", label: "Spend", icon: "Chart", status: "live", desc: "AI + business expenses", adminOnly: true },
-  { id: "growth", label: "Growth AI", icon: "Sparkles", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
-  { id: "marketing", label: "Marketing Efficiency", icon: "Chart", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
+  { id: "spend", label: "Spend", icon: "Dollar", status: "live", desc: "AI + business expenses", adminOnly: true, group: "Growth" },
+  { id: "growth", label: "Growth AI", icon: "Spark", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
+  { id: "marketing", label: "Marketing Efficiency", icon: "Trend", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
   { id: "creatives", label: "Creatives", icon: "Image", status: "live", desc: "Meta ad performance + qualified CPA", adminOnly: true },
-  { id: "requests", label: "Feature Requests", icon: "Bookmark", status: "live", desc: "User-submitted product asks", adminOnly: true },
-  { id: "synthid-research", label: "SynthID Research", icon: "Image", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
-  { id: "image-studio", label: "Image Studio", icon: "Image", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
-  { id: "integrations", label: "Integrations", icon: "Bookmark", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
-  { id: "clippers", label: "Clippers", icon: "Chart", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
-  { id: "support", label: "Support Inbox", icon: "Message", status: "live", desc: "help@ email + in-app feedback triage", adminOnly: true },
+  { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true, group: "Product" },
+  { id: "synthid-research", label: "SynthID Research", icon: "Flask", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
+  { id: "image-studio", label: "Image Studio", icon: "Aperture", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
+  { id: "integrations", label: "Integrations", icon: "Grid", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
+  { id: "clippers", label: "Clippers", icon: "Scissors", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
+  { id: "support", label: "Support Inbox", icon: "Inbox", status: "live", desc: "help@ email + in-app feedback triage", adminOnly: true, group: "Support" },
 ];
 
 export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
   return viewAs === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((n) => !n.adminOnly);
+}
+
+/** Porcelain logo mark — the one true serif left in the product. */
+export function LogoMark({ size = 34 }: { size?: number }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 10,
+        background: "linear-gradient(135deg, #C9B8F5, #E9C6DE)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        font: `italic 600 ${Math.round(size * 0.56)}px ui-serif, Georgia, serif`,
+        color: "#453370",
+        flexShrink: 0,
+      }}
+    >
+      d
+    </div>
+  );
 }
 
 export function Sidebar({
@@ -84,7 +108,7 @@ export function Sidebar({
   /** optional per-tab count pills (e.g. unread support threads) */
   badges?: Partial<Record<DashId, number>>;
 }) {
-  const w = collapsed ? 76 : 260;
+  const w = collapsed ? 76 : 236;
   const items = visibleNavItems(viewAs);
   return (
     <aside
@@ -94,16 +118,15 @@ export function Sidebar({
         height: "100vh",
         position: "sticky",
         top: 0,
-        background: "color-mix(in oklab, var(--surface) 70%, transparent)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
+        background: "var(--bg)",
         borderRight: "1px solid var(--line)",
         display: "flex",
         flexDirection: "column",
-        padding: "20px 14px",
+        padding: "20px 12px 16px",
         transition:
           "width 240ms cubic-bezier(.4,0,.2,1), min-width 240ms cubic-bezier(.4,0,.2,1)",
         zIndex: 10,
+        overflowY: "auto",
       }}
     >
       {/* Brand */}
@@ -112,48 +135,19 @@ export function Sidebar({
           display: "flex",
           alignItems: "center",
           gap: 10,
-          padding: "0 8px",
-          marginBottom: 28,
+          padding: collapsed ? "0 0 16px" : "0 10px 16px",
+          justifyContent: collapsed ? "center" : "flex-start",
           cursor: "pointer",
         }}
         onClick={() => setCollapsed(!collapsed)}
       >
-        <div
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 10,
-            background:
-              "linear-gradient(135deg, var(--p-andrea), var(--p-emma), var(--p-olivia))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow:
-              "0 4px 14px color-mix(in oklab, var(--p-emma) 30%, transparent)",
-            flexShrink: 0,
-          }}
-        >
-          <span
-            className="serif"
-            style={{
-              fontSize: 19,
-              color: "white",
-              fontWeight: 500,
-              fontStyle: "italic",
-              marginTop: -1,
-            }}
-          >
-            d
-          </span>
-        </div>
+        <LogoMark />
         {!collapsed && (
           <div style={{ overflow: "hidden" }}>
             <div
-              className="serif"
               style={{
-                fontSize: 19,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
+                font: "650 15px var(--font-ui)",
+                color: "var(--ink)",
                 whiteSpace: "nowrap",
               }}
             >
@@ -161,35 +155,16 @@ export function Sidebar({
             </div>
             <div
               style={{
-                fontSize: 10,
-                color: "var(--ink-4)",
-                fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                marginTop: 1,
+                font: "600 9.5px var(--font-ui)",
+                letterSpacing: "0.09em",
+                color: "var(--ink-3)",
               }}
             >
-              Internal
+              INTERNAL
             </div>
           </div>
         )}
       </div>
-
-      {!collapsed && (
-        <div
-          style={{
-            fontSize: 10,
-            color: "var(--ink-4)",
-            fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            padding: "0 10px",
-            marginBottom: 8,
-          }}
-        >
-          Dashboards
-        </div>
-      )}
 
       <nav
         style={{
@@ -203,108 +178,127 @@ export function Sidebar({
           const active = current === item.id;
           const IconComp = Icons[item.icon];
           return (
-            <button
-              key={item.id}
-              onClick={() => setCurrent(item.id)}
-              title={collapsed ? item.label : undefined}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: collapsed ? "11px" : "10px 12px",
-                justifyContent: collapsed ? "center" : "flex-start",
-                background: active ? "var(--surface-2)" : "transparent",
-                border: "1px solid",
-                borderColor: active ? "var(--line-2)" : "transparent",
-                borderRadius: 10,
-                fontSize: 13,
-                fontWeight: active ? 500 : 400,
-                color: active ? "var(--ink)" : "var(--ink-2)",
-                textAlign: "left",
-                transition: "background 140ms ease, color 140ms ease",
-                position: "relative",
-              }}
-              onMouseEnter={(e) => {
-                if (!active)
-                  e.currentTarget.style.background = "var(--surface-2)";
-              }}
-              onMouseLeave={(e) => {
-                if (!active)
-                  e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <IconComp
-                size={17}
-                stroke={active ? "var(--ink)" : "var(--ink-3)"}
-              />
-              {!collapsed && (
-                <>
-                  <span style={{ flex: 1 }}>{item.label}</span>
-                  {!!badges?.[item.id] && (
+            <React.Fragment key={item.id}>
+              {item.group && !collapsed && (
+                <div
+                  style={{
+                    font: "600 11px var(--font-ui)",
+                    color: "var(--ink-3)",
+                    padding: "10px 10px 5px",
+                  }}
+                >
+                  {item.group}
+                </div>
+              )}
+              <button
+                onClick={() => setCurrent(item.id)}
+                title={collapsed ? item.label : undefined}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: collapsed ? "9px" : "6.5px 10px",
+                  justifyContent: collapsed ? "center" : "flex-start",
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  border: "none",
+                  borderRadius: 10,
+                  fontFamily: "var(--font-ui)",
+                  fontSize: 13.5,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? "var(--accent-text)" : "var(--ink-2)",
+                  textAlign: "left",
+                  transition: "background 140ms ease, color 140ms ease",
+                  position: "relative",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active)
+                    e.currentTarget.style.background = "var(--neutral-soft)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active)
+                    e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <IconComp
+                  size={16}
+                  stroke={active ? "var(--accent)" : "var(--ink-3)"}
+                />
+                {!collapsed && (
+                  <>
                     <span
                       style={{
-                        minWidth: 18,
-                        height: 18,
-                        padding: "0 5px",
-                        borderRadius: 999,
-                        background: "var(--accent)",
-                        color: "white",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        flex: 1,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                     >
-                      {badges[item.id]! > 99 ? "99+" : badges[item.id]}
+                      {item.label}
                     </span>
-                  )}
-                  {item.status === "soon" && (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: "var(--ink-4)",
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        background: "var(--bg-2)",
-                      }}
-                    >
-                      soon
-                    </span>
-                  )}
-                </>
-              )}
-              {collapsed && !!badges?.[item.id] && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "var(--accent)",
-                  }}
-                />
-              )}
-              {collapsed && item.status === "soon" && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "var(--ink-4)",
-                  }}
-                />
-              )}
-            </button>
+                    {!!badges?.[item.id] && (
+                      <span
+                        style={{
+                          minWidth: 18,
+                          height: 18,
+                          padding: "0 5px",
+                          borderRadius: 999,
+                          background: "var(--accent)",
+                          color: "var(--on-accent)",
+                          font: "650 10.5px var(--font-ui)",
+                          fontVariantNumeric: "tabular-nums",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {badges[item.id]! > 99 ? "99+" : badges[item.id]}
+                      </span>
+                    )}
+                    {item.status === "soon" && (
+                      <span
+                        style={{
+                          font: "650 9px var(--font-ui)",
+                          letterSpacing: "0.05em",
+                          color: "var(--ink-3)",
+                          background: "var(--neutral-soft)",
+                          border: "1px solid var(--line)",
+                          padding: "2px 6px",
+                          borderRadius: 99,
+                        }}
+                      >
+                        SOON
+                      </span>
+                    )}
+                  </>
+                )}
+                {collapsed && !!badges?.[item.id] && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "var(--accent)",
+                    }}
+                  />
+                )}
+                {collapsed && item.status === "soon" && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--ink-4)",
+                    }}
+                  />
+                )}
+              </button>
+            </React.Fragment>
           );
         })}
       </nav>
@@ -312,22 +306,22 @@ export function Sidebar({
       <div
         style={{
           marginTop: "auto",
-          paddingTop: 16,
-          borderTop: "1px solid var(--line)",
+          padding: collapsed ? "14px 0 0" : "14px 4px 0",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
         }}
       >
         {role === "admin" && (
-          <div style={{ marginBottom: 10 }}>
+          <>
             {!collapsed ? (
               <div
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: 4,
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--line)",
+                  background: "var(--bg-2)",
                   borderRadius: 10,
+                  padding: 3,
+                  gap: 2,
                 }}
                 title="Switch between admin and regular-user view"
               >
@@ -350,23 +344,19 @@ export function Sidebar({
                 title={`View: ${viewAs}. Click to toggle.`}
                 style={{
                   width: "100%",
-                  padding: "9px 0",
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--line)",
+                  padding: "7px 0",
+                  background: "var(--bg-2)",
+                  border: "none",
                   borderRadius: 10,
-                  fontSize: 10,
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color:
-                    viewAs === "admin" ? "var(--ink)" : "var(--ink-3)",
+                  font: "650 12px var(--font-ui)",
+                  color: "var(--ink)",
                   cursor: "pointer",
                 }}
               >
                 {viewAs === "admin" ? "A" : "U"}
               </button>
             )}
-          </div>
+          </>
         )}
         <button
           onClick={onLogout}
@@ -374,25 +364,22 @@ export function Sidebar({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            padding: collapsed ? "11px" : "10px 12px",
+            gap: 8,
+            padding: collapsed ? "6px 0" : "2px 8px",
             justifyContent: collapsed ? "center" : "flex-start",
             width: "100%",
             background: "transparent",
-            border: "1px solid transparent",
-            borderRadius: 10,
-            fontSize: 13,
+            border: "none",
+            font: "500 13px var(--font-ui)",
             color: "var(--ink-3)",
             textAlign: "left",
+            cursor: "pointer",
+            transition: "color 140ms ease",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.background = "var(--surface-2)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.background = "transparent")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--ink-2)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--ink-3)")}
         >
-          <Icons.Logout size={16} stroke="var(--ink-3)" />
+          <Icons.SignOut size={15} />
           {!collapsed && "Sign out"}
         </button>
       </div>
@@ -414,19 +401,22 @@ function ViewToggleButton({
       onClick={onClick}
       style={{
         flex: 1,
-        padding: "6px 8px",
+        textAlign: "center",
+        padding: "5px 0",
         border: "none",
-        borderRadius: 7,
+        borderRadius: 8,
         background: active ? "var(--surface)" : "transparent",
-        boxShadow: active ? "var(--shadow-sm)" : "none",
+        boxShadow: active ? "var(--shadow-xs)" : "none",
+        font: `${active ? 650 : 500} 12px var(--font-ui)`,
         color: active ? "var(--ink)" : "var(--ink-3)",
-        fontSize: 11,
-        fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        fontWeight: active ? 500 : 400,
         cursor: "pointer",
         transition: "background 140ms ease, color 140ms ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.color = "var(--ink-2)";
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.color = "var(--ink-3)";
       }}
     >
       {label}
@@ -445,32 +435,17 @@ export function PageHeader({
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
+  /** deprecated — Porcelain has no background aura; kept for call-site compat */
   tint?: string;
 }) {
+  void tint;
   const isMobile = useIsMobile();
   return (
-    <div style={{ marginBottom: isMobile ? 20 : 32, position: "relative" }}>
-      {tint && !isMobile && (
-        <div
-          style={{
-            position: "absolute",
-            top: -40,
-            right: -40,
-            width: 300,
-            height: 200,
-            borderRadius: "50%",
-            background: `radial-gradient(circle, ${tint}, transparent 70%)`,
-            filter: "blur(40px)",
-            opacity: 0.6,
-            pointerEvents: "none",
-            zIndex: -1,
-          }}
-        />
-      )}
+    <div style={{ marginBottom: isMobile ? 20 : 26 }}>
       <div
         style={{
           display: "flex",
-          alignItems: "flex-end",
+          alignItems: "flex-start",
           justifyContent: "space-between",
           gap: isMobile ? 12 : 24,
           flexWrap: "wrap",
@@ -480,25 +455,19 @@ export function PageHeader({
           {eyebrow && (
             <div
               style={{
-                fontSize: 11,
-                fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.14em",
+                font: "500 12px var(--font-ui)",
                 color: "var(--ink-3)",
-                marginBottom: isMobile ? 6 : 10,
               }}
             >
               {eyebrow}
             </div>
           )}
           <h1
-            className="serif"
             style={{
-              fontSize: isMobile ? 26 : 44,
-              fontWeight: 400,
-              margin: 0,
-              lineHeight: 1.05,
-              letterSpacing: "-0.025em",
+              font: `700 ${isMobile ? 28 : 38}px/1.08 var(--font-display)`,
+              margin: "7px 0 10px",
+              letterSpacing: "-0.015em",
+              color: "var(--ink)",
             }}
           >
             {title}
@@ -506,11 +475,10 @@ export function PageHeader({
           {subtitle && !isMobile && (
             <p
               style={{
-                color: "var(--ink-3)",
-                fontSize: 15,
-                margin: "10px 0 0",
-                maxWidth: 620,
-                lineHeight: 1.5,
+                font: "400 14px/1.55 var(--font-ui)",
+                color: "var(--ink-2)",
+                maxWidth: 600,
+                margin: 0,
               }}
             >
               {subtitle}

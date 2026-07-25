@@ -119,11 +119,9 @@ export function SpendAddModal({
         }}
       >
         <div
-          className="serif"
           style={{
-            fontSize: 22,
-            fontWeight: 400,
-            fontStyle: "italic",
+            font: "650 17px var(--font-ui)",
+            color: "var(--ink)",
             marginBottom: 4,
             letterSpacing: "-0.01em",
           }}
@@ -202,14 +200,11 @@ export function SpendAddModal({
           <div
             style={{
               marginTop: 12,
-              padding: "8px 10px",
-              fontSize: 12,
-              color: "var(--accent)",
-              background:
-                "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-              border:
-                "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-              borderRadius: 8,
+              padding: "8px 12px",
+              font: "400 12.5px var(--font-ui)",
+              color: "var(--danger-text)",
+              background: "var(--danger-soft)",
+              borderRadius: 10,
             }}
           >
             {error}
@@ -240,9 +235,10 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "9px 12px",
   fontSize: 13,
-  fontFamily: "inherit",
-  border: "1px solid var(--line)",
-  borderRadius: 8,
+  fontFamily: "var(--font-ui)",
+  fontVariantNumeric: "tabular-nums",
+  border: "1px solid var(--line-2)",
+  borderRadius: 9,
   background: "var(--surface)",
   color: "var(--ink)",
   outline: "none",
@@ -259,10 +255,9 @@ function Field({
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span
         style={{
-          fontSize: 10,
-          fontFamily: "var(--font-geist-mono), monospace",
+          font: "650 10.5px var(--font-ui)",
           textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          letterSpacing: "0.05em",
           color: "var(--ink-3)",
         }}
       >

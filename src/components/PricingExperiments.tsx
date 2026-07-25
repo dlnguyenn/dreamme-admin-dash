@@ -20,6 +20,13 @@ import {
   type PricingExperimentResponse,
   type PricingWeek,
 } from "@/lib/pricing-experiment";
+import {
+  Card,
+  ErrorBanner,
+  SectionHeader,
+  StatusPill,
+  thStyle,
+} from "./porcelain";
 
 interface PricingExperimentDef {
   id: string;
@@ -179,7 +186,7 @@ function Delta({
   goodWhenUp: boolean;
 }) {
   if (pre == null || post == null) {
-    return <span style={{ color: "var(--ink-3)" }}>—</span>;
+    return <span style={{ color: "var(--ink-4)" }}>—</span>;
   }
   const diff = post - pre;
   const up = diff >= 0;
@@ -187,26 +194,29 @@ function Delta({
   const neutral = magnitude < 1.5; // small moves render calm, not colored
   const good = up === goodWhenUp;
   const color = neutral
-    ? "var(--ink-2)"
+    ? "var(--ink)"
     : good
-      ? "color-mix(in oklab, var(--p-olivia) 70%, var(--ink))"
-      : "var(--accent)";
+      ? "var(--success-text)"
+      : "var(--danger-text)";
   const fmt = (v: number) => (unit === "%" ? fmtPct(v) : fmtNum(v));
+  // Porcelain number-first read: quiet pre → bold colored post.
   return (
     <span style={{ fontVariantNumeric: "tabular-nums" }}>
-      {fmt(pre)}{" "}
-      <span style={{ color, fontWeight: 600 }}>
-        → {fmt(post)}
-      </span>
+      <span style={{ color: "var(--ink-4)" }}>{fmt(pre)} → </span>
+      <span style={{ color, fontWeight: 650 }}>{fmt(post)}</span>
     </span>
   );
 }
 
 function ReadRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5 }}>
-      <span style={{ color: "var(--ink-3)" }}>{label}</span>
-      <span style={{ color: "var(--ink)" }}>{children}</span>
+    <div>
+      <div style={{ font: "500 12px var(--font-ui)", color: "var(--ink-3)" }}>
+        {label}
+      </div>
+      <div style={{ font: "400 14px var(--font-ui)", marginTop: 3 }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -230,88 +240,68 @@ function ExperimentCard({
   const readLeft = def.readISO ? daysUntil(def.readISO) : null;
   const ready = readLeft != null && readLeft <= 0;
 
-  const edge = !live
-    ? "var(--ink-3)"
-    : ready
-      ? "var(--accent)"
-      : "color-mix(in oklab, var(--p-emma) 65%, var(--ink))";
-
   return (
-    <div
-      style={{
-        padding: "16px 18px",
-        borderRadius: 14,
-        background: "var(--surface)",
-        border: "1px solid var(--line)",
-        borderLeft: `3px solid ${edge}`,
-      }}
-    >
+    <Card>
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: 12,
+          alignItems: "center",
+          gap: 10,
           flexWrap: "wrap",
-          marginBottom: 8,
         }}
       >
-        <div className="serif" style={{ fontSize: 19, letterSpacing: "-0.02em" }}>
-          {def.title}{" "}
-          <span style={{ color: "var(--ink-3)", fontStyle: "italic" }}>· {def.change}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            style={{
-              fontSize: 10,
-              fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              padding: "3px 8px",
-              borderRadius: 999,
-              color: !live
-                ? "var(--ink-3)"
-                : ready
-                  ? "var(--accent)"
-                  : "color-mix(in oklab, var(--p-olivia) 70%, var(--ink))",
-              background: !live
-                ? "var(--surface-2)"
-                : ready
-                  ? "color-mix(in oklab, var(--accent) 12%, var(--surface))"
-                  : "color-mix(in oklab, var(--p-olivia) 14%, var(--surface))",
-              border: "1px solid var(--line)",
-            }}
+        <span style={{ font: "650 15px var(--font-ui)", color: "var(--ink)" }}>
+          {def.title}
+        </span>
+        <span
+          style={{
+            font: "400 14px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--ink-2)",
+          }}
+        >
+          {def.change}
+        </span>
+        <span
+          style={{
+            marginLeft: "auto",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <StatusPill
+            kind={!live ? "neutral" : ready ? "attention" : "running"}
           >
-            {!live ? "Pending" : ready ? "Ready to read" : "Running"}
-          </span>
-          {live && def.readISO && (
-            <span
-              style={{
-                fontSize: 11,
-                fontFamily: "var(--font-geist-mono), monospace",
-                color: "var(--ink-3)",
-              }}
-            >
-              {ready
-                ? `read due ${fmtDate(def.readISO)}`
-                : `reads ${fmtDate(def.readISO)} · ${readLeft}d`}
-            </span>
-          )}
+            {!live ? "PENDING" : ready ? "READY TO READ" : "RUNNING"}
+          </StatusPill>
           {live && (
             <span
               style={{
-                fontSize: 11,
-                fontFamily: "var(--font-geist-mono), monospace",
+                font: "500 12.5px var(--font-ui)",
                 color: "var(--ink-3)",
+                flex: "none",
               }}
             >
+              {def.readISO &&
+                (ready
+                  ? `read due ${fmtDate(def.readISO)} · `
+                  : `reads ${fmtDate(def.readISO)} · ${readLeft}d · `)}
               live {fmtDate(def.startedISO as string)}
             </span>
           )}
-        </div>
+        </span>
       </div>
 
-      <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>{def.rule}</div>
+      <div
+        style={{
+          font: "400 13.5px/1.6 var(--font-ui)",
+          color: "var(--ink-2)",
+          marginTop: 8,
+        }}
+      >
+        {def.rule}
+      </div>
 
       {!live ? (
         <div
@@ -320,24 +310,27 @@ function ExperimentCard({
             fontSize: 12.5,
             color: "var(--ink-3)",
             background: "var(--surface-2)",
-            border: "1px dashed var(--line)",
+            border: "1px dashed var(--line-2)",
             borderRadius: 10,
+            marginTop: 12,
           }}
         >
-          Not live yet — when the App Store prices flip, set <code>startedISO</code> (and{" "}
-          <code>readISO</code> ≈ +3 weeks) for this card in{" "}
-          <code>PricingExperiments.tsx</code>. The before/after read starts automatically.
+          Not live yet — when the App Store prices flip, set{" "}
+          <code className="mono">startedISO</code> (and{" "}
+          <code className="mono">readISO</code> ≈ +3 weeks) for this card in{" "}
+          <code className="mono">PricingExperiments.tsx</code>. The before/after
+          read starts automatically.
         </div>
       ) : read?.pre && read?.post ? (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-            gap: "6px 28px",
-            padding: "10px 12px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: "12px 20px",
             background: "var(--surface-2)",
-            border: "1px solid var(--line)",
-            borderRadius: 10,
+            borderRadius: 12,
+            padding: "14px 16px",
+            marginTop: 14,
           }}
         >
           <ReadRow label="Total trial CVR">
@@ -375,23 +368,28 @@ function ExperimentCard({
           </ReadRow>
         </div>
       ) : (
-        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+        <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 12 }}>
           {weeks ? "Post-change weeks still maturing — read appears once trials resolve." : "Loading RevenueCat data…"}
         </div>
       )}
 
       <div
         style={{
-          marginTop: 8,
-          fontSize: 11,
-          fontFamily: "var(--font-geist-mono), monospace",
+          display: "flex",
+          gap: 14,
+          flexWrap: "wrap",
+          marginTop: 12,
+          font: "400 11.5px var(--font-ui)",
           color: "var(--ink-3)",
         }}
       >
-        pre = last 4 mature weeks before change · post = weeks since, CVR from mature weeks only ·{" "}
-        {def.file}
+        <span>
+          pre = last 4 mature weeks before change · post = weeks since, CVR
+          from mature weeks only
+        </span>
+        <span className="mono">{def.file}</span>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -400,24 +398,7 @@ function ExperimentCard({
 // ---------------------------------------------------------------------------
 
 function Th({ children, align = "right" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return (
-    <th
-      style={{
-        textAlign: align,
-        padding: "11px 14px",
-        fontSize: 10,
-        fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        color: "var(--ink-3)",
-        borderBottom: "1px solid var(--line)",
-        background: "var(--surface-2)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {children}
-    </th>
-  );
+  return <th style={thStyle(align)}>{children}</th>;
 }
 
 function Td({
@@ -434,7 +415,7 @@ function Td({
       style={{
         textAlign: align,
         padding: "10px 14px",
-        borderBottom: "1px solid var(--line)",
+        borderTop: "1px solid var(--line)",
         color: muted ? "var(--ink-3)" : "var(--ink)",
         fontVariantNumeric: "tabular-nums",
         whiteSpace: "nowrap",
@@ -495,37 +476,12 @@ export function PricingExperiments() {
   }
 
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          color: "var(--ink-3)",
-          marginBottom: 12,
-        }}
-      >
-        Pricing experiments
-      </div>
+    <div>
+      <SectionHeader family="success" icon="Dollar" title="Pricing experiments" />
 
-      {error && (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--accent)",
-            background: "color-mix(in oklab, var(--accent) 10%, var(--surface))",
-            border: "1px solid color-mix(in oklab, var(--accent) 25%, var(--line))",
-            borderRadius: 10,
-          }}
-        >
-          RevenueCat fetch failed: {error}
-        </div>
-      )}
+      {error && <ErrorBanner>RevenueCat fetch failed: {error}</ErrorBanner>}
 
-      <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gap: 14, marginBottom: 16 }}>
         {PRICING_EXPERIMENTS.map((def) => (
           <ExperimentCard key={def.id} def={def} weeks={weeks} todayISO={todayISO} />
         ))}
@@ -535,9 +491,10 @@ export function PricingExperiments() {
         <div
           style={{
             border: "1px solid var(--line)",
-            borderRadius: 14,
+            borderRadius: 16,
             overflowX: "auto",
             background: "var(--surface)",
+            boxShadow: "var(--shadow-card)",
           }}
         >
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -567,12 +524,10 @@ export function PricingExperiments() {
                           colSpan={8}
                           style={{
                             padding: "7px 14px",
-                            fontSize: 11,
-                            fontFamily: "var(--font-geist-mono), monospace",
-                            letterSpacing: "0.06em",
-                            color: "var(--accent)",
-                            background: "color-mix(in oklab, var(--accent) 8%, var(--surface))",
-                            borderBottom: "1px solid var(--line)",
+                            font: "600 12px var(--font-ui)",
+                            color: "var(--accent-text)",
+                            background: "var(--accent-soft)",
+                            borderTop: "1px solid var(--line)",
                           }}
                         >
                           ⚡ {def.title} live — {def.change}
