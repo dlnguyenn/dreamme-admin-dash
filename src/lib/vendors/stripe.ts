@@ -66,13 +66,40 @@ async function stripeFetch<T>(
 
 export interface StripeSubscription {
   id: string; // sub_…
-  status: string; // trialing | active | canceled | …
+  status: string; // trialing | active | canceled | past_due | …
   cancel_at_period_end: boolean;
-  current_period_end: number; // unix seconds
+  /**
+   * Unix seconds. NOTE: as of Stripe API 2025-03-31 (basil) and later — this
+   * account defaults to 2026-05-27.dahlia — the subscription object no longer
+   * carries current_period_end; it lives on each subscription ITEM. We
+   * normalize it back onto the subscription in normalizeSubscription() so
+   * callers (and the confirm dialog) have one stable field.
+   */
+  current_period_end: number;
   customer: string; // cus_…
   trial_end: number | null;
-  items?: { data?: Array<{ id: string; price?: { product?: string } }> };
+  items?: {
+    data?: Array<{
+      id: string;
+      current_period_end?: number;
+      price?: { product?: string };
+    }>;
+  };
   latest_invoice?: string | null;
+}
+
+/** Backfill current_period_end from the items array on newer API versions. */
+export function normalizeSubscription(
+  sub: StripeSubscription,
+): StripeSubscription {
+  if (sub.current_period_end) return sub;
+  const ends = (sub.items?.data ?? [])
+    .map((i) => i.current_period_end ?? 0)
+    .filter(Boolean);
+  return {
+    ...sub,
+    current_period_end: ends.length ? Math.max(...ends) : 0,
+  };
 }
 
 /** si_… subscription item → parent subscription id, or null if gone. */
@@ -92,9 +119,10 @@ export async function resolveSubscriptionFromItem(
 export async function getSubscription(
   subId: string,
 ): Promise<StripeSubscription> {
-  return stripeFetch<StripeSubscription>(
+  const sub = await stripeFetch<StripeSubscription>(
     `/subscriptions/${encodeURIComponent(subId)}`,
   );
+  return normalizeSubscription(sub);
 }
 
 export async function findCustomersByEmail(
@@ -113,7 +141,7 @@ export async function listSubscriptionsForCustomer(
   const res = await stripeFetch<{ data?: StripeSubscription[] }>(
     `/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=10`,
   );
-  return res.data ?? [];
+  return (res.data ?? []).map(normalizeSubscription);
 }
 
 /**
@@ -143,53 +171,86 @@ export interface LatestChargeInfo {
   amount: number; // cents
   currency: string;
   created: number; // unix seconds
+  /** already fully refunded */
   refunded: boolean;
+  /** cents already refunded (partial refunds) */
+  amountRefunded: number;
+  invoiceId: string | null;
 }
 
-/** Latest invoice's payment for a subscription (what a refund would target). */
+export interface StripeChargeRow {
+  id: string;
+  payment_intent: string | null;
+  amount: number;
+  amount_refunded: number;
+  currency: string;
+  created: number;
+  status: string; // succeeded | pending | failed
+  refunded: boolean;
+  invoice: string | null;
+}
+
+/**
+ * The charge a refund would target: the newest SUCCEEDED charge on the
+ * subscription's customer.
+ *
+ * Not read off the invoice: Stripe removed invoice.payment_intent and
+ * invoice.charge in recent API versions (this account is on
+ * 2026-05-27.dahlia), so expanding latest_invoice.payment_intent returns
+ * null for everyone. Listing the customer's charges works across versions.
+ *
+ * Failed charges are excluded on purpose — a past_due subscriber can have
+ * several failed retry charges for the same payment intent, and refunding
+ * one of those is meaningless.
+ *
+ * Returns null when there is nothing refundable (trial that never paid, or
+ * every charge already refunded).
+ */
+export function pickRefundableCharge(
+  charges: StripeChargeRow[],
+): StripeChargeRow | null {
+  const refundable = charges
+    .filter((c) => c.status === "succeeded" && c.amount > c.amount_refunded)
+    .sort((a, b) => b.created - a.created);
+  return refundable[0] ?? null;
+}
+
 export async function getLatestCharge(
   subId: string,
 ): Promise<LatestChargeInfo | null> {
-  const sub = await stripeFetch<{
-    latest_invoice?: {
-      payment_intent?: {
-        id: string;
-        amount: number;
-        currency: string;
-        created: number;
-        latest_charge?: string | { id: string; refunded?: boolean } | null;
-      } | null;
-      amount_paid?: number;
-      currency?: string;
-      created?: number;
-    } | null;
-  }>(
-    `/subscriptions/${encodeURIComponent(subId)}?expand[]=latest_invoice.payment_intent`,
+  const sub = await getSubscription(subId);
+  if (!sub.customer) return null;
+  const res = await stripeFetch<{ data?: StripeChargeRow[] }>(
+    `/charges?customer=${encodeURIComponent(sub.customer)}&limit=20`,
   );
-  const pi = sub.latest_invoice?.payment_intent;
-  if (!pi) {
-    // Trials have a $0 invoice with no payment intent.
-    return null;
-  }
-  const charge = pi.latest_charge;
+  const charge = pickRefundableCharge(res.data ?? []);
+  if (!charge) return null;
   return {
-    paymentIntentId: pi.id,
-    chargeId: typeof charge === "string" ? charge : charge?.id ?? null,
-    amount: pi.amount,
-    currency: pi.currency,
-    created: pi.created,
-    refunded: typeof charge === "object" && !!charge?.refunded,
+    paymentIntentId: charge.payment_intent,
+    chargeId: charge.id,
+    amount: charge.amount,
+    currency: charge.currency,
+    created: charge.created,
+    refunded: charge.refunded,
+    amountRefunded: charge.amount_refunded,
+    invoiceId: charge.invoice,
   };
 }
 
+/**
+ * Refund by charge id when we have one (precise — a payment intent with
+ * failed retries can map to several charges), else by payment intent.
+ */
 export async function createRefund(params: {
-  paymentIntentId: string;
+  chargeId?: string | null;
+  paymentIntentId?: string | null;
   /** cents; omit for full refund */
   amount?: number;
 }): Promise<{ id: string; status: string; amount: number; currency: string }> {
-  const form: Record<string, string> = {
-    payment_intent: params.paymentIntentId,
-  };
+  const form: Record<string, string> = {};
+  if (params.chargeId) form.charge = params.chargeId;
+  else if (params.paymentIntentId) form.payment_intent = params.paymentIntentId;
+  else throw new Error("createRefund needs a chargeId or paymentIntentId");
   if (params.amount) form.amount = String(params.amount);
   return stripeFetch(`/refunds`, { method: "POST", form });
 }

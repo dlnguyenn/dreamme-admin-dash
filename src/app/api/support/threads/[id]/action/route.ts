@@ -51,6 +51,7 @@ const Body = z.object({
   transactionId: z.string().max(200).optional(),
   subscriptionId: z.string().max(200).optional(),
   paymentIntentId: z.string().max(200).optional(),
+  chargeId: z.string().max(200).optional(),
   amountCents: z.number().int().positive().optional(),
   productId: z.string().max(200).optional(),
 });
@@ -194,8 +195,11 @@ export async function POST(
         break;
       }
       case "stripe_refund": {
-        if (!body.paymentIntentId) throw new Error("paymentIntentId required");
+        if (!body.chargeId && !body.paymentIntentId) {
+          throw new Error("chargeId or paymentIntentId required");
+        }
         const refund = await createRefund({
+          chargeId: body.chargeId,
           paymentIntentId: body.paymentIntentId,
           amount: body.amountCents,
         });

@@ -87,10 +87,13 @@ export interface StripeLookupResult {
   };
   latestCharge: {
     paymentIntentId: string | null;
+    chargeId: string | null;
     amount: number;
     currency: string;
     created: number;
     refunded: boolean;
+    amountRefunded: number;
+    invoiceId: string | null;
   } | null;
 }
 
