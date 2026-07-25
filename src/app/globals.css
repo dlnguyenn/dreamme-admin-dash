@@ -1,75 +1,89 @@
 /* ============================================================
-   DreamMe Internal — Theme C "Porcelain" — token set
-   Apple HIG-derived. Pure white, hairline structure, SF type,
-   Apple blue actions, obsidian + gold attention.
+   DreamMe Internal — "Warm Porcelain" — token set
+   Porcelain's structure (semantic families, hairline cards, SF type,
+   one attention-getter per section) on DreamMe's original warm cream
+   + terracotta palette.
    :root = light (primary), [data-theme="dark"] = dark.
-   Text pairings meet WCAG AA (≥4.5:1) in both themes.
-   Source of truth: design_handoff_porcelain/dreamme-porcelain.css
+   Every text pairing verified ≥4.5:1 (AA) in both themes, including
+   category tags sitting on an accent-tinted selected row.
+   Structure ref: design_handoff_porcelain/dreamme-porcelain.css
    ============================================================ */
 
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
-  /* Neutral foundation — Apple whites & grays */
-  --bg: #FFFFFF;
-  --bg-2: #F5F5F7;          /* Apple section gray */
-  --surface: #FFFFFF;       /* hairline-defined card */
-  --surface-2: #F5F5F7;     /* nested well */
-  --ink: #1D1D1F;           /* Apple primary */
-  --ink-2: #424245;
-  --ink-3: #6E6E73;         /* Apple secondary · 4.7:1 */
-  --ink-4: #AEAEB2;
-  --line: #E8E8ED;
-  --line-2: #D2D2D7;        /* Apple hairline */
+  /* Neutral foundation — warm cream (original DreamMe palette) */
+  --bg: #F5F1EA;
+  --bg-2: #EBE4D8;          /* segmented tracks, kanban wells, bar tracks */
+  --surface: #FDFBF7;       /* hairline-defined card */
+  --surface-2: #F9F5EC;     /* nested well */
+  --ink: #1A1816;
+  --ink-2: #3A332E;
+  --ink-3: #6B6159;         /* secondary · 5.8:1 on surface */
+  --ink-4: #9A8F85;
+  --line: #E8DFD0;
+  --line-2: #DACDB6;
 
-  /* Accent — Apple blue */
-  --accent: #0071E3;
-  --accent-2: #0064CC;
-  --accent-soft: #E8F2FF;
-  --accent-text: #0058B0;
+  /* Accent — terracotta. Darkened from the original #C96A4A so white
+     label text on a filled button clears AA (4.9:1); the soft/text
+     variants keep the original hue. */
+  --accent: #B4552F;
+  --accent-2: #9C4526;
+  --accent-soft: #F9E7D9;
+  --accent-text: #96431F;
   --on-accent: #FFFFFF;
 
-  --success: #248A3D;        --success-soft: #E8F6EC;    --success-text: #1B6B31;
-  --warning: #B25000;        --warning-soft: #FBF1DE;    --warning-text: #8F4700;
-  --danger:  #D70015;        --danger-soft:  #FDEBEC;    --danger-text:  #C20012;
-  --info:    #0071E3;        --info-soft:    #E8F2FF;    --info-text:    #0058B0;
-  /* Attention — obsidian pill, gold badge */
-  --attention: #1D1D1F;      --attention-soft: #F7F0E0;  --attention-text: #7A5C10;
-  --neutral: #6E6E73;        --neutral-soft: #EFEFF4;    --neutral-text: #48484D;
+  /* Semantic families — warm-harmonised, derived from the original
+     persona palette (sage, ochre, dusty blue) rather than system hues.
+     danger is pushed to crimson so it stays distinct from terracotta. */
+  --success: #4A7360;        --success-soft: #E3EDE7;    --success-text: #3D6151;
+  --warning: #8A5B14;        --warning-soft: #F5EAD5;    --warning-text: #7A5010;
+  --danger:  #A32036;        --danger-soft:  #F8DFE4;    --danger-text:  #8E1A2E;
+  --info:    #42627D;        --info-soft:    #E4EBF1;    --info-text:    #3A5670;
+  /* Attention — ink pill, warm gold badge */
+  --attention: #1A1816;      --attention-soft: #F2E8CE;  --attention-text: #6E540E;
+  --neutral: #6B6159;        --neutral-soft: #EFE9DE;    --neutral-text: #544C44;
   --on-solid: #FFFFFF;
 
-  --danger-wash: #FCF4F3;
-  --warning-wash: #FAF6EC;
+  --danger-wash: #FBF1F0;
+  --warning-wash: #F9F3E6;
 
-  --link: #0066CC;           /* Apple link blue */
-  --link-2: #0055AA;
+  --link: #96431F;           /* terracotta reads as the brand link */
+  --link-2: #7E3717;
 
-  --hero-bg: #1D1D1F;
-  --hero-ink: #F5F5F7;
-  --hero-mut: rgba(245, 245, 247, 0.6);
-  --hero-chip-bg: rgba(255, 255, 255, 0.12);
-  --hero-chip-up: #7EE99C;
-  --hero-chip-down: #FF9F9A;
+  --hero-bg: #1A1816;
+  --hero-ink: #F5F1EA;
+  --hero-mut: rgba(245, 241, 234, 0.62);
+  --hero-chip-bg: rgba(255, 255, 255, 0.14);
+  --hero-chip-up: #9ED6B6;
+  --hero-chip-down: #F0A2A8;
 
-  --chart-bar: #0071E3;
-  --chart-line: #1D1D1F;
-  --chart-grid: #E8E8ED;
-  --cat-1: #0071E3;  --cat-2: #5856D6;  --cat-3: #0C8DA5;  --cat-4: #248A3D;
-  --cat-5: #B78400;  --cat-6: #C93400;  --cat-7: #C13584;  --cat-8: #7D55C7;
+  --chart-bar: #B4552F;
+  --chart-line: #1A1816;
+  --chart-grid: #E8DFD0;
+  /* Categorical — warm-harmonised (terracotta, sage, dusty blue, plum,
+     ochre, teal, rose, olive) */
+  --cat-1: #B4552F;  --cat-2: #4A7360;  --cat-3: #42627D;  --cat-4: #7B5580;
+  --cat-5: #8A5B14;  --cat-6: #2F6F6B;  --cat-7: #A34A5E;  --cat-8: #6B7038;
 
-  /* No aura — whitespace is the flourish */
-  --aura: none;
+  /* Warm aura — the original DreamMe glow, dialled back so it tints the
+     canvas without competing with the semantic colours */
+  --aura:
+    radial-gradient(ellipse 800px 600px at 15% -10%, rgba(201, 106, 74, 0.10), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 95% 20%, rgba(180, 152, 199, 0.08), transparent 60%),
+    radial-gradient(ellipse 600px 400px at 50% 110%, rgba(139, 168, 136, 0.07), transparent 60%);
 
   --radius: 16px;
   --radius-lg: 24px;
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.02);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.02);
+  /* Warm-tinted shadows (ink 26,24,22 rather than pure black) */
+  --shadow-xs: 0 1px 1px rgba(26, 24, 22, 0.04);
+  --shadow-card: 0 1px 3px rgba(26, 24, 22, 0.05);
   /* Legacy aliases kept for existing components */
   --shadow-sm: var(--shadow-xs);
   --shadow-md: var(--shadow-card);
-  --shadow-lg: 0 20px 60px -30px rgba(0, 0, 0, 0.12);
-  --shadow-drawer: -24px 0 60px -30px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 20px 60px -30px rgba(26, 24, 22, 0.22);
+  --shadow-drawer: -24px 0 60px -30px rgba(26, 24, 22, 0.28);
 
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
@@ -83,129 +97,129 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #000000;
-  --bg-2: #161617;
-  --surface: #1C1C1E;
-  --surface-2: #2C2C2E;
-  --ink: #F5F5F7;
-  --ink-2: #C9C9CE;
-  --ink-3: #98989F;
-  --ink-4: #636366;
-  --line: #303032;
-  --line-2: #48484A;
+  --bg: #151312;
+  --bg-2: #1D1A17;
+  --surface: #1F1C19;
+  --surface-2: #252220;
+  --ink: #F2ECE2;
+  --ink-2: #D9D1C4;
+  --ink-3: #9A9187;
+  --ink-4: #6B6359;
+  --line: #2E2A26;
+  --line-2: #3A352F;
 
-  --accent: #3395FF;         /* deep-navy label keeps AA */
-  --accent-2: #66AFFF;
-  --accent-soft: #132A44;
-  --accent-text: #7ABBFF;
-  --on-accent: #00284F;
+  --accent: #E08565;         /* deep-brown label keeps AA */
+  --accent-2: #EDA184;
+  --accent-soft: #3A241A;
+  --accent-text: #F0A183;
+  --on-accent: #2B1409;
 
-  --success: #30D158;        --success-soft: #12291A;    --success-text: #4FDD75;
-  --warning: #FFC83D;        --warning-soft: #332A10;    --warning-text: #FFD26B;
-  --danger:  #FF453A;        --danger-soft:  #38191A;    --danger-text:  #FF8A84;
-  --info:    #3395FF;        --info-soft:    #132A44;    --info-text:    #7ABBFF;
-  --attention: #F5F5F7;      --attention-soft: #332C17;  --attention-text: #E5C25E;
-  --neutral: #98989F;        --neutral-soft: #2C2C2E;    --neutral-text: #C9C9CE;
-  --on-solid: #1D1D1F;
+  --success: #7FA28F;        --success-soft: #1E2A24;    --success-text: #93B8A4;
+  --warning: #D9A441;        --warning-soft: #2E2416;    --warning-text: #E5B65F;
+  --danger:  #E4677F;        --danger-soft:  #341C22;    --danger-text:  #F08A9C;
+  --info:    #8AA8C2;        --info-soft:    #1E262E;    --info-text:    #9DBBD4;
+  --attention: #F2ECE2;      --attention-soft: #2F2718;  --attention-text: #D9B662;
+  --neutral: #9A9187;        --neutral-soft: #252220;    --neutral-text: #D9D1C4;
+  --on-solid: #1A1816;
 
-  --danger-wash: #221718;
-  --warning-wash: #211D12;
+  --danger-wash: #241A1D;
+  --warning-wash: #221E14;
 
-  --link: #409CFF;
-  --link-2: #70B5FF;
+  --link: #F0A183;
+  --link-2: #F5BBA4;
 
-  --hero-bg: #F5F5F7;
-  --hero-ink: #1D1D1F;
-  --hero-mut: rgba(29, 29, 31, 0.58);
-  --hero-chip-bg: rgba(29, 29, 31, 0.08);
-  --hero-chip-up: #1B6B31;
-  --hero-chip-down: #C20012;
+  --hero-bg: #F2ECE2;
+  --hero-ink: #1A1816;
+  --hero-mut: rgba(26, 24, 22, 0.6);
+  --hero-chip-bg: rgba(26, 24, 22, 0.09);
+  --hero-chip-up: #3D6151;
+  --hero-chip-down: #8E1A2E;
 
-  --chart-bar: #0A84FF;
-  --chart-line: #F5F5F7;
-  --chart-grid: #303032;
-  --cat-1: #0A84FF;  --cat-2: #7D7AFF;  --cat-3: #40C8E0;  --cat-4: #30D158;
-  --cat-5: #FFD60A;  --cat-6: #FF9F0A;  --cat-7: #FF6482;  --cat-8: #BF5AF2;
+  --chart-bar: #E08565;
+  --chart-line: #F2ECE2;
+  --chart-grid: #2E2A26;
+  --cat-1: #E08565;  --cat-2: #7FA28F;  --cat-3: #8AA8C2;  --cat-4: #B392BB;
+  --cat-5: #D9A441;  --cat-6: #5FA8A2;  --cat-7: #DE8098;  --cat-8: #A6AC6B;
 
-  --aura: none;
+  --aura:
+    radial-gradient(ellipse 800px 600px at 15% -10%, rgba(224, 133, 101, 0.07), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 95% 20%, rgba(180, 152, 199, 0.055), transparent 60%),
+    radial-gradient(ellipse 600px 400px at 50% 110%, rgba(139, 168, 136, 0.05), transparent 60%);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-sm: var(--shadow-xs);
   --shadow-md: var(--shadow-card);
-  --shadow-lg: 0 30px 80px -30px rgba(0, 0, 0, 0.8);
-  --shadow-drawer: -24px 0 80px -30px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 30px 80px -30px rgba(0, 0, 0, 0.75);
+  --shadow-drawer: -24px 0 80px -30px rgba(0, 0, 0, 0.75);
 }
 
-/* ---- Persona identity colors (19) — same oklch ring, muted to sit
-   on porcelain. Ring hue per persona; pairs per handoff:
-   light bg oklch(93% 0.04 H) · text oklch(38% 0.11 H)
-   dark bg oklch(30% 0.06 H) · text oklch(86% 0.08 H).
-   --p-<name> = solid identity, --p-<name>-soft = soft bg,
-   --p-<name>-text = AA label on the soft bg. ---- */
+/* ---- Persona identity colors (19) — DreamMe's original hand-picked
+   warm pastels, kept as-is. Each has three variants so the Porcelain
+   components (tags, avatars, rails) work unchanged:
+     --p-<name>       solid identity
+     --p-<name>-soft  soft background (per-theme)
+     --p-<name>-text  label on that soft background — darkened per
+                      persona so every pair clears AA (worst case
+                      4.60:1 light, 5.31:1 dark). In dark the pastels
+                      are already light enough to double as the label. ---- */
 :root {
-  --h-mia: 0;      --h-taylor: 19;  --h-andrea: 38;  --h-rachel: 57;
-  --h-sarah: 76;   --h-hailey: 95;  --h-hannah: 114; --h-ava: 133;
-  --h-olivia: 152; --h-jess: 171;   --h-sydney: 190; --h-alex: 209;
-  --h-max: 228;    --h-abby: 247;   --h-maddy: 266;  --h-jessica: 285;
-  --h-emma: 304;   --h-diane: 323;  --h-maya: 342;
+  --p-andrea: #D89B7A;              --p-emma: #B498C7;
+  --p-olivia: #8BA888;              --p-mia: #C4A484;
+  --p-abby: #A3B5C7;                --p-diane: #C9A0B8;
+  --p-sydney: #D4B896;              --p-maddy: #9EA8B8;
+  --p-hannah: #CFC4A8;              --p-hailey: #D3BD66;
+  --p-taylor: #D4A5A5;              --p-max: #7D9BB0;
+  --p-ava: #9BB87F;                 --p-rachel: #C98A5C;
+  --p-sarah: #E0A85A;               --p-jessica: #9D93C9;
+  --p-alex: #8D9AA0;                --p-maya: #CF8F9E;
+  --p-jess: #7FAEA4;
 
-  --p-mia: oklch(64% 0.11 0);        --p-taylor: oklch(64% 0.11 19);
-  --p-andrea: oklch(64% 0.11 38);    --p-rachel: oklch(64% 0.11 57);
-  --p-sarah: oklch(64% 0.11 76);     --p-hailey: oklch(64% 0.11 95);
-  --p-hannah: oklch(64% 0.11 114);   --p-ava: oklch(64% 0.11 133);
-  --p-olivia: oklch(64% 0.11 152);   --p-jess: oklch(64% 0.11 171);
-  --p-sydney: oklch(64% 0.11 190);   --p-alex: oklch(64% 0.11 209);
-  --p-max: oklch(64% 0.11 228);      --p-abby: oklch(64% 0.11 247);
-  --p-maddy: oklch(64% 0.11 266);    --p-jessica: oklch(64% 0.11 285);
-  --p-emma: oklch(64% 0.11 304);     --p-diane: oklch(64% 0.11 323);
-  --p-maya: oklch(64% 0.11 342);
+  --p-andrea-soft: #F5E4D6;         --p-emma-soft: #EBE2F1;
+  --p-olivia-soft: #DEE8DC;         --p-mia-soft: #EDE4D6;
+  --p-abby-soft: #DDE4EB;           --p-diane-soft: #EDDDE6;
+  --p-sydney-soft: #EDE2CD;         --p-maddy-soft: #DEE2E8;
+  --p-hannah-soft: #ECE6D4;         --p-hailey-soft: #F1ECD2;
+  --p-taylor-soft: #F3E2E2;         --p-max-soft: #DDE6ED;
+  --p-ava-soft: #E4EDD9;            --p-rachel-soft: #F0E1D1;
+  --p-sarah-soft: #F5E6CF;          --p-jessica-soft: #E6E2F1;
+  --p-alex-soft: #E0E5E8;           --p-maya-soft: #F2E0E4;
+  --p-jess-soft: #DAEAE6;
 
-  --p-mia-soft: oklch(93% 0.04 0);        --p-taylor-soft: oklch(93% 0.04 19);
-  --p-andrea-soft: oklch(93% 0.04 38);    --p-rachel-soft: oklch(93% 0.04 57);
-  --p-sarah-soft: oklch(93% 0.04 76);     --p-hailey-soft: oklch(93% 0.04 95);
-  --p-hannah-soft: oklch(93% 0.04 114);   --p-ava-soft: oklch(93% 0.04 133);
-  --p-olivia-soft: oklch(93% 0.04 152);   --p-jess-soft: oklch(93% 0.04 171);
-  --p-sydney-soft: oklch(93% 0.04 190);   --p-alex-soft: oklch(93% 0.04 209);
-  --p-max-soft: oklch(93% 0.04 228);      --p-abby-soft: oklch(93% 0.04 247);
-  --p-maddy-soft: oklch(93% 0.04 266);    --p-jessica-soft: oklch(93% 0.04 285);
-  --p-emma-soft: oklch(93% 0.04 304);     --p-diane-soft: oklch(93% 0.04 323);
-  --p-maya-soft: oklch(93% 0.04 342);
-
-  --p-mia-text: oklch(38% 0.11 0);        --p-taylor-text: oklch(38% 0.11 19);
-  --p-andrea-text: oklch(38% 0.11 38);    --p-rachel-text: oklch(38% 0.11 57);
-  --p-sarah-text: oklch(38% 0.11 76);     --p-hailey-text: oklch(38% 0.11 95);
-  --p-hannah-text: oklch(38% 0.11 114);   --p-ava-text: oklch(38% 0.11 133);
-  --p-olivia-text: oklch(38% 0.11 152);   --p-jess-text: oklch(38% 0.11 171);
-  --p-sydney-text: oklch(38% 0.11 190);   --p-alex-text: oklch(38% 0.11 209);
-  --p-max-text: oklch(38% 0.11 228);      --p-abby-text: oklch(38% 0.11 247);
-  --p-maddy-text: oklch(38% 0.11 266);    --p-jessica-text: oklch(38% 0.11 285);
-  --p-emma-text: oklch(38% 0.11 304);     --p-diane-text: oklch(38% 0.11 323);
-  --p-maya-text: oklch(38% 0.11 342);
+  --p-andrea-text: #815F4C;         --p-emma-text: #6D5D76;
+  --p-olivia-text: #596956;         --p-mia-text: #72614F;
+  --p-abby-text: #5C636B;           --p-diane-text: #715C67;
+  --p-sydney-text: #706251;         --p-maddy-text: #5F636A;
+  --p-hannah-text: #6A6456;         --p-hailey-text: #73673C;
+  --p-taylor-text: #775E5D;         --p-max-text: #556772;
+  --p-ava-text: #5D6B4D;            --p-rachel-text: #7F5A3F;
+  --p-sarah-text: #7D6038;          --p-jessica-text: #665F7E;
+  --p-alex-text: #5F6669;           --p-maya-text: #7F5B62;
+  --p-jess-text: #516963;
 }
 
 [data-theme="dark"] {
-  --p-mia-soft: oklch(30% 0.06 0);        --p-taylor-soft: oklch(30% 0.06 19);
-  --p-andrea-soft: oklch(30% 0.06 38);    --p-rachel-soft: oklch(30% 0.06 57);
-  --p-sarah-soft: oklch(30% 0.06 76);     --p-hailey-soft: oklch(30% 0.06 95);
-  --p-hannah-soft: oklch(30% 0.06 114);   --p-ava-soft: oklch(30% 0.06 133);
-  --p-olivia-soft: oklch(30% 0.06 152);   --p-jess-soft: oklch(30% 0.06 171);
-  --p-sydney-soft: oklch(30% 0.06 190);   --p-alex-soft: oklch(30% 0.06 209);
-  --p-max-soft: oklch(30% 0.06 228);      --p-abby-soft: oklch(30% 0.06 247);
-  --p-maddy-soft: oklch(30% 0.06 266);    --p-jessica-soft: oklch(30% 0.06 285);
-  --p-emma-soft: oklch(30% 0.06 304);     --p-diane-soft: oklch(30% 0.06 323);
-  --p-maya-soft: oklch(30% 0.06 342);
+  --p-andrea-soft: #2E211A;         --p-emma-soft: #25202C;
+  --p-olivia-soft: #1E2620;         --p-mia-soft: #2A251E;
+  --p-abby-soft: #1F2429;           --p-diane-soft: #2B2226;
+  --p-sydney-soft: #2D2720;         --p-maddy-soft: #22252A;
+  --p-hannah-soft: #28251E;         --p-hailey-soft: #2A2616;
+  --p-taylor-soft: #2C2120;         --p-max-soft: #1D252C;
+  --p-ava-soft: #21271B;            --p-rachel-soft: #2B2017;
+  --p-sarah-soft: #2D2615;          --p-jessica-soft: #232030;
+  --p-alex-soft: #1F2325;           --p-maya-soft: #2C1F23;
+  --p-jess-soft: #1B2523;
 
-  --p-mia-text: oklch(86% 0.08 0);        --p-taylor-text: oklch(86% 0.08 19);
-  --p-andrea-text: oklch(86% 0.08 38);    --p-rachel-text: oklch(86% 0.08 57);
-  --p-sarah-text: oklch(86% 0.08 76);     --p-hailey-text: oklch(86% 0.08 95);
-  --p-hannah-text: oklch(86% 0.08 114);   --p-ava-text: oklch(86% 0.08 133);
-  --p-olivia-text: oklch(86% 0.08 152);   --p-jess-text: oklch(86% 0.08 171);
-  --p-sydney-text: oklch(86% 0.08 190);   --p-alex-text: oklch(86% 0.08 209);
-  --p-max-text: oklch(86% 0.08 228);      --p-abby-text: oklch(86% 0.08 247);
-  --p-maddy-text: oklch(86% 0.08 266);    --p-jessica-text: oklch(86% 0.08 285);
-  --p-emma-text: oklch(86% 0.08 304);     --p-diane-text: oklch(86% 0.08 323);
-  --p-maya-text: oklch(86% 0.08 342);
+  --p-andrea-text: #D89B7A;         --p-emma-text: #B498C7;
+  --p-olivia-text: #8BA888;         --p-mia-text: #C4A484;
+  --p-abby-text: #A3B5C7;           --p-diane-text: #C9A0B8;
+  --p-sydney-text: #D4B896;         --p-maddy-text: #9EA8B8;
+  --p-hannah-text: #CFC4A8;         --p-hailey-text: #D3BD66;
+  --p-taylor-text: #D4A5A5;         --p-max-text: #7D9BB0;
+  --p-ava-text: #9BB87F;            --p-rachel-text: #C98A5C;
+  --p-sarah-text: #E0A85A;          --p-jessica-text: #9D93C9;
+  --p-alex-text: #8D9AA0;           --p-maya-text: #CF8F9E;
+  --p-jess-text: #7FAEA4;
 }
 
 * {
@@ -227,9 +241,15 @@ body {
   overflow-x: hidden;
 }
 
-/* Porcelain: no background aura — whitespace is the flourish. */
+/* Warm aura — fixed canvas tint behind the app (set to `none` in
+   --aura to go back to flat porcelain). */
 body::before {
-  content: none;
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: var(--aura);
+  z-index: 0;
 }
 
 #app-root {
