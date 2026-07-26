@@ -270,24 +270,26 @@ export function ThreadDetail({
           </div>
         </div>
 
-        {/* Messages */}
+        {/* Messages — iMessage-style transcript */}
         <div
           style={{
-            padding: "20px 22px",
+            padding: "18px 22px",
             display: "flex",
             flexDirection: "column",
-            gap: 16,
           }}
         >
-          {(detail?.messages ?? []).map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              senderName={
-                thread.counterpart_name || thread.counterpart_email || null
-              }
-            />
-          ))}
+          {buildTranscript(detail?.messages ?? []).map((item) =>
+            item.kind === "separator" ? (
+              <TimeSeparator key={item.key} at={item.at} />
+            ) : (
+              <MessageBubble
+                key={item.message.id}
+                message={item.message}
+                firstInGroup={item.firstInGroup}
+                lastInGroup={item.lastInGroup}
+              />
+            ),
+          )}
           {!detail && !error && (
             <div style={{ color: "var(--ink-3)", fontSize: 13 }}>Loading messages…</div>
           )}
@@ -479,19 +481,99 @@ function DraftCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// iMessage-style transcript: consecutive same-side messages cluster into
+// groups (tight gaps, one tail), and a centered timestamp separates runs
+// more than an hour apart — no per-bubble labels.
+
+const GROUP_GAP_MS = 10 * 60_000;
+const SEPARATOR_GAP_MS = 60 * 60_000;
+
+type TranscriptItem =
+  | { kind: "separator"; key: string; at: string }
+  | {
+      kind: "message";
+      message: SupportMessageRow;
+      firstInGroup: boolean;
+      lastInGroup: boolean;
+    };
+
+function buildTranscript(messages: SupportMessageRow[]): TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const prev = messages[i - 1];
+    const next = messages[i + 1];
+    const gapBefore = prev
+      ? new Date(m.sent_at).getTime() - new Date(prev.sent_at).getTime()
+      : Infinity;
+    const gapAfter = next
+      ? new Date(next.sent_at).getTime() - new Date(m.sent_at).getTime()
+      : Infinity;
+    const separated = gapBefore > SEPARATOR_GAP_MS;
+    if (separated) {
+      items.push({ kind: "separator", key: `sep-${m.id}`, at: m.sent_at });
+    }
+    items.push({
+      kind: "message",
+      message: m,
+      firstInGroup:
+        separated || !prev || prev.direction !== m.direction || gapBefore > GROUP_GAP_MS,
+      lastInGroup:
+        !next || next.direction !== m.direction || gapAfter > GROUP_GAP_MS,
+    });
+  }
+  return items;
+}
+
+function TimeSeparator({ at }: { at: string }) {
+  const d = new Date(at);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const label = `${
+    sameDay
+      ? "Today"
+      : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+  } ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  return (
+    <div
+      style={{
+        textAlign: "center",
+        font: "650 11px var(--font-ui)",
+        color: "var(--ink-4)",
+        margin: "14px 0 10px",
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
 /**
  * Body text with the quoted reply chain ("On … wrote:" + "> …") collapsed
- * behind a Gmail-style ⋯ toggle, so the author's words read clean.
+ * behind a Gmail-style ⋯ toggle. `inverted` restyles for the filled
+ * outgoing bubble (white text on accent).
  */
-function MessageBody({ body }: { body: string | null }) {
+function MessageBody({
+  body,
+  inverted,
+}: {
+  body: string | null;
+  inverted: boolean;
+}) {
   const [showQuoted, setShowQuoted] = React.useState(false);
   const { main, quoted } = React.useMemo(() => splitQuotedText(body), [body]);
+  // --on-accent flips white→deep-brown in dark mode, keeping AA on the
+  // filled bubble in both themes.
+  const dim = inverted
+    ? "color-mix(in oklab, var(--on-accent) 78%, transparent)"
+    : "var(--ink-3)";
   return (
     <div>
       <div
         style={{
-          font: "400 13.5px/1.6 var(--font-ui)",
-          color: "var(--ink)",
+          font: "400 13.5px/1.5 var(--font-ui)",
+          color: inverted ? "var(--on-accent)" : "var(--ink)",
           whiteSpace: "pre-wrap",
           overflowWrap: "anywhere",
         }}
@@ -499,20 +581,22 @@ function MessageBody({ body }: { body: string | null }) {
         {main || "(no text)"}
       </div>
       {quoted && (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 8 }}>
           <button
             onClick={() => setShowQuoted((v) => !v)}
             title={showQuoted ? "Hide quoted text" : "Show quoted text"}
             style={{
-              border: "1px solid var(--line-2)",
-              background: "var(--surface)",
-              color: "var(--ink-3)",
+              border: "none",
+              background: inverted
+                ? "color-mix(in oklab, var(--on-accent) 22%, transparent)"
+                : "var(--line)",
+              color: dim,
               borderRadius: 999,
-              padding: "1px 10px",
+              padding: "2px 10px",
               font: "650 11px var(--font-ui)",
               letterSpacing: "0.08em",
               cursor: "pointer",
-              lineHeight: "16px",
+              lineHeight: "14px",
             }}
           >
             •••
@@ -521,10 +605,10 @@ function MessageBody({ body }: { body: string | null }) {
             <div
               style={{
                 marginTop: 8,
-                paddingLeft: 12,
-                borderLeft: "2px solid var(--line-2)",
-                font: "400 12.5px/1.55 var(--font-ui)",
-                color: "var(--ink-3)",
+                paddingLeft: 10,
+                borderLeft: `2px solid ${inverted ? "color-mix(in oklab, var(--on-accent) 40%, transparent)" : "var(--line-2)"}`,
+                font: "400 12.5px/1.5 var(--font-ui)",
+                color: dim,
                 whiteSpace: "pre-wrap",
                 overflowWrap: "anywhere",
               }}
@@ -540,73 +624,80 @@ function MessageBody({ body }: { body: string | null }) {
 
 function MessageBubble({
   message,
-  senderName,
+  firstInGroup,
+  lastInGroup,
 }: {
   message: SupportMessageRow;
-  senderName: string | null;
+  firstInGroup: boolean;
+  lastInGroup: boolean;
 }) {
   const inbound = message.direction === "inbound";
   const images = (message.attachments ?? []).filter((a) => a.url);
   const files = (message.attachments ?? []).filter((a) => !a.url && a.filename);
-  const who = inbound
-    ? (message.from_email ??
-      senderName ??
-      (message.via === "feedback" ? "In-app" : "User"))
-    : "You";
+
+  // iMessage geometry: 18px corners, with the near-side corners tightened
+  // inside a group; the tight bottom-near corner reads as the tail.
+  const R = 18;
+  const r = 5;
+  const borderRadius = inbound
+    ? `${firstInGroup ? R : r}px ${R}px ${R}px ${r}px`
+    : `${R}px ${firstInGroup ? R : r}px ${r}px ${R}px`;
+
   return (
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
-        gap: 5,
-        alignItems: inbound ? "flex-start" : "flex-end",
+        justifyContent: inbound ? "flex-start" : "flex-end",
+        marginTop: firstInGroup ? 10 : 2,
+        marginBottom: lastInGroup ? 2 : 0,
       }}
+      title={new Date(message.sent_at).toLocaleString()}
     >
-      <div style={{ font: "650 11.5px var(--font-ui)", padding: "0 4px" }}>
-        <span
-          style={{ color: inbound ? "var(--ink-3)" : "var(--accent-text)" }}
-        >
-          {who}
-        </span>
-        <span style={{ color: "var(--ink-4)" }}> · {timeAgo(message.sent_at)}</span>
-      </div>
       <div
         style={{
-          background: inbound ? "var(--surface-2)" : "var(--accent-soft)",
-          borderRadius: 14,
-          padding: "12px 15px",
-          maxWidth: 620,
+          background: inbound ? "var(--surface-2)" : "var(--accent)",
+          borderRadius,
+          padding: "9px 13px",
+          maxWidth: "72%",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          gap: 6,
+          boxShadow: inbound ? "none" : "0 1px 2px rgba(0,0,0,0.08)",
         }}
       >
-        <MessageBody body={message.body_text} />
-      {images.length > 0 && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          {images.map((img, i) => (
-            <a key={i} href={img.url} target="_blank" rel="noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.url}
-                alt={`attachment ${i + 1}`}
-                style={{
-                  width: 90,
-                  height: 90,
-                  objectFit: "cover",
-                  borderRadius: 8,
-                  border: "1px solid var(--line)",
-                }}
-              />
-            </a>
-          ))}
-        </div>
-      )}
-      {files.length > 0 && (
-        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6 }}>
-          {files.map((f) => f.filename).join(", ")}
-        </div>
-      )}
+        <MessageBody body={message.body_text} inverted={!inbound} />
+        {images.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {images.map((img, i) => (
+              <a key={i} href={img.url} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt={`attachment ${i + 1}`}
+                  style={{
+                    width: 110,
+                    height: 110,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    border: "1px solid var(--line)",
+                  }}
+                />
+              </a>
+            ))}
+          </div>
+        )}
+        {files.length > 0 && (
+          <div
+            style={{
+              fontSize: 11,
+              color: inbound
+                ? "var(--ink-4)"
+                : "color-mix(in oklab, var(--on-accent) 78%, transparent)",
+            }}
+          >
+            📎 {files.map((f) => f.filename).join(", ")}
+          </div>
+        )}
       </div>
     </div>
   );
