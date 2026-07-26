@@ -23,6 +23,7 @@ import {
   sendReply,
   timeAgo,
 } from "./api";
+import { splitQuotedText } from "@/lib/support/email-text";
 import { UserSidebar } from "./UserSidebar";
 
 export function ThreadDetail({
@@ -478,6 +479,65 @@ function DraftCard({
   );
 }
 
+/**
+ * Body text with the quoted reply chain ("On … wrote:" + "> …") collapsed
+ * behind a Gmail-style ⋯ toggle, so the author's words read clean.
+ */
+function MessageBody({ body }: { body: string | null }) {
+  const [showQuoted, setShowQuoted] = React.useState(false);
+  const { main, quoted } = React.useMemo(() => splitQuotedText(body), [body]);
+  return (
+    <div>
+      <div
+        style={{
+          font: "400 13.5px/1.6 var(--font-ui)",
+          color: "var(--ink)",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {main || "(no text)"}
+      </div>
+      {quoted && (
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={() => setShowQuoted((v) => !v)}
+            title={showQuoted ? "Hide quoted text" : "Show quoted text"}
+            style={{
+              border: "1px solid var(--line-2)",
+              background: "var(--surface)",
+              color: "var(--ink-3)",
+              borderRadius: 999,
+              padding: "1px 10px",
+              font: "650 11px var(--font-ui)",
+              letterSpacing: "0.08em",
+              cursor: "pointer",
+              lineHeight: "16px",
+            }}
+          >
+            •••
+          </button>
+          {showQuoted && (
+            <div
+              style={{
+                marginTop: 8,
+                paddingLeft: 12,
+                borderLeft: "2px solid var(--line-2)",
+                font: "400 12.5px/1.55 var(--font-ui)",
+                color: "var(--ink-3)",
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {quoted}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   senderName,
@@ -521,15 +581,7 @@ function MessageBubble({
           gap: 8,
         }}
       >
-        <div
-          style={{
-            font: "400 13.5px/1.55 var(--font-ui)",
-            color: "var(--ink)",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {(message.body_text ?? "").trim() || "(no text)"}
-        </div>
+        <MessageBody body={message.body_text} />
       {images.length > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {images.map((img, i) => (

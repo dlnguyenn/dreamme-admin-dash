@@ -32,6 +32,7 @@ import type {
 } from "./types";
 
 const EMAIL_CURSOR_ID = "gmail-inbox";
+const SENT_CURSOR_ID = "gmail-sent";
 const FEEDBACK_CURSOR_ID = "consumer-feedback";
 /** First feedback run only looks back this far (older rows are stale). */
 const FEEDBACK_BOOTSTRAP_DAYS = 14;
@@ -41,6 +42,9 @@ const MAX_TRIAGE_PER_RUN = 10;
 export interface IngestReport {
   emailsFetched: number;
   emailsInserted: number;
+  /** Dan's replies sent from Gmail, matched onto existing threads */
+  sentFetched: number;
+  sentMatched: number;
   feedbackFetched: number;
   feedbackInserted: number;
   threadsTriaged: number;
@@ -240,6 +244,126 @@ async function insertEmailMessage(msg: ParsedInbound): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Leg 1b — Dan's replies sent from Gmail
+//
+// Dan often answers straight from the Gmail app; those messages land in
+// [Gmail]/Sent Mail, never INBOX, so without this leg the dashboard thread
+// is missing his side of the conversation and keeps prompting for a reply
+// that already happened.
+
+async function findThreadByRecipient(email: string): Promise<SupportThreadRow | null> {
+  const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const rows = await spGet<SupportThreadRow[]>(
+    `support_threads?counterpart_email=eq.${encodeURIComponent(email.toLowerCase())}&last_message_at=gte.${encodeURIComponent(cutoff)}&order=last_message_at.desc&limit=1`,
+  );
+  return rows[0] ?? null;
+}
+
+async function ingestSent(report: IngestReport): Promise<void> {
+  if (!imapConfigured()) return; // inbox leg already reported the miss
+  const cursorRow = await getCursor(SENT_CURSOR_ID);
+  const { messages, cursor, truncated } = await fetchNewMessages(
+    {
+      uidvalidity: cursorRow?.uidvalidity ?? null,
+      lastUid: cursorRow?.last_uid ?? null,
+    },
+    "[Gmail]/Sent Mail",
+  );
+  report.sentFetched = messages.length;
+
+  let firstFailedUid: number | null = null;
+  for (const msg of messages) {
+    try {
+      // Match onto an existing thread only — sent mail never creates one.
+      let thread: SupportThreadRow | null = null;
+      const threadId = await findThreadByReferences([
+        ...(msg.messageId ? [msg.messageId] : []),
+        ...msg.references,
+        ...(msg.inReplyTo ? [msg.inReplyTo] : []),
+      ]);
+      if (threadId) {
+        const rows = await spGet<SupportThreadRow[]>(
+          `support_threads?id=eq.${threadId}&limit=1`,
+        );
+        thread = rows[0] ?? null;
+      } else {
+        const recipient = (msg.toEmail ?? "").split(",")[0]?.trim();
+        if (recipient && !recipient.endsWith("@dreamme.life")) {
+          thread = await findThreadByRecipient(recipient);
+        }
+      }
+      if (!thread) continue; // Dan mailing vendors/others — not support
+
+      const sentAt = msg.date.toISOString();
+      const inserted = await spPost<SupportMessageRow>(
+        "support_messages",
+        [
+          {
+            thread_id: thread.id,
+            direction: "outbound",
+            via: "email",
+            message_id: msg.messageId,
+            in_reply_to: msg.inReplyTo,
+            references_ids: [
+              ...msg.references,
+              ...(msg.inReplyTo ? [msg.inReplyTo] : []),
+            ],
+            from_email: msg.rawFromEmail ?? "dan@dreamme.life",
+            to_email: msg.toEmail,
+            subject: msg.subject,
+            body_text: msg.text,
+            body_html: msg.html,
+            imap_uid: msg.uid,
+            sent_at: sentAt,
+          },
+        ],
+        { onConflict: "message_id", resolution: "ignore" },
+      );
+      if (inserted.length === 0) continue; // already stored (dash-sent reply)
+      report.sentMatched++;
+
+      // Dan answered → the thread stops asking for a reply, unless the user
+      // wrote again AFTER this reply (then it stays 'new'/'drafts_ready').
+      const lastInbound = thread.last_inbound_at
+        ? new Date(thread.last_inbound_at).getTime()
+        : 0;
+      if (
+        ["new", "drafts_ready"].includes(thread.status) &&
+        msg.date.getTime() > lastInbound
+      ) {
+        await patchThread(thread.id, {
+          status: "waiting_user",
+          unread: false,
+          last_message_at: sentAt,
+        });
+      }
+    } catch (e) {
+      if (firstFailedUid === null) firstFailedUid = msg.uid;
+      report.legErrors.push(
+        `sent uid ${msg.uid}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  const advanceTo =
+    firstFailedUid !== null
+      ? Math.min(firstFailedUid - 1, cursor.lastUid)
+      : cursor.lastUid;
+  const prevUid = cursorRow?.last_uid ?? 0;
+  if (advanceTo > prevUid || cursorRow?.uidvalidity !== cursor.uidvalidity) {
+    await saveCursor({
+      id: SENT_CURSOR_ID,
+      uidvalidity: cursor.uidvalidity,
+      last_uid: Math.max(advanceTo, 0),
+      last_seen_at: null,
+    });
+  }
+  if (truncated) {
+    report.legErrors.push("sent: poll cap hit — more mail on next run");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Leg 2 — in-app feedback
 
 async function ingestFeedback(report: IngestReport): Promise<void> {
@@ -393,6 +517,8 @@ export async function runIngest(): Promise<IngestReport> {
   const report: IngestReport = {
     emailsFetched: 0,
     emailsInserted: 0,
+    sentFetched: 0,
+    sentMatched: 0,
     feedbackFetched: 0,
     feedbackInserted: 0,
     threadsTriaged: 0,
@@ -405,6 +531,15 @@ export async function runIngest(): Promise<IngestReport> {
   } catch (e) {
     report.legErrors.push(
       `email leg failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  // Sent leg runs BEFORE triage: a thread Dan already answered from Gmail
+  // flips to waiting_user and skips the draft generation entirely.
+  try {
+    await ingestSent(report);
+  } catch (e) {
+    report.legErrors.push(
+      `sent leg failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
   try {

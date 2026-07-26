@@ -111,7 +111,10 @@ function allAddresses(addr: AddressObject | AddressObject[] | undefined): string
     .join(", ");
 }
 
-export async function fetchNewMessages(cursor: ImapCursor): Promise<{
+export async function fetchNewMessages(
+  cursor: ImapCursor,
+  mailboxPath: string = "INBOX",
+): Promise<{
   messages: ParsedInbound[];
   cursor: { uidvalidity: number; lastUid: number };
   /** true when MAX_PER_POLL was hit and more mail remains */
@@ -128,7 +131,7 @@ export async function fetchNewMessages(cursor: ImapCursor): Promise<{
 
   await client.connect();
   try {
-    const mailbox = await client.mailboxOpen("INBOX");
+    const mailbox = await client.mailboxOpen(mailboxPath);
     const uidValidity = Number(mailbox.uidValidity ?? 0);
     let sinceUid =
       cursor.uidvalidity === uidValidity && cursor.lastUid ? cursor.lastUid : 0;

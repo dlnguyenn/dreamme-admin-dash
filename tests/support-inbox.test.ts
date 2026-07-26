@@ -9,6 +9,57 @@ import { normalizeSubject } from "@/lib/support/ingest";
 import { deriveSubscriptions } from "@/lib/support/resolve-user";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
+import { splitQuotedText } from "@/lib/support/email-text";
+
+describe("splitQuotedText", () => {
+  it("splits a Gmail reply at the attribution line (Jennifer's real shape)", () => {
+    const body = `I appreciate that you're working on it, but I just started on a glp-1 and I need to be tracking my foods. I'm requesting a refund.
+
+Thank you,
+Jennifer
+
+On Sun, Jul 26, 2026 at 5:07 PM Dan N <dan@dreamme.life> wrote:
+
+> Hi Jennifer,
+>
+> I'm so sorry you're running into this!`;
+    const { main, quoted } = splitQuotedText(body);
+    expect(main).toMatch(/requesting a refund/);
+    expect(main).not.toMatch(/wrote:/);
+    expect(quoted).toMatch(/^On Sun, Jul 26/);
+    expect(quoted).toMatch(/Hi Jennifer/);
+  });
+
+  it("splits at a bare > block with no attribution", () => {
+    const { main, quoted } = splitQuotedText("Sounds good!\n\n> earlier text\n> more");
+    expect(main).toBe("Sounds good!");
+    expect(quoted).toBe("> earlier text\n> more");
+  });
+
+  it("handles a wrapped attribution line", () => {
+    const body = "Thanks so much\n\nOn Sat, Jul 25, 2026 at 9:00 AM Somebody With A Long Name\n<x@y.com> wrote:\n> hi";
+    const { main, quoted } = splitQuotedText(body);
+    expect(main).toBe("Thanks so much");
+    expect(quoted).toMatch(/^On Sat/);
+  });
+
+  it("splits Outlook-style original-message blocks", () => {
+    const body = "Please cancel.\n\n-----Original Message-----\nFrom: DreamMe\nSent: Friday";
+    const { main, quoted } = splitQuotedText(body);
+    expect(main).toBe("Please cancel.");
+    expect(quoted).toMatch(/Original Message/);
+  });
+
+  it("leaves unquoted bodies and all-quote bodies whole", () => {
+    expect(splitQuotedText("just a normal email")).toEqual({
+      main: "just a normal email",
+      quoted: null,
+    });
+    const allQuote = splitQuotedText("> only quoted\n> lines");
+    expect(allQuote.main).toBe("> only quoted\n> lines");
+    expect(allQuote.quoted).toBeNull();
+  });
+});
 
 describe("resolveCounterpart (Google Group DMARC rewrite)", () => {
   it("recovers the real sender from Reply-To on group-rewritten mail", () => {
