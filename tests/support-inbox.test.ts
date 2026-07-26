@@ -1,8 +1,88 @@
 import { describe, expect, it } from "vitest";
-import { cleanDraft, isDeniedSender, isInternalSender } from "@/lib/support/triage";
+import {
+  cleanDraft,
+  isDeniedSender,
+  isFeedbackMirror,
+  isInternalSender,
+} from "@/lib/support/triage";
 import { normalizeSubject } from "@/lib/support/ingest";
 import { deriveSubscriptions } from "@/lib/support/resolve-user";
 import { replySubject } from "@/lib/support/mailer";
+import { resolveCounterpart } from "@/lib/support/imap";
+
+describe("resolveCounterpart (Google Group DMARC rewrite)", () => {
+  it("recovers the real sender from Reply-To on group-rewritten mail", () => {
+    // Real shape: Angela Pittman via the help@ Google Group, 2026-07-26
+    const r = resolveCounterpart({
+      fromEmail: "help@dreamme.life",
+      fromName: "'angela pittman' via Dreamme Help",
+      replyToEmail: "angelajoel2015@yahoo.com",
+      replyToName: "angela pittman",
+      xOriginalSender: "angelajoel2015@yahoo.com",
+    });
+    expect(r.email).toBe("angelajoel2015@yahoo.com");
+    expect(r.name).toBe("angela pittman");
+  });
+
+  it("falls back to X-Original-Sender and strips the 'via' wrapper", () => {
+    const r = resolveCounterpart({
+      fromEmail: "feedback@dreamme.life",
+      fromName: "'Jane Doe' via DreamMe Feedback",
+      replyToEmail: null,
+      replyToName: null,
+      xOriginalSender: "jane@example.com",
+    });
+    expect(r.email).toBe("jane@example.com");
+    expect(r.name).toBe("Jane Doe");
+  });
+
+  it("leaves normal external senders untouched", () => {
+    const r = resolveCounterpart({
+      fromEmail: "user@gmail.com",
+      fromName: "User",
+      replyToEmail: "elsewhere@spam.com",
+      replyToName: null,
+      xOriginalSender: null,
+    });
+    expect(r.email).toBe("user@gmail.com");
+  });
+
+  it("keeps the alias when no real address is recoverable", () => {
+    const r = resolveCounterpart({
+      fromEmail: "help@dreamme.life",
+      fromName: "Dreamme Help",
+      replyToEmail: "help@dreamme.life",
+      replyToName: null,
+      xOriginalSender: null,
+    });
+    expect(r.email).toBe("help@dreamme.life");
+  });
+});
+
+describe("isFeedbackMirror", () => {
+  it("flags notifier originals by raw From + subject", () => {
+    expect(
+      isFeedbackMirror("feedback@dreamme.life", "[Bug Report] New feedback from Monica"),
+    ).toBe(true);
+  });
+
+  it("does not flag user replies on a mirror thread", () => {
+    expect(
+      isFeedbackMirror(
+        "kpj5psbddn@privaterelay.appleid.com",
+        "Re: [Bug Report] New feedback from Stephanie",
+      ),
+    ).toBe(false);
+    // even if the reply arrives group-rewritten with raw From = feedback@
+    expect(
+      isFeedbackMirror("feedback@dreamme.life", "Re: [Bug Report] New feedback from Stephanie"),
+    ).toBe(false);
+  });
+
+  it("does not flag direct user mail to the feedback@ group", () => {
+    expect(isFeedbackMirror("feedback@dreamme.life", "app keeps crashing")).toBe(false);
+  });
+});
 
 describe("cleanDraft", () => {
   it("strips em and en dashes", () => {

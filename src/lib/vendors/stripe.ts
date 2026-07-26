@@ -204,6 +204,16 @@ export interface StripeChargeRow {
  * Returns null when there is nothing refundable (trial that never paid, or
  * every charge already refunded).
  */
+/** Net cents actually collected from a customer (succeeded minus refunds). */
+export async function sumPaidForCustomer(customerId: string): Promise<number> {
+  const res = await stripeFetch<{ data?: StripeChargeRow[] }>(
+    `/charges?customer=${encodeURIComponent(customerId)}&limit=100`,
+  );
+  return (res.data ?? [])
+    .filter((c) => c.status === "succeeded")
+    .reduce((sum, c) => sum + (c.amount - c.amount_refunded), 0);
+}
+
 export function pickRefundableCharge(
   charges: StripeChargeRow[],
 ): StripeChargeRow | null {

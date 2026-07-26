@@ -33,14 +33,62 @@ export interface ParsedInbound {
   messageId: string | null;
   inReplyTo: string | null;
   references: string[];
+  /** EFFECTIVE sender — real user resolved through Group/notifier rewrites */
   fromEmail: string | null;
   fromName: string | null;
+  /** literal From: header address, before the rewrite fallback */
+  rawFromEmail: string | null;
   toEmail: string | null;
   subject: string | null;
   text: string | null;
   html: string | null;
   attachments: AttachmentInfo[];
   date: Date;
+}
+
+/** Our own addresses — a From: carrying one of these is a rewrite, not a user. */
+const OWN_ALIASES = new Set([
+  "help@dreamme.life",
+  "feedback@dreamme.life",
+  "dan@dreamme.life",
+]);
+
+export function isOwnAlias(email: string | null | undefined): boolean {
+  return !!email && OWN_ALIASES.has(email.toLowerCase());
+}
+
+/**
+ * help@/feedback@ are Google Groups: for external senders Groups rewrites
+ * From: to `'Jane Doe' via Dreamme Help <help@dreamme.life>` (DMARC) and
+ * keeps the real address in Reply-To / X-Original-Sender. The in-app
+ * feedback notifier does the same (From: feedback@, Reply-To: the user).
+ * Without this fallback the thread's counterpart becomes our own alias —
+ * no account match, and a reply would be addressed to ourselves.
+ * Pure — unit-tested.
+ */
+export function resolveCounterpart(h: {
+  fromEmail: string | null;
+  fromName: string | null;
+  replyToEmail: string | null;
+  replyToName: string | null;
+  xOriginalSender: string | null;
+}): { email: string | null; name: string | null } {
+  if (!isOwnAlias(h.fromEmail)) {
+    return { email: h.fromEmail, name: h.fromName };
+  }
+  const real =
+    (!isOwnAlias(h.replyToEmail) && h.replyToEmail) ||
+    (!isOwnAlias(h.xOriginalSender) && h.xOriginalSender) ||
+    null;
+  if (!real) return { email: h.fromEmail, name: h.fromName };
+  // Prefer the Reply-To display name; else strip the "'X' via Dreamme Help"
+  // wrapper from the rewritten From name.
+  let name = h.replyToName || null;
+  if (!name && h.fromName) {
+    const m = h.fromName.match(/^'?(.*?)'?\s+via\s+/i);
+    name = m ? m[1] : h.fromName;
+  }
+  return { email: real.toLowerCase(), name };
 }
 
 function firstAddress(
@@ -115,6 +163,18 @@ export async function fetchNewMessages(cursor: ImapCursor): Promise<{
       if (!msg.source) continue;
       const parsed = await simpleParser(msg.source);
       const from = firstAddress(parsed.from);
+      const replyTo = firstAddress(parsed.replyTo);
+      const xOriginalRaw = parsed.headers.get("x-original-sender");
+      const counterpart = resolveCounterpart({
+        fromEmail: from.email,
+        fromName: from.name,
+        replyToEmail: replyTo.email,
+        replyToName: replyTo.name,
+        xOriginalSender:
+          typeof xOriginalRaw === "string"
+            ? xOriginalRaw.trim().toLowerCase()
+            : null,
+      });
       const refs = Array.isArray(parsed.references)
         ? parsed.references
         : parsed.references
@@ -125,8 +185,9 @@ export async function fetchNewMessages(cursor: ImapCursor): Promise<{
         messageId: parsed.messageId ?? null,
         inReplyTo: parsed.inReplyTo ?? null,
         references: refs,
-        fromEmail: from.email,
-        fromName: from.name,
+        fromEmail: counterpart.email,
+        fromName: counterpart.name,
+        rawFromEmail: from.email,
         toEmail: allAddresses(parsed.to) || null,
         subject: parsed.subject ?? null,
         text: parsed.text ?? null,

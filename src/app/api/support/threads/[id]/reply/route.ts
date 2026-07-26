@@ -78,10 +78,27 @@ export async function POST(
     if (!thread) {
       return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     }
-    const to = thread.counterpart_email ?? parsed.data.to ?? null;
+    const isAlias = (e: string | null | undefined) =>
+      !!e && ["help@dreamme.life", "feedback@dreamme.life"].includes(e.toLowerCase());
+    let to = thread.counterpart_email ?? parsed.data.to ?? null;
+    // A Google-Group DMARC rewrite can leave counterpart_email as our own
+    // alias (pre-fix threads) — let an explicit `to` override it.
+    if (isAlias(to) && parsed.data.to && !isAlias(parsed.data.to)) {
+      to = parsed.data.to;
+    }
     if (!to) {
       return NextResponse.json(
         { ok: false, error: "thread has no reply email — pass `to`" },
+        { status: 400 },
+      );
+    }
+    // Never mail ourselves.
+    if (isAlias(to)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `refusing to send to our own alias (${to}) — the real sender wasn't resolved on this thread; pass \`to\` explicitly`,
+        },
         { status: 400 },
       );
     }

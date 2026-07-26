@@ -29,11 +29,6 @@ const CATEGORIES: ThreadCategory[] = [
 // Spam / non-user deny-list (checked before the Anthropic call)
 
 const DENY_SENDERS = [
-  // The in-app feedback notifier mails feedback@ → itself; the feedback
-  // TABLE leg already ingests the same item, so the email mirror is a
-  // duplicate. User replies on a mirror thread come from real addresses
-  // and still reopen it.
-  "feedback@dreamme.life",
   "mailer-daemon@",
   "postmaster@",
   "noreply@email.apple.com",
@@ -76,6 +71,28 @@ export function isInternalSender(fromEmail: string | null): boolean {
   return INTERNAL_SENDERS.some((s) => from === s);
 }
 
+/**
+ * The in-app feedback notifier mails feedback@ → itself with subject
+ * "[Bug Report] New feedback from X"; the feedback TABLE leg already
+ * ingests the same item, so the email mirror is a duplicate and lands as
+ * status 'ignored'. Keyed on the RAW From (the notifier sets Reply-To to
+ * the user, so the effective sender is no longer feedback@) and excluding
+ * "Re:" so a real user replying on a mirror thread still reopens it.
+ * Pure — unit-tested.
+ */
+export function isFeedbackMirror(
+  rawFromEmail: string | null,
+  subject: string | null,
+): boolean {
+  const from = (rawFromEmail ?? "").toLowerCase();
+  const subj = (subject ?? "").trim();
+  return (
+    from === "feedback@dreamme.life" &&
+    /new feedback from/i.test(subj) &&
+    !/^re:/i.test(subj)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Draft post-processing guards (pure — unit-testable)
 
@@ -98,8 +115,22 @@ export function cleanDraft(raw: string): string {
 // ---------------------------------------------------------------------------
 
 function describeUser(ctx: UserContext | null): string {
-  if (!ctx || ctx.noAccount) {
+  if (!ctx || (ctx.noAccount && ctx.subscriptions.length === 0)) {
     return "No DreamMe account was found for this email address.";
+  }
+  if (ctx.noAccount) {
+    // Stripe-search fallback: billing identity found, app account not.
+    const subs = ctx.subscriptions
+      .map(
+        (s) =>
+          `- STRIPE (web checkout) · ${s.isActive ? "ACTIVE" : "cancelled/inactive"}${s.isTrial ? " (TRIAL)" : ""}${s.expiresAt ? `, period ends ${s.expiresAt.slice(0, 10)}` : ""}`,
+      )
+      .join("\n");
+    return [
+      `No DreamMe app account matched this email, but Stripe DOES have a billing record for it (they subscribed via the website). Paid $${ctx.totalSpentUsd.toFixed(2)} total.`,
+      `Subscriptions:\n${subs}`,
+      "Dan CAN cancel/refund these directly. Note: $0.00 paid + inactive usually means their card was never successfully charged (failed payment), which is worth saying plainly if they're worried about a charge.",
+    ].join("\n");
   }
   const subs = ctx.subscriptions
     .map((s) => {

@@ -24,7 +24,7 @@ import {
   type ConsumerFeedbackRow,
 } from "./consumer-db";
 import { resolveUser } from "./resolve-user";
-import { triageThread } from "./triage";
+import { isFeedbackMirror, triageThread } from "./triage";
 import type {
   SupportDraftRow,
   SupportMessageRow,
@@ -177,15 +177,30 @@ async function insertEmailMessage(msg: ParsedInbound): Promise<boolean> {
     const channel = (msg.toEmail ?? "").includes("feedback@dreamme.life")
       ? "feedback"
       : "help";
+    // Notifier mirrors of in-app feedback park as 'ignored' immediately —
+    // the feedback-table leg carries the real thread. A user replying on a
+    // mirror later reopens it via the normal inbound path.
+    const mirror = isFeedbackMirror(msg.rawFromEmail, msg.subject);
     const rows = await spPost<SupportThreadRow>("support_threads", [
       {
         source: "email",
         channel,
-        status: "new",
-        unread: true,
+        status: mirror ? "ignored" : "new",
+        unread: !mirror,
         subject: msg.subject,
         counterpart_email: msg.fromEmail,
         counterpart_name: msg.fromName,
+        ...(mirror
+          ? {
+              triage: {
+                is_spam: true,
+                classification: "other",
+                urgency: "low",
+                summary: "Feedback notifier mirror (in-app twin exists)",
+                triaged_at: sentAt,
+              },
+            }
+          : {}),
         last_message_at: sentAt,
         last_inbound_at: sentAt,
       },

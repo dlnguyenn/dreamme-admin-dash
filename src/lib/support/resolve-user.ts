@@ -12,6 +12,12 @@ import {
   getCustomerSubscriptions,
   revenueCatConfigured,
 } from "@/lib/vendors/revenuecat";
+import {
+  findCustomersByEmail,
+  listSubscriptionsForCustomer,
+  stripeConfigured,
+  sumPaidForCustomer,
+} from "@/lib/vendors/stripe";
 import type { Store, SubscriptionInfo, UserContext } from "./types";
 
 interface RcEventLite {
@@ -127,6 +133,63 @@ function normalizeStore(v2store: string): string {
   return map[v2store] ?? v2store.toUpperCase();
 }
 
+/**
+ * Fallback for senders with no consumer-users match: search Stripe by the
+ * email address. Web-checkout subscribers often write from their billing
+ * email while their app account uses another (or an Apple relay), so the
+ * DreamMe lookup misses even though Stripe knows exactly who they are.
+ * A hit still reports noAccount (there really is no matched app account)
+ * but carries the Stripe subscription(s), which lights up the cancel/
+ * refund buttons in the sidebar.
+ */
+async function stripeFallback(email: string): Promise<UserContext | null> {
+  if (!stripeConfigured()) return null;
+  try {
+    const customers = await findCustomersByEmail(email);
+    const subscriptions: SubscriptionInfo[] = [];
+    let totalSpentUsd = 0;
+    for (const customer of customers) {
+      const subs = await listSubscriptionsForCustomer(customer.id);
+      if (!subs.length) continue;
+      totalSpentUsd += (await sumPaidForCustomer(customer.id)) / 100;
+      for (const s of subs) {
+        subscriptions.push({
+          store: "STRIPE" as Store,
+          productId: null,
+          transactionId: s.items?.data?.[0]?.id ?? null, // si_… item id
+          originalTransactionId: s.id, // sub_…
+          periodType: s.status === "trialing" ? "TRIAL" : "NORMAL",
+          isTrial: s.status === "trialing",
+          lastEventType: `stripe:${s.status}`,
+          lastEventAt: new Date().toISOString(),
+          expiresAt: s.current_period_end
+            ? new Date(s.current_period_end * 1000).toISOString()
+            : null,
+          cancelReason: null,
+          isActive: s.status === "trialing" || s.status === "active",
+          totalPaidUsd: 0, // per-sub split unknown; customer total below
+        });
+      }
+    }
+    if (!subscriptions.length) return null;
+    if (subscriptions.length === 1) {
+      subscriptions[0].totalPaidUsd = totalSpentUsd;
+    }
+    return {
+      appUserId: null,
+      email: email.toLowerCase(),
+      name: null,
+      journeyStage: null,
+      subscriptions,
+      totalSpentUsd,
+      noAccount: true,
+      sandboxOnly: false,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveUser(
   email: string | null,
   knownUserId?: string | null,
@@ -137,6 +200,10 @@ export async function resolveUser(
       ? await findUserByEmail(email).catch(() => null)
       : null;
   if (!user) {
+    if (email) {
+      const viaStripe = await stripeFallback(email);
+      if (viaStripe) return viaStripe;
+    }
     return { ...EMPTY_CONTEXT, email: email?.toLowerCase() ?? null };
   }
 
