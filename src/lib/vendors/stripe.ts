@@ -175,16 +175,16 @@ export async function cancelSubscription(
   subId: string,
   opts: { atPeriodEnd: boolean },
 ): Promise<StripeSubscription> {
-  if (opts.atPeriodEnd) {
-    return stripeFetch<StripeSubscription>(
-      `/subscriptions/${encodeURIComponent(subId)}`,
-      { method: "POST", form: { cancel_at_period_end: "true" } },
-    );
-  }
-  return stripeFetch<StripeSubscription>(
-    `/subscriptions/${encodeURIComponent(subId)}`,
-    { method: "DELETE" },
-  );
+  const sub = opts.atPeriodEnd
+    ? await stripeFetch<StripeSubscription>(
+        `/subscriptions/${encodeURIComponent(subId)}`,
+        { method: "POST", form: { cancel_at_period_end: "true" } },
+      )
+    : await stripeFetch<StripeSubscription>(
+        `/subscriptions/${encodeURIComponent(subId)}`,
+        { method: "DELETE" },
+      );
+  return normalizeSubscription(sub);
 }
 
 export interface LatestChargeInfo {

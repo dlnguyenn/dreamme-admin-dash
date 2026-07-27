@@ -17,7 +17,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { getThread, logAction, supportDbConfigured } from "@/lib/support/db";
+import {
+  getThread,
+  logAction,
+  patchThread,
+  supportDbConfigured,
+} from "@/lib/support/db";
+import { applyActionToContext } from "@/lib/support/action-effects";
 import {
   cancelSubscription,
   createRefund,
@@ -227,6 +233,21 @@ export async function POST(
       status: "success",
       error: null,
     });
+
+    // Flip the sidebar immediately (Active → closed / won't renew / paid
+    // total) — RC's webhook takes minutes to reflect what we just did.
+    const updatedCtx = applyActionToContext(thread.user_context, {
+      type: body.type,
+      subscriptionId:
+        (response.subscriptionId as string | undefined) ?? body.subscriptionId,
+      currentPeriodEnd: (response.current_period_end as number | undefined) ?? null,
+      refundedCents: (response.amount as number | undefined) ?? null,
+      at: new Date().toISOString(),
+    });
+    if (updatedCtx) {
+      await patchThread(id, { user_context: updatedCtx }).catch(() => {});
+    }
+
     return NextResponse.json({ ok: true, action: logged, response });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

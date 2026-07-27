@@ -13,6 +13,8 @@ import {
   planFromPeriod,
 } from "@/lib/support/resolve-user";
 import { planFromStripeRecurring } from "@/lib/vendors/stripe";
+import { applyActionToContext } from "@/lib/support/action-effects";
+import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
 import { splitQuotedText } from "@/lib/support/email-text";
@@ -286,6 +288,110 @@ describe("mergeConsumerSubscriptions", () => {
     const [m] = mergeConsumerSubscriptions([sub], [{ ...row, store: "stripe" }]);
     expect(m.plan).toBeNull();
     expect(m.autoRenew).toBeNull();
+  });
+});
+
+describe("applyActionToContext", () => {
+  const stripeSub: SubscriptionInfo = {
+    store: "STRIPE",
+    productId: null,
+    transactionId: "si_1",
+    originalTransactionId: "sub_abc",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "INITIAL_PURCHASE",
+    lastEventAt: "2026-07-17T00:00:00Z",
+    expiresAt: "2027-07-17T00:00:00Z",
+    cancelReason: null,
+    isActive: true,
+    totalPaidUsd: 69.99,
+    plan: "yearly",
+    startedAt: "2026-07-17T00:00:00Z",
+    autoRenew: true,
+    renewals: 0,
+  };
+  const ctx: UserContext = {
+    appUserId: "u1",
+    email: "x@y.com",
+    name: null,
+    journeyStage: null,
+    subscriptions: [stripeSub],
+    totalSpentUsd: 69.99,
+    noAccount: false,
+    sandboxOnly: false,
+  };
+  const at = "2026-07-27T20:00:00Z";
+
+  it("cancel_now flips Active → closed immediately", () => {
+    const out = applyActionToContext(ctx, {
+      type: "stripe_cancel_now",
+      subscriptionId: "sub_abc",
+      at,
+    })!;
+    expect(out.subscriptions[0].isActive).toBe(false);
+    expect(out.subscriptions[0].autoRenew).toBe(false);
+    expect(out.subscriptions[0].expiresAt).toBe(at);
+  });
+
+  it("cancel_at_period_end keeps access but marks won't-renew", () => {
+    const out = applyActionToContext(ctx, {
+      type: "stripe_cancel_at_period_end",
+      subscriptionId: "sub_abc",
+      currentPeriodEnd: 1784678400,
+      at,
+    })!;
+    expect(out.subscriptions[0].isActive).toBe(true);
+    expect(out.subscriptions[0].autoRenew).toBe(false);
+    expect(out.subscriptions[0].expiresAt).toBe(
+      new Date(1784678400 * 1000).toISOString(),
+    );
+  });
+
+  it("refund reduces the paid totals", () => {
+    const out = applyActionToContext(ctx, {
+      type: "stripe_refund",
+      refundedCents: 6999,
+      at,
+    })!;
+    expect(out.subscriptions[0].totalPaidUsd).toBe(0);
+    expect(out.totalSpentUsd).toBe(0);
+  });
+
+  it("play refund+revoke closes the Google sub", () => {
+    const play = { ...stripeSub, store: "PLAY_STORE" as const, originalTransactionId: "GPA.1" };
+    const out = applyActionToContext(
+      { ...ctx, subscriptions: [play] },
+      { type: "rc_play_refund_revoke", at },
+    )!;
+    expect(out.subscriptions[0].isActive).toBe(false);
+    expect(out.subscriptions[0].cancelReason).toBe("CUSTOMER_SUPPORT");
+  });
+
+  it("targets the exact sub_ match, falling back to first store match", () => {
+    const two = {
+      ...ctx,
+      subscriptions: [
+        { ...stripeSub, originalTransactionId: "sub_other" },
+        { ...stripeSub, originalTransactionId: "sub_abc", totalPaidUsd: 10 },
+      ],
+    };
+    const out = applyActionToContext(two, {
+      type: "stripe_cancel_now",
+      subscriptionId: "sub_abc",
+      at,
+    })!;
+    expect(out.subscriptions[0].isActive).toBe(true); // untouched
+    expect(out.subscriptions[1].isActive).toBe(false);
+  });
+
+  it("returns null when there is nothing to update", () => {
+    expect(applyActionToContext(null, { type: "stripe_cancel_now", at })).toBeNull();
+    expect(
+      applyActionToContext(
+        { ...ctx, subscriptions: [{ ...stripeSub, store: "APP_STORE" }] },
+        { type: "stripe_cancel_now", at },
+      ),
+    ).toBeNull();
   });
 });
 
