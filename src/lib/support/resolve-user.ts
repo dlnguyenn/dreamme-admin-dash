@@ -231,34 +231,98 @@ export function overrideStripeTotals(
   };
 }
 
+export interface StripeSubState {
+  /** si_… item id the state belongs to (matches SubscriptionInfo.transactionId) */
+  itemId: string | null;
+  status: string;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd: number | null;
+  endedAt: number | null;
+}
+
 /**
- * Find the Stripe customer(s) behind the STRIPE subscriptions (via the
- * si_… item id from rc_events, falling back to email search) and sum
- * their succeeded, refund-netted charges. Returns null when nothing
- * could be resolved — callers keep the RC-derived numbers.
+ * Override RC-derived STRIPE subscription state with Stripe's own: RC's
+ * Stripe sync can miss both money AND lifecycle (a dash-cancelled sub kept
+ * showing 2027 expiry because RC never emitted the cancellation). Pure —
+ * exported for tests.
  */
-async function fetchStripePaidUsd(
+export function applyStripeStates(
+  subs: SubscriptionInfo[],
+  states: StripeSubState[],
+): SubscriptionInfo[] {
+  if (!states.length) return subs;
+  const stripeCount = subs.filter((s) => s.store === "STRIPE").length;
+  return subs.map((s) => {
+    if (s.store !== "STRIPE") return s;
+    const st =
+      states.find((x) => x.itemId && x.itemId === s.transactionId) ??
+      // unambiguous when there's exactly one of each
+      (stripeCount === 1 && states.length === 1 ? states[0] : undefined);
+    if (!st) return s;
+    const givesAccess = ["trialing", "active", "past_due"].includes(st.status);
+    const endUnix = st.endedAt ?? st.currentPeriodEnd;
+    return {
+      ...s,
+      isActive: givesAccess,
+      isTrial: st.status === "trialing",
+      autoRenew: givesAccess ? !st.cancelAtPeriodEnd : false,
+      expiresAt: endUnix ? new Date(endUnix * 1000).toISOString() : s.expiresAt,
+      lastEventType: `stripe:${st.status}`,
+    };
+  });
+}
+
+/**
+ * The Stripe truth behind STRIPE subscriptions (via the si_… item id from
+ * rc_events, falling back to email search): the refund-netted paid total
+ * for the customer(s), plus each subscription's live state. Null when
+ * nothing could be resolved — callers keep the RC-derived numbers.
+ */
+async function fetchStripeTruth(
   subs: SubscriptionInfo[],
   email: string | null,
-): Promise<number | null> {
+): Promise<{ paidUsd: number; states: StripeSubState[] } | null> {
   if (!stripeConfigured()) return null;
   if (!subs.some((s) => s.store === "STRIPE")) return null;
   try {
     const customers = new Set<string>();
+    const states: StripeSubState[] = [];
+    const noteSub = (sub: {
+      status: string;
+      cancel_at_period_end: boolean;
+      current_period_end: number;
+      ended_at?: number | null;
+      customer: string;
+      items?: { data?: Array<{ id: string }> };
+    }) => {
+      customers.add(sub.customer);
+      states.push({
+        itemId: sub.items?.data?.[0]?.id ?? null,
+        status: sub.status,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+        currentPeriodEnd: sub.current_period_end || null,
+        endedAt: sub.ended_at ?? null,
+      });
+    };
+
     for (const s of subs) {
       if (s.store !== "STRIPE" || !s.transactionId?.startsWith("si_")) continue;
       const subId = await resolveSubscriptionFromItem(s.transactionId);
       if (!subId) continue;
       const sub = await getSubscription(subId).catch(() => null);
-      if (sub?.customer) customers.add(sub.customer);
+      if (sub?.customer) noteSub(sub);
     }
     if (customers.size === 0 && email) {
-      for (const c of await findCustomersByEmail(email)) customers.add(c.id);
+      for (const c of await findCustomersByEmail(email)) {
+        for (const sub of await listSubscriptionsForCustomer(c.id)) {
+          noteSub(sub);
+        }
+      }
     }
     if (customers.size === 0) return null;
     let cents = 0;
     for (const id of customers) cents += await sumPaidForCustomer(id);
-    return cents / 100;
+    return { paidUsd: cents / 100, states };
   } catch {
     return null;
   }
@@ -396,18 +460,20 @@ export async function resolveUser(
     }
   }
 
-  // Stripe money truth comes from Stripe, not the RC event stream (which
-  // misses failed-then-retried charges entirely).
-  const stripePaid = await fetchStripePaidUsd(
+  // Stripe money AND lifecycle truth come from Stripe, not the RC event
+  // stream (which misses failed-then-retried charges and can skip
+  // cancellation events entirely).
+  const stripeTruth = await fetchStripeTruth(
     derived.subscriptions,
     user.email ?? email,
   );
   let { subscriptions, totalSpentUsd } = derived;
-  if (stripePaid !== null) {
+  if (stripeTruth !== null) {
+    subscriptions = applyStripeStates(subscriptions, stripeTruth.states);
     ({ subscriptions, totalSpentUsd } = overrideStripeTotals(
       subscriptions,
       totalSpentUsd,
-      stripePaid,
+      stripeTruth.paidUsd,
     ));
   }
 

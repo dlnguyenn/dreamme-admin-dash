@@ -79,6 +79,8 @@ export interface StripeSubscription {
   customer: string; // cus_…
   trial_end: number | null;
   start_date?: number | null;
+  /** unix seconds — set once the subscription is fully canceled */
+  ended_at?: number | null;
   items?: {
     data?: Array<{
       id: string;

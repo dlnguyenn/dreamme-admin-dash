@@ -7,6 +7,7 @@ import {
 } from "@/lib/support/triage";
 import { normalizeSubject } from "@/lib/support/ingest";
 import {
+  applyStripeStates,
   deriveSubscriptions,
   mergeConsumerSubscriptions,
   overrideStripeTotals,
@@ -392,6 +393,64 @@ describe("applyActionToContext", () => {
         { type: "stripe_cancel_now", at },
       ),
     ).toBeNull();
+  });
+});
+
+describe("applyStripeStates", () => {
+  const rcSub: SubscriptionInfo = {
+    store: "STRIPE",
+    productId: "prod_x",
+    transactionId: "si_1",
+    originalTransactionId: "si_1",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "CANCELLATION",
+    lastEventAt: "2026-07-25T00:00:00Z",
+    expiresAt: "2027-07-25T00:00:00Z", // stale RC expiry
+    cancelReason: "BILLING_ERROR",
+    isActive: true, // RC never saw the cancel
+    totalPaidUsd: 0,
+    plan: "yearly",
+    startedAt: "2026-07-17T00:00:00Z",
+    autoRenew: false,
+    renewals: 0,
+  };
+
+  it("closes a sub Stripe says is canceled even when RC missed it (Alyssa)", () => {
+    const [out] = applyStripeStates(
+      [rcSub],
+      [
+        {
+          itemId: "si_1",
+          status: "canceled",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: 1785095047,
+          endedAt: 1785179700,
+        },
+      ],
+    );
+    expect(out.isActive).toBe(false);
+    expect(out.autoRenew).toBe(false);
+    expect(out.expiresAt).toBe(new Date(1785179700 * 1000).toISOString());
+    expect(out.lastEventType).toBe("stripe:canceled");
+  });
+
+  it("matches the lone stripe sub even when item ids differ", () => {
+    const [out] = applyStripeStates(
+      [{ ...rcSub, transactionId: "si_other" }],
+      [{ itemId: "si_new", status: "active", cancelAtPeriodEnd: true, currentPeriodEnd: 1785095047, endedAt: null }],
+    );
+    expect(out.isActive).toBe(true);
+    expect(out.autoRenew).toBe(false); // cancel_at_period_end → won't renew
+  });
+
+  it("leaves non-Stripe subs and unmatched subs alone", () => {
+    const apple = { ...rcSub, store: "APP_STORE" as const };
+    const [out] = applyStripeStates(
+      [apple],
+      [{ itemId: "si_1", status: "canceled", cancelAtPeriodEnd: false, currentPeriodEnd: null, endedAt: null }],
+    );
+    expect(out.isActive).toBe(true);
   });
 });
 
