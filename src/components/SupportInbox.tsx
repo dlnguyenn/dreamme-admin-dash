@@ -134,7 +134,25 @@ export function SupportInbox({
         }
       />
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+      {/* Mobile: one thumb-scrollable row (wrapping eats vertical space);
+          desktop: wrap as before. Negative margins let the row bleed to the
+          screen edge under the shell's 16px padding. */}
+      <div
+        style={
+          isMobile
+            ? {
+                display: "flex",
+                gap: 8,
+                marginBottom: 14,
+                overflowX: "auto",
+                whiteSpace: "nowrap",
+                margin: "0 -16px 14px",
+                padding: "0 16px 4px",
+                scrollbarWidth: "none",
+              }
+            : { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }
+        }
+      >
         {FILTERS.map((f) => (
           <FilterPill
             key={f.id}

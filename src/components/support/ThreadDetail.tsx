@@ -336,7 +336,7 @@ export function ThreadDetail({
               onChange={(e) => setCompose(e.target.value)}
               placeholder={`Reply to ${replyTo}…`}
               rows={5}
-              style={textareaStyle}
+              style={textareaStyle(isMobile)}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <Button
@@ -408,18 +408,24 @@ export function ThreadDetail({
   );
 }
 
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid var(--line-2)",
-  background: "var(--surface)",
-  color: "var(--ink)",
-  fontSize: 13,
-  lineHeight: 1.5,
-  fontFamily: "inherit",
-  resize: "vertical",
-};
+/**
+ * Mobile textareas must be ≥16px or iOS Safari zooms the whole page on
+ * focus; desktop keeps the denser 13px.
+ */
+function textareaStyle(isMobile: boolean): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid var(--line-2)",
+    background: "var(--surface)",
+    color: "var(--ink)",
+    fontSize: isMobile ? 16 : 13,
+    lineHeight: 1.5,
+    fontFamily: "inherit",
+    resize: "vertical",
+  };
+}
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -448,6 +454,7 @@ function DraftCard({
   onSend: () => void;
   disabled: boolean;
 }) {
+  const isMobile = useIsMobile();
   return (
     <div
       style={{
@@ -470,7 +477,7 @@ function DraftCard({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={9}
-        style={{ ...textareaStyle, fontSize: 12.5 }}
+        style={{ ...textareaStyle(isMobile), fontSize: isMobile ? 16 : 12.5 }}
       />
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button variant="primary" size="sm" onClick={onSend} disabled={disabled}>

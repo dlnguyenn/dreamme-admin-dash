@@ -24,17 +24,36 @@ import { visibleNavItems, type DashId, type NavItem } from "./Shell";
  * indicator. The top bar (MobileScreenTitle) still handles the top safe-area.
  */
 
-export type MobileTab = "pipeline" | "captions" | "hooks" | "before" | "more";
+export type MobileTab =
+  | "pipeline"
+  | "captions"
+  | "hooks"
+  | "before"
+  | "support"
+  | "more";
 
-const PRIMARY_TABS: Array<{
+interface TabDef {
   id: MobileTab;
   label: string;
   icon: keyof typeof Icons;
-}> = [
+}
+
+const PRIMARY_TABS: TabDef[] = [
   { id: "pipeline", label: "Pipeline", icon: "Grid" },
   { id: "captions", label: "Captions", icon: "Message" },
   { id: "hooks", label: "Hooks", icon: "Chart" },
   { id: "before", label: "Transformation", icon: "Sparkles" },
+  { id: "more", label: "More", icon: "MoreVertical" },
+];
+
+// Admins triage support daily, so Support earns the fourth slot; the
+// Transformation library stays reachable inside Pipeline's After/Before
+// tabs. Creators keep the original lineup.
+const ADMIN_TABS: TabDef[] = [
+  { id: "pipeline", label: "Pipeline", icon: "Grid" },
+  { id: "captions", label: "Captions", icon: "Message" },
+  { id: "hooks", label: "Hooks", icon: "Chart" },
+  { id: "support", label: "Support", icon: "Send" },
   { id: "more", label: "More", icon: "MoreVertical" },
 ];
 
@@ -46,6 +65,7 @@ export function tabForDash(
   if (current === "content") return pipelineMode === "before" ? "before" : "pipeline";
   if (current === "captions") return "captions";
   if (current === "hooks") return "hooks";
+  if (current === "support") return "support";
   return "more";
 }
 
@@ -53,11 +73,18 @@ export function MobileTabBar({
   tab,
   onTabChange,
   onOpenMore,
+  showSupport = false,
+  supportBadge = 0,
 }: {
   tab: MobileTab;
   onTabChange: (t: MobileTab) => void;
   onOpenMore: () => void;
+  /** admins get a Support slot in place of Transformation */
+  showSupport?: boolean;
+  /** unread support threads — red count pill on the Support tab */
+  supportBadge?: number;
 }) {
+  const tabs = showSupport ? ADMIN_TABS : PRIMARY_TABS;
   return (
     <nav
       aria-label="Primary"
@@ -76,17 +103,18 @@ export function MobileTabBar({
       }}
     >
       <div style={{ display: "flex", height: 52 }}>
-        {PRIMARY_TABS.map((t) => {
+        {tabs.map((t) => {
           const active = tab === t.id;
           const IconComp = Icons[t.icon];
           const handle =
             t.id === "more" ? onOpenMore : () => onTabChange(t.id);
+          const badge = t.id === "support" ? supportBadge : 0;
           return (
             <button
               key={t.id}
               onClick={handle}
               aria-current={active ? "page" : undefined}
-              aria-label={t.label}
+              aria-label={badge ? `${t.label}, ${badge} unread` : t.label}
               style={{
                 flex: 1,
                 display: "flex",
@@ -103,11 +131,35 @@ export function MobileTabBar({
                 padding: 0,
               }}
             >
-              <IconComp
-                size={22}
-                stroke={active ? "var(--ink)" : "var(--ink-4)"}
-                strokeWidth={active ? 2 : 1.6}
-              />
+              <span style={{ position: "relative", display: "inline-flex" }}>
+                <IconComp
+                  size={22}
+                  stroke={active ? "var(--ink)" : "var(--ink-4)"}
+                  strokeWidth={active ? 2 : 1.6}
+                />
+                {badge > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -4,
+                      right: -10,
+                      minWidth: 16,
+                      height: 16,
+                      padding: "0 4px",
+                      borderRadius: 999,
+                      background: "var(--danger)",
+                      color: "#fff",
+                      font: "700 9.5px var(--font-ui)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
+              </span>
               <span
                 style={{
                   fontSize: 10,
@@ -179,6 +231,7 @@ export function MoreSheet({
   viewAs,
   setViewAs,
   onLogout,
+  excludeIds = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -188,10 +241,12 @@ export function MoreSheet({
   viewAs: "admin" | "user";
   setViewAs: (v: "admin" | "user") => void;
   onLogout: () => void;
+  /** ids that already have a bottom-bar slot (e.g. support for admins) */
+  excludeIds?: DashId[];
 }) {
-  // Secondary destinations = everything the user can see except the 4 primary
+  // Secondary destinations = everything the user can see except the primary
   // tabs we already surface at the bottom.
-  const PRIMARY_IDS: DashId[] = ["content", "captions", "hooks"];
+  const PRIMARY_IDS: DashId[] = ["content", "captions", "hooks", ...excludeIds];
   const secondary = visibleNavItems(viewAs).filter(
     (n) => !PRIMARY_IDS.includes(n.id),
   );

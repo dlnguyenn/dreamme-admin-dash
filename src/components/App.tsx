@@ -402,8 +402,13 @@ function AppShell({
         setCurrent("captions");
       } else if (next === "hooks") {
         setCurrent("hooks");
+      } else if (next === "support") {
+        setCurrent("support");
       }
     };
+
+    // Support gets a bottom-bar slot (with unread badge) for admins only.
+    const supportInBar = role === "admin" && viewAs === "admin";
 
     return (
       <div style={{ minHeight: "100vh" }}>
@@ -427,6 +432,8 @@ function AppShell({
           tab={tab}
           onTabChange={handleTabChange}
           onOpenMore={() => setMoreOpen(true)}
+          showSupport={supportInBar}
+          supportBadge={supportInBar ? (badges?.support ?? 0) : 0}
         />
         <MoreSheet
           open={moreOpen}
@@ -437,6 +444,7 @@ function AppShell({
           viewAs={viewAs}
           setViewAs={setViewAs}
           onLogout={logout}
+          excludeIds={supportInBar ? ["support"] : []}
         />
       </div>
     );
