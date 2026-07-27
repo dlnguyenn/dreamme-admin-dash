@@ -9,6 +9,7 @@ import { normalizeSubject } from "@/lib/support/ingest";
 import {
   deriveSubscriptions,
   mergeConsumerSubscriptions,
+  overrideStripeTotals,
   planFromPeriod,
 } from "@/lib/support/resolve-user";
 import { planFromStripeRecurring } from "@/lib/vendors/stripe";
@@ -285,6 +286,69 @@ describe("mergeConsumerSubscriptions", () => {
     const [m] = mergeConsumerSubscriptions([sub], [{ ...row, store: "stripe" }]);
     expect(m.plan).toBeNull();
     expect(m.autoRenew).toBeNull();
+  });
+});
+
+describe("overrideStripeTotals", () => {
+  const base = {
+    store: "STRIPE" as const,
+    productId: null,
+    transactionId: "si_1",
+    originalTransactionId: "si_1",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "CANCELLATION",
+    lastEventAt: "2026-07-25T00:00:00Z",
+    expiresAt: "2027-07-25T00:00:00Z",
+    cancelReason: "BILLING_ERROR",
+    isActive: true,
+    totalPaidUsd: 0,
+    plan: "yearly",
+    startedAt: "2026-07-17T00:00:00Z",
+    autoRenew: false,
+    renewals: 0,
+  };
+
+  it("replaces the RC $0 with Stripe's collected total (Alyssa's case)", () => {
+    const { subscriptions, totalSpentUsd } = overrideStripeTotals([base], 0, 69.99);
+    expect(subscriptions[0].totalPaidUsd).toBe(69.99);
+    expect(totalSpentUsd).toBe(69.99);
+  });
+
+  it("replaces rather than adds when RC already counted some Stripe money", () => {
+    const { totalSpentUsd } = overrideStripeTotals(
+      [{ ...base, totalPaidUsd: 69.99 }],
+      99.98, // 69.99 stripe + 29.99 from an old Apple sub
+      69.99,
+    );
+    expect(totalSpentUsd).toBeCloseTo(99.98);
+  });
+
+  it("reflects refunds (Stripe net lower than RC's sum)", () => {
+    const { subscriptions, totalSpentUsd } = overrideStripeTotals(
+      [{ ...base, totalPaidUsd: 69.99 }],
+      69.99,
+      0, // fully refunded in Stripe
+    );
+    expect(subscriptions[0].totalPaidUsd).toBe(0);
+    expect(totalSpentUsd).toBe(0);
+  });
+
+  it("puts the customer total on one sub, never double counting", () => {
+    const { subscriptions, totalSpentUsd } = overrideStripeTotals(
+      [base, { ...base, transactionId: "si_2", originalTransactionId: "si_2" }],
+      0,
+      69.99,
+    );
+    expect(subscriptions.map((s) => s.totalPaidUsd)).toEqual([69.99, 0]);
+    expect(totalSpentUsd).toBe(69.99);
+  });
+
+  it("leaves non-Stripe users untouched", () => {
+    const apple = { ...base, store: "APP_STORE" as const, totalPaidUsd: 39.99 };
+    const res = overrideStripeTotals([apple], 39.99, 0);
+    expect(res.subscriptions[0].totalPaidUsd).toBe(39.99);
+    expect(res.totalSpentUsd).toBe(39.99);
   });
 });
 

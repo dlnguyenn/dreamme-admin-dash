@@ -20,8 +20,10 @@ import {
 } from "@/lib/vendors/revenuecat";
 import {
   findCustomersByEmail,
+  getSubscription,
   listSubscriptionsForCustomer,
   planFromStripeRecurring,
+  resolveSubscriptionFromItem,
   stripeConfigured,
   sumPaidForCustomer,
 } from "@/lib/vendors/stripe";
@@ -196,6 +198,73 @@ function normalizeStore(v2store: string): string {
 }
 
 /**
+ * Replace the RC-derived spend on STRIPE subscriptions with the total
+ * actually collected per Stripe's charge ledger. RC's webhook stream can
+ * miss money entirely: a first charge attempt that fails emits
+ * BILLING_ISSUE + CANCELLATION(BILLING_ERROR), and when Stripe's smart
+ * retry later collects the payment RC sends nothing priced — so an
+ * events-derived total says $0.00 for a user Stripe charged $69.99
+ * (seen live 2026-07-27, douglasa87@). Pure arithmetic — exported for
+ * tests; the Stripe I/O lives in enrichStripeTotals below.
+ */
+export function overrideStripeTotals(
+  subscriptions: SubscriptionInfo[],
+  totalSpentUsd: number,
+  stripePaidUsd: number,
+): { subscriptions: SubscriptionInfo[]; totalSpentUsd: number } {
+  const stripeSubs = subscriptions.filter((s) => s.store === "STRIPE");
+  if (stripeSubs.length === 0) return { subscriptions, totalSpentUsd };
+  const rcStripeSum = stripeSubs.reduce((a, s) => a + s.totalPaidUsd, 0);
+  let assigned = false;
+  const out = subscriptions.map((s) => {
+    if (s.store !== "STRIPE") return s;
+    // Charges aren't split per subscription; put the customer total on the
+    // first (most recent) Stripe sub and zero the rest so nothing double
+    // counts. Users with several Stripe subs are vanishingly rare.
+    const mine = assigned ? 0 : stripePaidUsd;
+    assigned = true;
+    return { ...s, totalPaidUsd: mine };
+  });
+  return {
+    subscriptions: out,
+    totalSpentUsd: Math.max(0, totalSpentUsd - rcStripeSum + stripePaidUsd),
+  };
+}
+
+/**
+ * Find the Stripe customer(s) behind the STRIPE subscriptions (via the
+ * si_… item id from rc_events, falling back to email search) and sum
+ * their succeeded, refund-netted charges. Returns null when nothing
+ * could be resolved — callers keep the RC-derived numbers.
+ */
+async function fetchStripePaidUsd(
+  subs: SubscriptionInfo[],
+  email: string | null,
+): Promise<number | null> {
+  if (!stripeConfigured()) return null;
+  if (!subs.some((s) => s.store === "STRIPE")) return null;
+  try {
+    const customers = new Set<string>();
+    for (const s of subs) {
+      if (s.store !== "STRIPE" || !s.transactionId?.startsWith("si_")) continue;
+      const subId = await resolveSubscriptionFromItem(s.transactionId);
+      if (!subId) continue;
+      const sub = await getSubscription(subId).catch(() => null);
+      if (sub?.customer) customers.add(sub.customer);
+    }
+    if (customers.size === 0 && email) {
+      for (const c of await findCustomersByEmail(email)) customers.add(c.id);
+    }
+    if (customers.size === 0) return null;
+    let cents = 0;
+    for (const id of customers) cents += await sumPaidForCustomer(id);
+    return cents / 100;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fallback for senders with no consumer-users match: search Stripe by the
  * email address. Web-checkout subscribers often write from their billing
  * email while their app account uses another (or an Apple relay), so the
@@ -327,13 +396,28 @@ export async function resolveUser(
     }
   }
 
+  // Stripe money truth comes from Stripe, not the RC event stream (which
+  // misses failed-then-retried charges entirely).
+  const stripePaid = await fetchStripePaidUsd(
+    derived.subscriptions,
+    user.email ?? email,
+  );
+  let { subscriptions, totalSpentUsd } = derived;
+  if (stripePaid !== null) {
+    ({ subscriptions, totalSpentUsd } = overrideStripeTotals(
+      subscriptions,
+      totalSpentUsd,
+      stripePaid,
+    ));
+  }
+
   return {
     appUserId: user.id,
     email: user.email?.toLowerCase() ?? email?.toLowerCase() ?? null,
     name: user.name,
     journeyStage: user.glp1_journey_stage,
-    subscriptions: derived.subscriptions,
-    totalSpentUsd: derived.totalSpentUsd,
+    subscriptions,
+    totalSpentUsd,
     noAccount: false,
     sandboxOnly: derived.sandboxOnly,
     accountCreatedAt: authInfo?.createdAt ?? null,
