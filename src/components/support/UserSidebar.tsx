@@ -51,6 +51,25 @@ That stops any future charges. Let me know if you need anything else.
 
 Dan, co-founder of DreamMe`;
 
+/** "3d" / "6w" / "4mo" / "1.5y" — compact age for support context. */
+function formatAge(iso: string): string {
+  const days = Math.max(0, (Date.now() - new Date(iso).getTime()) / 86400_000);
+  if (days < 1) return "today";
+  if (days < 14) return `${Math.round(days)}d`;
+  if (days < 70) return `${Math.round(days / 7)}w`;
+  if (days < 330) return `${Math.round(days / 30.4)}mo`;
+  const years = days / 365.25;
+  return `${years < 3 ? years.toFixed(1) : Math.round(years)}y`;
+}
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function UserSidebar({
   thread,
   actions,
@@ -85,6 +104,15 @@ export function UserSidebar({
             <Row label="Name" value={ctx.name ?? "—"} />
             <Row label="Email" value={ctx.email ?? "—"} />
             <Row label="Journey" value={ctx.journeyStage ?? "—"} />
+            {ctx.accountCreatedAt && (
+              <Row
+                label="Member for"
+                value={`${formatAge(ctx.accountCreatedAt)} · since ${shortDate(ctx.accountCreatedAt)}`}
+              />
+            )}
+            {ctx.lastSeenAt && (
+              <Row label="Last seen" value={timeAgo(ctx.lastSeenAt)} />
+            )}
             <Row label="Total spent" value={`$${ctx.totalSpentUsd.toFixed(2)}`} />
             {ctx.sandboxOnly && (
               <Chip tone="warning" style={{ alignSelf: "flex-start" }}>
@@ -247,23 +275,52 @@ function SubscriptionCard({
     }
   };
 
+  // "will lapse": still active but auto-renew already off — the user (or
+  // Dan) cancelled and access simply runs out. Changes the right reply.
+  const willLapse = sub.isActive && sub.autoRenew === false;
+
   return (
     <Card
       title={
-        <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+        <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {storeLabel}
-          {sub.isTrial && <Chip tone="info">trial</Chip>}
+          {sub.plan && <Chip tone="neutral">{sub.plan}</Chip>}
+          {sub.isTrial ? (
+            <Chip tone="info">trial</Chip>
+          ) : (
+            <Chip tone="info">paid</Chip>
+          )}
           {sub.isActive ? <Chip tone="success">active</Chip> : <Chip>inactive</Chip>}
+          {willLapse && <Chip tone="warning">won&apos;t renew</Chip>}
         </span>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5 }}>
-        <Row label="Product" value={sub.productId ?? "—"} mono />
         <Row
-          label={sub.isActive ? "Renews/ends" : "Ended"}
+          label="Plan"
+          value={
+            sub.plan
+              ? `${sub.plan}${sub.isTrial ? " (in trial)" : ""}`
+              : sub.isTrial
+                ? "trial"
+                : "—"
+          }
+        />
+        {sub.startedAt && (
+          <Row
+            label="Subscriber for"
+            value={`${formatAge(sub.startedAt)} · ${shortDate(sub.startedAt)}`}
+          />
+        )}
+        <Row
+          label={sub.isActive ? (willLapse ? "Ends" : "Renews") : "Ended"}
           value={sub.expiresAt ? sub.expiresAt.slice(0, 10) : "—"}
         />
         <Row label="Paid" value={`$${sub.totalPaidUsd.toFixed(2)}`} />
+        {(sub.renewals ?? 0) > 0 && (
+          <Row label="Renewals" value={String(sub.renewals)} />
+        )}
+        <Row label="Product" value={sub.productId ?? "—"} mono />
         {sub.cancelReason && <Row label="Cancel reason" value={sub.cancelReason} />}
       </div>
 

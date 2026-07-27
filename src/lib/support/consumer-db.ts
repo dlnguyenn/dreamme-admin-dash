@@ -61,6 +61,62 @@ export async function getUserById(id: string): Promise<ConsumerUserRow | null> {
   return rows[0] ?? null;
 }
 
+export interface ConsumerAuthInfo {
+  createdAt: string | null;
+  lastSignInAt: string | null;
+}
+
+/**
+ * Account age + last sign-in from the Supabase auth admin API — the public
+ * users table has no created_at, but GoTrue does.
+ */
+export async function getAuthInfo(userId: string): Promise<ConsumerAuthInfo | null> {
+  if (!consumerDbConfigured()) return null;
+  try {
+    const res = await fetch(
+      `${CONSUMER_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+      { headers: headers(), cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const d = (await res.json()) as {
+      created_at?: string;
+      last_sign_in_at?: string;
+    };
+    return {
+      createdAt: d.created_at ?? null,
+      lastSignInAt: d.last_sign_in_at ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface ConsumerSubscriptionRow {
+  store: string | null; // app_store | play_store | stripe
+  product_id: string | null;
+  plan: string | null; // yearly | quarterly | monthly | weekly | …
+  status: string | null;
+  is_trial: boolean | null;
+  price: number | null;
+  currency: string | null;
+  purchased_at: string | null;
+  original_purchased_at: string | null;
+  expires_at: string | null;
+  auto_renew: boolean | null;
+  total_spent: number | null;
+  total_renewals: number | null;
+}
+
+/** RC-webhook-fed subscription rows (authoritative plan / trial flags). */
+export async function fetchConsumerSubscriptions(
+  rcAppUserId: string,
+): Promise<ConsumerSubscriptionRow[]> {
+  return cGet<ConsumerSubscriptionRow[]>(
+    `subscriptions?rc_app_user_id=eq.${encodeURIComponent(rcAppUserId)}` +
+      `&select=store,product_id,plan,status,is_trial,price,currency,purchased_at,original_purchased_at,expires_at,auto_renew,total_spent,total_renewals`,
+  );
+}
+
 export interface ConsumerFeedbackRow {
   id: string;
   user_id: string | null;

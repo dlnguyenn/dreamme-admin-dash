@@ -110,6 +110,12 @@ export interface SubscriptionInfo {
   /** true when expiration is in the future */
   isActive: boolean;
   totalPaidUsd: number;
+  /** yearly | quarterly | monthly | weekly | null when underivable */
+  plan: string | null;
+  /** original purchase date (subscription age) */
+  startedAt: string | null;
+  autoRenew: boolean | null;
+  renewals: number | null;
 }
 
 export interface UserContext {
@@ -123,6 +129,10 @@ export interface UserContext {
   noAccount: boolean;
   /** true when only sandbox rc_events exist for this user */
   sandboxOnly: boolean;
+  /** Supabase auth account creation (account age) */
+  accountCreatedAt?: string | null;
+  /** last app sign-in */
+  lastSeenAt?: string | null;
 }
 
 export interface TriageResult {

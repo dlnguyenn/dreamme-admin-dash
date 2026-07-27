@@ -78,14 +78,36 @@ export interface StripeSubscription {
   current_period_end: number;
   customer: string; // cus_…
   trial_end: number | null;
+  start_date?: number | null;
   items?: {
     data?: Array<{
       id: string;
       current_period_end?: number;
-      price?: { product?: string };
+      price?: {
+        product?: string;
+        recurring?: { interval?: string; interval_count?: number } | null;
+      };
     }>;
   };
   latest_invoice?: string | null;
+}
+
+/** Stripe price recurring interval → DreamMe plan label. Exported for tests. */
+export function planFromStripeRecurring(
+  recurring: { interval?: string; interval_count?: number } | null | undefined,
+): string | null {
+  if (!recurring?.interval) return null;
+  const n = recurring.interval_count ?? 1;
+  switch (recurring.interval) {
+    case "year":
+      return "yearly";
+    case "month":
+      return n >= 3 ? "quarterly" : "monthly";
+    case "week":
+      return "weekly";
+    default:
+      return null;
+  }
 }
 
 /** Backfill current_period_end from the items array on newer API versions. */

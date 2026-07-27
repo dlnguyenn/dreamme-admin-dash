@@ -6,7 +6,12 @@ import {
   isInternalSender,
 } from "@/lib/support/triage";
 import { normalizeSubject } from "@/lib/support/ingest";
-import { deriveSubscriptions } from "@/lib/support/resolve-user";
+import {
+  deriveSubscriptions,
+  mergeConsumerSubscriptions,
+  planFromPeriod,
+} from "@/lib/support/resolve-user";
+import { planFromStripeRecurring } from "@/lib/vendors/stripe";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
 import { splitQuotedText } from "@/lib/support/email-text";
@@ -180,6 +185,106 @@ describe("replySubject", () => {
     expect(replySubject("Cancel my trial")).toBe("Re: Cancel my trial");
     expect(replySubject("Re: Cancel my trial")).toBe("Re: Cancel my trial");
     expect(replySubject(null)).toBe("Re: your message to DreamMe");
+  });
+});
+
+describe("plan derivation", () => {
+  it("infers plan from the NORMAL period length", () => {
+    const mk = (days: number) => ({
+      period_type: "NORMAL",
+      event_at: "2026-07-01T00:00:00Z",
+      expiration_at: new Date(
+        Date.parse("2026-07-01T00:00:00Z") + days * 86400_000,
+      ).toISOString(),
+    });
+    expect(planFromPeriod(mk(365))).toBe("yearly");
+    expect(planFromPeriod(mk(91))).toBe("quarterly");
+    expect(planFromPeriod(mk(30))).toBe("monthly");
+    expect(planFromPeriod(mk(7))).toBe("weekly");
+  });
+
+  it("refuses to infer from a trial window", () => {
+    expect(
+      planFromPeriod({
+        period_type: "TRIAL",
+        event_at: "2026-07-01T00:00:00Z",
+        expiration_at: "2026-07-08T00:00:00Z",
+      }),
+    ).toBeNull();
+  });
+
+  it("maps Stripe recurring intervals", () => {
+    expect(planFromStripeRecurring({ interval: "year" })).toBe("yearly");
+    expect(planFromStripeRecurring({ interval: "month", interval_count: 3 })).toBe("quarterly");
+    expect(planFromStripeRecurring({ interval: "month" })).toBe("monthly");
+    expect(planFromStripeRecurring(null)).toBeNull();
+  });
+});
+
+describe("mergeConsumerSubscriptions", () => {
+  const sub = {
+    store: "APP_STORE",
+    productId: "sku_year",
+    transactionId: "t1",
+    originalTransactionId: "t1",
+    periodType: "TRIAL",
+    isTrial: true,
+    lastEventType: "INITIAL_PURCHASE",
+    lastEventAt: "2026-07-20T00:00:00Z",
+    expiresAt: "2026-07-27T00:00:00Z",
+    cancelReason: null,
+    isActive: true,
+    totalPaidUsd: 0,
+    plan: null,
+    startedAt: "2026-07-20T00:00:00Z",
+    autoRenew: null,
+    renewals: 0,
+  };
+  const row = {
+    store: "app_store",
+    product_id: "sku_year",
+    plan: "yearly",
+    status: "trial",
+    is_trial: true,
+    price: 69.99,
+    currency: "USD",
+    purchased_at: "2026-07-20T00:00:00Z",
+    original_purchased_at: "2026-06-01T00:00:00Z",
+    expires_at: "2026-07-27T00:00:00Z",
+    auto_renew: false,
+    total_spent: 0,
+    total_renewals: 2,
+  };
+
+  it("overlays plan, start date, auto-renew, and renewal count", () => {
+    const [m] = mergeConsumerSubscriptions([sub], [row]);
+    expect(m.plan).toBe("yearly");
+    expect(m.startedAt).toBe("2026-06-01T00:00:00Z");
+    expect(m.autoRenew).toBe(false);
+    expect(m.renewals).toBe(2);
+  });
+
+  it("matches store case-insensitively and consumes each row once", () => {
+    const [a, b] = mergeConsumerSubscriptions(
+      [sub, { ...sub, originalTransactionId: "t2", productId: null }],
+      [row],
+    );
+    expect(a.plan).toBe("yearly");
+    expect(b.plan).toBeNull(); // row already consumed
+  });
+
+  it("keeps the derived value when the sink says 'other'", () => {
+    const [m] = mergeConsumerSubscriptions(
+      [{ ...sub, plan: "monthly" }],
+      [{ ...row, plan: "other" }],
+    );
+    expect(m.plan).toBe("monthly");
+  });
+
+  it("leaves subs untouched when no row matches", () => {
+    const [m] = mergeConsumerSubscriptions([sub], [{ ...row, store: "stripe" }]);
+    expect(m.plan).toBeNull();
+    expect(m.autoRenew).toBeNull();
   });
 });
 

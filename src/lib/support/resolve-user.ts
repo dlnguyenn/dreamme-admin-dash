@@ -7,7 +7,13 @@
  * RC v2 API subscriptions as fallback when no production events exist.
  */
 import { spGet } from "./db";
-import { findUserByEmail, getUserById } from "./consumer-db";
+import {
+  fetchConsumerSubscriptions,
+  findUserByEmail,
+  getAuthInfo,
+  getUserById,
+  type ConsumerSubscriptionRow,
+} from "./consumer-db";
 import {
   getCustomerSubscriptions,
   revenueCatConfigured,
@@ -15,6 +21,7 @@ import {
 import {
   findCustomersByEmail,
   listSubscriptionsForCustomer,
+  planFromStripeRecurring,
   stripeConfigured,
   sumPaidForCustomer,
 } from "@/lib/vendors/stripe";
@@ -39,6 +46,57 @@ const PAYMENT_TYPES = new Set([
   "RENEWAL",
   "NON_RENEWING_PURCHASE",
 ]);
+
+/**
+ * Infer the billing plan from the current period length (expiration minus
+ * event time). Only meaningful for NORMAL periods — a trial's 3–7 day
+ * window says nothing about the plan it converts into. Exported for tests.
+ */
+export function planFromPeriod(e: {
+  period_type: string | null;
+  event_at: string;
+  expiration_at: string | null;
+}): string | null {
+  if (e.period_type !== "NORMAL" || !e.expiration_at) return null;
+  const days =
+    (new Date(e.expiration_at).getTime() - new Date(e.event_at).getTime()) /
+    86400_000;
+  if (days > 200) return "yearly";
+  if (days > 60) return "quarterly";
+  if (days > 21) return "monthly";
+  if (days > 4) return "weekly";
+  return null;
+}
+
+/**
+ * Overlay the consumer subscriptions sink (authoritative plan / trial /
+ * renewal counts, fed by the RC webhook) onto rc_events-derived groups.
+ * Matched per store, consuming each consumer row at most once. Pure —
+ * exported for tests.
+ */
+export function mergeConsumerSubscriptions(
+  subs: SubscriptionInfo[],
+  rows: ConsumerSubscriptionRow[],
+): SubscriptionInfo[] {
+  const pool = [...rows];
+  return subs.map((s) => {
+    const idx = pool.findIndex(
+      (r) =>
+        (r.store ?? "").toUpperCase() === String(s.store).toUpperCase() &&
+        (!r.product_id || !s.productId || r.product_id === s.productId),
+    );
+    if (idx === -1) return s;
+    const [row] = pool.splice(idx, 1);
+    return {
+      ...s,
+      plan: row.plan && row.plan !== "other" ? row.plan : s.plan,
+      isTrial: row.is_trial ?? s.isTrial,
+      startedAt: row.original_purchased_at ?? s.startedAt,
+      autoRenew: row.auto_renew,
+      renewals: row.total_renewals ?? s.renewals,
+    };
+  });
+}
 
 export const EMPTY_CONTEXT: UserContext = {
   appUserId: null,
@@ -102,6 +160,10 @@ export function deriveSubscriptions(events: RcEventLite[]): {
       cancelReason: latest.cancel_reason,
       isActive: !!expiresAt && new Date(expiresAt).getTime() > now,
       totalPaidUsd: Math.max(0, paid),
+      plan: planFromPeriod(latest),
+      startedAt: group[0]?.event_at ?? null,
+      autoRenew: null,
+      renewals: group.filter((e) => e.type === "RENEWAL").length,
     });
   }
 
@@ -168,6 +230,12 @@ async function stripeFallback(email: string): Promise<UserContext | null> {
           cancelReason: null,
           isActive: s.status === "trialing" || s.status === "active",
           totalPaidUsd: 0, // per-sub split unknown; customer total below
+          plan: planFromStripeRecurring(s.items?.data?.[0]?.price?.recurring),
+          startedAt: s.start_date
+            ? new Date(s.start_date * 1000).toISOString()
+            : null,
+          autoRenew: s.status === "canceled" ? false : !s.cancel_at_period_end,
+          renewals: null,
         });
       }
     }
@@ -207,8 +275,21 @@ export async function resolveUser(
     return { ...EMPTY_CONTEXT, email: email?.toLowerCase() ?? null };
   }
 
-  const events = await fetchRcEvents(user.id).catch(() => [] as RcEventLite[]);
+  const [events, consumerRows, authInfo] = await Promise.all([
+    fetchRcEvents(user.id).catch(() => [] as RcEventLite[]),
+    fetchConsumerSubscriptions(user.id).catch(
+      () => [] as ConsumerSubscriptionRow[],
+    ),
+    getAuthInfo(user.id),
+  ]);
   let derived = deriveSubscriptions(events);
+  derived = {
+    ...derived,
+    subscriptions: mergeConsumerSubscriptions(
+      derived.subscriptions,
+      consumerRows,
+    ),
+  };
 
   // Fallback: no production webhook events → ask RC v2 directly.
   if (derived.subscriptions.length === 0 && revenueCatConfigured()) {
@@ -229,9 +310,15 @@ export async function resolveUser(
         cancelReason: null,
         isActive: s.gives_access,
         totalPaidUsd: Number(s.total_revenue_in_usd?.gross) || 0,
+        plan: null,
+        startedAt: null,
+        autoRenew: s.auto_renewal_status
+          ? s.auto_renewal_status === "will_renew"
+          : null,
+        renewals: null,
       }));
       derived = {
-        subscriptions: mapped,
+        subscriptions: mergeConsumerSubscriptions(mapped, consumerRows),
         totalSpentUsd: mapped.reduce((a, s) => a + s.totalPaidUsd, 0),
         sandboxOnly: derived.sandboxOnly,
       };
@@ -249,5 +336,7 @@ export async function resolveUser(
     totalSpentUsd: derived.totalSpentUsd,
     noAccount: false,
     sandboxOnly: derived.sandboxOnly,
+    accountCreatedAt: authInfo?.createdAt ?? null,
+    lastSeenAt: authInfo?.lastSignInAt ?? null,
   };
 }

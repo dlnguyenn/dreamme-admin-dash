@@ -135,13 +135,21 @@ function describeUser(ctx: UserContext | null): string {
   const subs = ctx.subscriptions
     .map((s) => {
       const state = s.isActive ? "ACTIVE" : "expired/inactive";
-      const trial = s.isTrial ? " (on TRIAL)" : "";
+      const kind = s.isTrial
+        ? `on TRIAL${s.plan ? ` of the ${s.plan} plan` : ""}`
+        : `PAID ${s.plan ?? "unknown"} plan`;
       const exp = s.expiresAt ? `, ${s.isActive ? "renews/expires" : "expired"} ${s.expiresAt.slice(0, 10)}` : "";
-      return `- ${s.store} · product ${s.productId ?? "?"} · ${state}${trial}${exp} · paid $${s.totalPaidUsd.toFixed(2)} total`;
+      const since = s.startedAt ? `, subscriber since ${s.startedAt.slice(0, 10)}` : "";
+      const renew =
+        s.autoRenew === false && s.isActive ? ", auto-renew already OFF (cancelled, will lapse)" : "";
+      return `- ${s.store} · ${kind} · ${state}${exp}${since}${renew} · paid $${s.totalPaidUsd.toFixed(2)} total`;
     })
     .join("\n");
+  const age = ctx.accountCreatedAt
+    ? ` Account created ${ctx.accountCreatedAt.slice(0, 10)}.`
+    : "";
   return [
-    `Account: ${ctx.name ?? "unnamed"} <${ctx.email ?? "?"}>, journey stage: ${ctx.journeyStage ?? "unknown"}.`,
+    `Account: ${ctx.name ?? "unnamed"} <${ctx.email ?? "?"}>, journey stage: ${ctx.journeyStage ?? "unknown"}.${age}`,
     ctx.subscriptions.length
       ? `Subscriptions:\n${subs}`
       : "No subscriptions on record.",
