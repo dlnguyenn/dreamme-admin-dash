@@ -23,7 +23,7 @@ import {
   sendReply,
   timeAgo,
 } from "./api";
-import { splitQuotedText } from "@/lib/support/email-text";
+import { messageText, splitQuotedText } from "@/lib/support/email-text";
 import { UserSidebar } from "./UserSidebar";
 
 export function ThreadDetail({
@@ -672,7 +672,10 @@ function MessageBubble({
           boxShadow: inbound ? "none" : "0 1px 2px rgba(0,0,0,0.08)",
         }}
       >
-        <MessageBody body={message.body_text} inverted={!inbound} />
+        <MessageBody
+          body={messageText(message.body_text, message.body_html)}
+          inverted={!inbound}
+        />
         {images.length > 0 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {images.map((img, i) => (

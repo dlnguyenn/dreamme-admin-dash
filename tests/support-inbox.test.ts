@@ -18,7 +18,35 @@ import { applyActionToContext } from "@/lib/support/action-effects";
 import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
+import { htmlToPlainText, messageText } from "@/lib/support/email-text";
 import { splitQuotedText } from "@/lib/support/email-text";
+
+describe("htmlToPlainText / messageText", () => {
+  // Jo N. 2026-07-28: Apple Mail HTML-only reply — no text/plain part at
+  // all, so body_text was null and triage spam-binned a real cancel ask.
+  const joHtml = `<html><head><meta http-equiv="content-type"></head><body dir="auto"><div>please cancel my subscription&nbsp;</div><div><br></div><div>Sent from my iPhone</div><div><br></div><blockquote>On Jul 28, 2026, at 1:48 PM, DreamMe &lt;billing@dreamme.life&gt; wrote:<br>﻿<div><h1>Your DreamMe free trial ends soon</h1><p>Hi there</p></div></blockquote></body></html>`;
+
+  it("recovers the user's words from an HTML-only Apple Mail reply", () => {
+    const text = htmlToPlainText(joHtml);
+    expect(text).toMatch(/^please cancel my subscription/);
+    expect(text).toMatch(/Sent from my iPhone/);
+    expect(text).toContain("billing@dreamme.life");
+    expect(text).not.toMatch(/<div|&nbsp;|﻿/);
+  });
+
+  it("messageText prefers plain text and falls back to HTML", () => {
+    expect(messageText("real text", joHtml)).toBe("real text");
+    expect(messageText("  ", joHtml)).toMatch(/^please cancel/);
+    expect(messageText(null, null)).toBe("");
+  });
+
+  it("drops style/script blocks and collapses whitespace", () => {
+    const text = htmlToPlainText(
+      "<style>.a{color:red}</style><p>hello   world</p><script>x()</script>",
+    );
+    expect(text).toBe("hello world");
+  });
+});
 
 describe("splitQuotedText", () => {
   it("splits a Gmail reply at the attribution line (Jennifer's real shape)", () => {

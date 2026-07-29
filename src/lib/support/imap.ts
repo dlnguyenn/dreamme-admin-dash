@@ -10,6 +10,7 @@
  */
 import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
+import { htmlToPlainText } from "./email-text";
 import type { AttachmentInfo } from "./types";
 
 const IMAP_HOST = "imap.gmail.com";
@@ -193,7 +194,12 @@ export async function fetchNewMessages(
         rawFromEmail: from.email,
         toEmail: allAddresses(parsed.to) || null,
         subject: parsed.subject ?? null,
-        text: parsed.text ?? null,
+        // Apple Mail replies to HTML mail are often HTML-only — derive a
+        // text body so triage and the transcript never see "(no body)".
+        text:
+          parsed.text?.trim() ||
+          htmlToPlainText(typeof parsed.html === "string" ? parsed.html : null) ||
+          null,
         html: typeof parsed.html === "string" ? parsed.html : null,
         attachments: (parsed.attachments ?? []).map((a) => ({
           filename: a.filename,

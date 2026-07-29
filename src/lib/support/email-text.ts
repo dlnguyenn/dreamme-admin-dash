@@ -3,6 +3,46 @@
  * unit-tested.
  */
 
+/**
+ * Minimal HTML → readable plain text. Exists because Apple Mail replies to
+ * our HTML billing emails are often HTML-ONLY (no text/plain part), which
+ * left body_text null — triage then saw "(no body)" and spam-binned a real
+ * "please cancel my subscription" (Jo N., 2026-07-28).
+ */
+export function htmlToPlainText(html: string | null | undefined): string {
+  if (!html) return "";
+  let s = html
+    .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|table)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  s = s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/﻿/g, "");
+  return s
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** The best available body: plain text, else text derived from HTML. */
+export function messageText(
+  bodyText: string | null | undefined,
+  bodyHtml: string | null | undefined,
+): string {
+  const t = (bodyText ?? "").trim();
+  return t || htmlToPlainText(bodyHtml);
+}
+
 export interface SplitBody {
   /** the author's own words */
   main: string;

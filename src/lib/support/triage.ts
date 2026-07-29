@@ -8,6 +8,7 @@
  * A static sender deny-list short-circuits BEFORE spending tokens.
  */
 import { callClaude, firstJson, anthropicConfigured } from "@/lib/anthropic";
+import { messageText } from "./email-text";
 import type {
   SupportMessageRow,
   ThreadCategory,
@@ -178,7 +179,10 @@ export async function triageThread(params: {
   fromEmail: string | null;
   fromName: string | null;
   source: "email" | "feedback";
-  messages: Pick<SupportMessageRow, "direction" | "body_text" | "sent_at">[];
+  messages: Pick<
+    SupportMessageRow,
+    "direction" | "body_text" | "body_html" | "sent_at"
+  >[];
   userContext: UserContext | null;
 }): Promise<{ triage: TriageResult; drafts: string[] }> {
   const internal = isInternalSender(params.fromEmail);
@@ -204,7 +208,9 @@ export async function triageThread(params: {
     .slice(-10)
     .map((m) => {
       const who = m.direction === "inbound" ? "USER" : "DAN";
-      const body = (m.body_text ?? "").slice(0, 4000);
+      // Fall back to HTML-derived text: Apple Mail replies are often
+      // HTML-only, and rows ingested before that fix have body_text null.
+      const body = messageText(m.body_text, m.body_html).slice(0, 4000);
       return `[${who} · ${m.sent_at.slice(0, 16)}]\n${body}`;
     })
     .join("\n\n---\n\n")
@@ -223,7 +229,8 @@ Dan's voice rules (strict):
 
 Output STRICTLY JSON:
 {"is_spam": boolean, "classification": "refund_request"|"cancel_trial"|"question"|"feedback"|"other", "urgency": "low"|"normal"|"high", "summary": string, "drafts": [string, string]}
-"summary" is one line for Dan's queue. If is_spam is true (vendor pitch, newsletter, automated notification, obvious bot), set drafts to [].`;
+"summary" is one line for Dan's queue. If is_spam is true (vendor pitch, newsletter, automated notification, obvious bot), set drafts to [].
+IMPORTANT: an email whose body quotes our own billing/trial notification ("Your DreamMe free trial ends…", from billing@dreamme.life) is a REAL customer replying to that notification, never spam — even a one-line "please cancel my subscription" above the quote. Those emails invite replies ("a real person will help").`;
 
   const user = `SOURCE: ${params.source === "feedback" ? "in-app feedback form" : "email to help@dreamme.life"}
 FROM: ${params.fromName ?? ""} <${params.fromEmail ?? "unknown"}>
