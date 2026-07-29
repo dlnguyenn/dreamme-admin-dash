@@ -477,6 +477,21 @@ export async function resolveUser(
     ));
   }
 
+  // Matched app account but RC knows of no subscriptions at all: check
+  // Stripe by email anyway. Web-checkout trials can exist with zero RC
+  // events under this app user id (seen live: a trialing Stripe sub about
+  // to bill while the tab said "no subscription on record").
+  if (subscriptions.length === 0) {
+    const lookupEmail = user.email ?? email;
+    if (lookupEmail) {
+      const viaStripe = await stripeFallback(lookupEmail);
+      if (viaStripe) {
+        subscriptions = viaStripe.subscriptions;
+        totalSpentUsd = viaStripe.totalSpentUsd;
+      }
+    }
+  }
+
   return {
     appUserId: user.id,
     email: user.email?.toLowerCase() ?? email?.toLowerCase() ?? null,
