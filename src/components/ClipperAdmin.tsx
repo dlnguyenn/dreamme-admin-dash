@@ -13,6 +13,7 @@
  */
 import * as React from "react";
 import { Button, Chip, useToast } from "./ui";
+import { clipperSlug } from "@/lib/clipperLinks";
 
 interface Totals {
   videos: number;
@@ -168,7 +169,7 @@ export function ClipperAdmin() {
   }
 
   function copyLink(c: ClipperItem) {
-    const link = `${window.location.origin}/clip/${c.token}`;
+    const link = `${window.location.origin}/clip/${clipperSlug(c)}`;
     void navigator.clipboard.writeText(link);
     toast(`Link copied — ${c.name}`);
   }
@@ -344,7 +345,7 @@ function ClipperDetail({
           Save settings
         </Button>
         <span style={{ fontSize: 12, color: "var(--ink-3)", marginLeft: "auto" }}>
-          /clip/{c.token.slice(0, 8)}…
+          /clip/{clipperSlug(c)}
         </span>
       </div>
 

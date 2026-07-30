@@ -9,7 +9,7 @@
  * submit-video/route.ts and the page itself.
  */
 import { NextResponse } from "next/server";
-import { clippersDbConfigured, sbGet, sbPatch, type ClipperRow } from "@/lib/clippers";
+import { clippersDbConfigured, loadClipperBySlug, sbGet, sbPatch } from "@/lib/clippers";
 import { normalizeFacebookPageUrl, fbViewsConfigured } from "@/lib/facebookViews";
 import { syncClipperPage } from "@/lib/clipperSync";
 
@@ -39,10 +39,8 @@ export async function POST(req: Request) {
   }
   const pageUrl = check.url;
 
-  const clippers = await sbGet<ClipperRow[]>(
-    `clippers?token=eq.${encodeURIComponent(token)}&active=eq.true&select=id,code,facebook_page_url&limit=1`,
-  );
-  const clipper = clippers[0];
+  // Accepts either the full token or the public "code-tokenprefix" slug.
+  const clipper = await loadClipperBySlug(token);
   if (!clipper) return NextResponse.json({ error: "unknown token" }, { status: 404 });
 
   // One page belongs to one creator — otherwise two clippers would both claim

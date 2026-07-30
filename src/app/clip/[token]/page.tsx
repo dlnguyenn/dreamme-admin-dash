@@ -10,16 +10,16 @@
  * Server component. Inline styles + CSS vars (Tailwind is not wired up in this
  * app — see globals.css); the whole surface is self-contained.
  */
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import * as React from "react";
 import {
   clippersDbConfigured,
   loadClipperBundle,
+  loadClipperBySlug,
+  clipperSlug,
   effectiveViews,
-  sbGet,
   HOLDBACK_DAYS,
   REVSHARE_MONTHS_CAP,
-  type ClipperRow,
   type EarningTxn,
 } from "@/lib/clippers";
 import { fetchCreatorStatByCode } from "@/lib/appReferrals";
@@ -132,14 +132,21 @@ export default async function ClipperPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const { token } = await params;
-  if (!clippersDbConfigured() || !/^[a-f0-9]{16,64}$/i.test(token)) notFound();
+  // `token` is the /clip/<segment> path: either a full legacy token or the
+  // readable "code-tokenprefix" slug (see clipperSlug in lib/clippers).
+  const { token: segment } = await params;
+  if (!clippersDbConfigured()) notFound();
 
-  const clippers = await sbGet<ClipperRow[]>(
-    `clippers?token=eq.${encodeURIComponent(token)}&active=eq.true&limit=1`,
-  );
-  const clipper = clippers[0];
+  const clipper = await loadClipperBySlug(segment);
   if (!clipper) notFound();
+
+  // Send old/mistyped forms to the canonical pretty URL.
+  const canonical = clipperSlug(clipper);
+  if (segment.toLowerCase() !== canonical) redirect(`/clip/${canonical}`);
+
+  // Islands post the same slug back; the public routes resolve it the same
+  // way. Keeps the full token out of the rendered HTML entirely.
+  const token = canonical;
 
   const [{ videos, earnings, totalViews, payouts }, appStat] = await Promise.all([
     loadClipperBundle(clipper),

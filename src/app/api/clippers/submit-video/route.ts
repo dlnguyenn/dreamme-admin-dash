@@ -6,7 +6,7 @@
  * the page itself). Rate-limited by a per-clipper video cap.
  */
 import { NextResponse } from "next/server";
-import { clippersDbConfigured, sbGet, sbPost, type ClipperRow } from "@/lib/clippers";
+import { clippersDbConfigured, loadClipperBySlug, sbGet, sbPost } from "@/lib/clippers";
 import { normalizeFacebookUrl } from "@/lib/facebookViews";
 
 export const runtime = "nodejs";
@@ -66,10 +66,8 @@ export async function POST(req: Request) {
   // URL string, and clipper_videos.url is globally unique.
   const url = normalizeFacebookUrl(parsed.toString());
 
-  const clippers = await sbGet<ClipperRow[]>(
-    `clippers?token=eq.${encodeURIComponent(token)}&active=eq.true&select=id&limit=1`,
-  );
-  const clipper = clippers[0];
+  // Accepts either the full token or the public "code-tokenprefix" slug.
+  const clipper = await loadClipperBySlug(token);
   if (!clipper) {
     return NextResponse.json({ error: "unknown token" }, { status: 404 });
   }

@@ -21,6 +21,12 @@ const SERVICE_ROLE =
 export const HOLDBACK_DAYS = 30;
 export const REVSHARE_MONTHS_CAP = 12;
 
+// Link helpers live in clipperLinks.ts (pure, client-safe) and are re-exported
+// here for server callers. Do NOT move them back into this file — it holds the
+// service-role key and must stay out of browser bundles.
+export { clipperSlug, parseClipSlug, SLUG_TOKEN_LEN, type ParsedSlug } from "./clipperLinks";
+import { parseClipSlug } from "./clipperLinks";
+
 // ---------------------------------------------------------------------------
 // Rows
 
@@ -347,6 +353,34 @@ export interface ClipperBundle {
 
 export function effectiveViews(v: Pick<ClipperVideoRow, "views" | "manual_views">): number {
   return Number(v.views ?? v.manual_views ?? 0) || 0;
+}
+
+/**
+ * Resolve a /clip/<segment> path to a clipper, or null.
+ *
+ * The token (or its leading slice) is the secret and the only thing checked —
+ * the code half of a vanity slug is cosmetic, so links survive a code rename
+ * and the page can redirect to the canonical slug.
+ */
+export async function loadClipperBySlug(segment: string): Promise<ClipperRow | null> {
+  const parsed = parseClipSlug(segment);
+  if (!parsed) return null;
+
+  if (parsed.token) {
+    const rows = await sbGet<ClipperRow[]>(
+      `clippers?token=eq.${encodeURIComponent(parsed.token)}&active=eq.true&limit=1`,
+    );
+    return rows[0] ?? null;
+  }
+
+  const prefix = parsed.tokenPrefix as string;
+  // limit=2 so an (astronomically unlikely) prefix collision fails closed
+  // rather than showing an arbitrary creator's earnings.
+  const rows = await sbGet<ClipperRow[]>(
+    `clippers?token=like.${encodeURIComponent(prefix)}*&active=eq.true&limit=2`,
+  );
+  if (rows.length !== 1) return null;
+  return rows[0];
 }
 
 export async function loadClipperBundle(clipper: ClipperRow): Promise<ClipperBundle> {
