@@ -33,6 +33,8 @@ export interface ClipperRow {
   token: string;
   active: boolean;
   notes: string | null;
+  /** When facebook_page_url was last set — by the clipper or by an admin. */
+  page_connected_at: string | null;
   created_at: string;
 }
 

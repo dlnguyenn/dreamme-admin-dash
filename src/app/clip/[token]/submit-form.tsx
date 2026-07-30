@@ -52,7 +52,7 @@ export function SubmitVideoForm({ token }: { token: string }) {
           setUrl(e.target.value);
           if (state !== "idle") setState("idle");
         }}
-        placeholder="Paste a video link…"
+        placeholder="Paste a Facebook video link…"
         style={{
           width: 240,
           maxWidth: "100%",

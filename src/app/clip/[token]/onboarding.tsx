@@ -61,11 +61,12 @@ export function Onboarding({ name, code }: { name: string; code: string }) {
     },
     {
       n: 2,
-      title: "We track your views",
+      title: "Connect your Facebook page",
       body: (
         <>
-          Facebook view counts refresh here every day. Posted somewhere else? Paste the link under
-          &ldquo;Your videos&rdquo; and we&apos;ll pick it up.
+          Paste your page link under &ldquo;Your videos&rdquo; and we&apos;ll find your clips
+          automatically — new posts get picked up and view counts refresh every day. One-off video?
+          Paste that link too.
         </>
       ),
     },

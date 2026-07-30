@@ -27,6 +27,7 @@ import {
   type ClipperRow,
 } from "@/lib/clippers";
 import { fetchCreatorStats, creatorStatsConfigured } from "@/lib/appReferrals";
+import { normalizeFacebookPageUrl, normalizeFacebookUrl } from "@/lib/facebookViews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -145,7 +146,20 @@ export async function POST(req: Request) {
         if (!body.id) return NextResponse.json({ error: "id required" }, { status: 400 });
         const patch: Record<string, unknown> = {};
         if (body.facebook_page_url !== undefined) {
-          patch.facebook_page_url = body.facebook_page_url?.trim() || null;
+          const raw = body.facebook_page_url?.trim() ?? "";
+          if (!raw) {
+            patch.facebook_page_url = null;
+            patch.page_connected_at = null;
+          } else {
+            // Same canonicalization the clipper-facing connect route applies,
+            // so admin- and self-connected pages match one another.
+            const check = normalizeFacebookPageUrl(raw);
+            if (!check.ok || !check.url) {
+              return NextResponse.json({ error: check.error ?? "invalid page url" }, { status: 400 });
+            }
+            patch.facebook_page_url = check.url;
+            patch.page_connected_at = new Date().toISOString();
+          }
         }
         if (body.revshare_pct !== undefined) patch.revshare_pct = Number(body.revshare_pct) || 20;
         if (body.notes !== undefined) patch.notes = body.notes;
@@ -164,7 +178,7 @@ export async function POST(req: Request) {
           [
             {
               clipper_id: body.clipper_id,
-              url: body.url.trim(),
+              url: normalizeFacebookUrl(body.url.trim()),
               platform: body.platform ?? "facebook",
               title: body.title ?? null,
               source: "admin",

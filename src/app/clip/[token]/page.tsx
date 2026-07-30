@@ -25,6 +25,7 @@ import {
 import { fetchCreatorStatByCode } from "@/lib/appReferrals";
 import { SubmitVideoForm } from "./submit-form";
 import { Onboarding } from "./onboarding";
+import { ConnectPage } from "./connect-page";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -259,9 +260,12 @@ export default async function ClipperPage({
             <h2 style={{ ...h2, margin: 0 }}>Your videos</h2>
             <SubmitVideoForm token={token} />
           </div>
+          <ConnectPage token={token} pageUrl={clipper.facebook_page_url} />
           {videos.length === 0 ? (
             <div style={emptyCard}>
-              No videos tracked yet. We scan your Facebook page daily, or paste a video link above.
+              {clipper.facebook_page_url
+                ? "No videos tracked yet. We check your page every day — new reels show up here automatically."
+                : "No videos tracked yet. Connect your Facebook page above and we'll find your clips automatically, or paste a video link."}
             </div>
           ) : (
             <TableCard>
@@ -297,7 +301,13 @@ export default async function ClipperPage({
                     <td style={{ ...td, textTransform: "capitalize" }}>{v.platform}</td>
                     <td style={{ ...td, ...num }}>{fmtDate(v.posted_at)}</td>
                     <td style={{ ...td, ...num, textAlign: "right", fontWeight: 600 }}>
-                      {fmtInt(effectiveViews(v))}
+                      {v.platform === "facebook" ? (
+                        fmtInt(effectiveViews(v))
+                      ) : (
+                        // Only Facebook views are scraped — don't show a 0 that
+                        // reads as "this flopped".
+                        <span style={{ fontWeight: 400, color: MUTED }}>Not tracked</span>
+                      )}
                     </td>
                     <td style={{ ...td, textAlign: "right", fontSize: 12, color: MUTED }}>
                       {fmtDate(v.views_updated_at)}

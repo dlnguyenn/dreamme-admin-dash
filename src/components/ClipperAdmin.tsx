@@ -59,6 +59,7 @@ interface ClipperItem {
   name: string;
   code: string;
   facebook_page_url: string | null;
+  page_connected_at: string | null;
   revshare_pct: number;
   token: string;
   active: boolean;
@@ -313,12 +314,19 @@ function ClipperDetail({
           <input style={input} value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" />
         </div>
         <div style={{ flex: "2 1 320px" }}>
-          <div style={label}>Facebook page URL (daily scan)</div>
+          <div style={label}>
+            Facebook page URL (daily scan)
+            {c.page_connected_at ? (
+              <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--ink-3)" }}>
+                · connected {new Date(c.page_connected_at).toLocaleDateString()}
+              </span>
+            ) : null}
+          </div>
           <input
             style={input}
             value={fbUrl}
             onChange={(e) => setFbUrl(e.target.value)}
-            placeholder="https://www.facebook.com/…"
+            placeholder="https://www.facebook.com/yourpage"
           />
         </div>
         <Button
@@ -365,7 +373,7 @@ function ClipperDetail({
         {c.videos.length === 0 ? (
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
             None yet — daily scan will pick up their Facebook page
-            {c.facebook_page_url ? "" : " (no page URL set!)"}.
+            {c.facebook_page_url ? "" : " (no page URL set — they can connect it themselves on their /clip link)"}.
           </div>
         ) : (
           <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>

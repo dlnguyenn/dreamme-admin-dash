@@ -2,12 +2,18 @@
  * Facebook scraping wrappers for the clipper program. Bare fetch, no SDK,
  * same style as apify-instagram.ts. Reuses APIFY_KEY.
  *
+ * FALLBACK PROVIDER. ScrapeCreators is primary (see scrapecreators-facebook.ts
+ * and the dispatcher in facebookViews.ts) — it is ~20x cheaper and returns
+ * discovery and views in one call. This path runs only when
+ * CLIPPER_FB_PROVIDER=apify or SCRAPECREATORS_API_KEY is missing.
+ *
  * Two actors:
  *   apify~facebook-posts-scraper                    — page URL → recent posts
- *     (discovery: find a clipper's new video posts on their page)
+ *     (discovery: find a clipper's new video posts on their page; $0.002/post)
  *   social_developer~facebook-playcount-scraper     — video/reel URLs → play_count
- *     (refresh: cheap per-URL view counts, ~$0.00005/url; community-maintained,
- *      so scrape_status + manual_views are the fallback)
+ *     (refresh: per-URL view counts. NOTE $0.004 PER RESULT — an earlier comment
+ *      here claimed ~$0.00005/url, which is the actor-start fee, not the real
+ *      cost. At the old 1,000-video cap that was ~$120/mo.)
  */
 import { z } from "zod";
 

@@ -2,27 +2,29 @@
  * Daily clipper video sync (vercel.json: 0 9 * * *).
  *
  * Two legs per run:
- *   1. DISCOVERY — for each active clipper with a facebook_page_url, scrape
- *      their page's recent posts (apify~facebook-posts-scraper) and upsert any
- *      video/reel posts into clipper_videos (source='scraped').
- *   2. REFRESH — one batched playcount run over ALL active facebook video
- *      URLs (social_developer~facebook-playcount-scraper), updating
- *      clipper_videos.views and appending today's clipper_video_views row.
+ *   1. PAGE SYNC — for each active clipper with a facebook_page_url, scrape
+ *      their page (ScrapeCreators reels feed by default). That feed carries
+ *      view counts, so this single pass does BOTH discovery of new posts and
+ *      the daily view refresh, at ~$0.0002/video.
+ *   2. ORPHAN REFRESH — per-URL lookups for the leftovers only: videos a
+ *      clipper pasted by hand, or ones whose page isn't connected. This is the
+ *      expensive path (1 credit each), so leg 1 deliberately shrinks it.
  *
  * Query params: ?discover=0 skips leg 1, ?refresh=0 skips leg 2 (debugging).
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
+import { fbViewsConfigured, fbProvider, fetchViewsForUrls } from "@/lib/facebookViews";
 import {
-  apifyFacebookConfigured,
-  discoverPageVideos,
-  fetchPlayCounts,
-} from "@/lib/apify-facebook";
+  syncClipperPage,
+  writeViewHistory,
+  acceptViewUpdate,
+  todayISODate,
+} from "@/lib/clipperSync";
 import {
   clippersDbConfigured,
   sbGet,
   sbPost,
-  sbPatch,
   type ClipperRow,
   type ClipperVideoRow,
 } from "@/lib/clippers";
@@ -31,6 +33,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+/** Reels pages per clipper per run: 10 videos each, 1 credit each. */
+const PAGES_PER_CLIPPER = 10;
+/** Hard ceiling on the expensive per-URL leg. */
+const MAX_ORPHAN_REFRESH = 400;
+const CHUNK = 100;
+
 export async function GET(req: Request) {
   if (!checkCronAuth(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -38,8 +46,8 @@ export async function GET(req: Request) {
   if (!clippersDbConfigured()) {
     return NextResponse.json({ error: "supabase not configured" }, { status: 503 });
   }
-  if (!apifyFacebookConfigured()) {
-    return NextResponse.json({ error: "APIFY_KEY not set" }, { status: 503 });
+  if (!fbViewsConfigured()) {
+    return NextResponse.json({ error: "no facebook scraping provider configured" }, { status: 503 });
   }
 
   const url = new URL(req.url);
@@ -50,74 +58,95 @@ export async function GET(req: Request) {
     "clippers?active=eq.true&select=id,name,code,facebook_page_url&limit=200",
   );
 
-  // --- 1) discovery ---------------------------------------------------------
+  // --- 1) page sync (discovery + views in one pass) --------------------------
   let discovered = 0;
+  let pageViews = 0;
+  const coveredUrls = new Set<string>();
   const discoveryErrors: string[] = [];
+
   if (doDiscover) {
     for (const c of clippers) {
       if (!c.facebook_page_url) continue;
       try {
-        const videos = await discoverPageVideos(c.facebook_page_url);
-        if (videos.length === 0) continue;
-        const rows = videos.map((v) => ({
-          clipper_id: c.id,
-          url: v.url,
-          external_id: v.externalId,
-          platform: "facebook",
-          title: v.title,
-          posted_at: v.postedAt,
-          source: "scraped",
-          // posts-scraper sometimes includes views — seed them, refresh leg
-          // will overwrite with playcount data when available
-          ...(v.views != null
-            ? { views: v.views, views_updated_at: new Date().toISOString() }
-            : {}),
-        }));
-        // url is globally unique — dedupe on it so re-discovered posts merge.
-        await sbPost("clipper_videos", rows, { onConflict: "url" });
-        discovered += rows.length;
+        const res = await syncClipperPage(
+          c.id,
+          c.facebook_page_url,
+          c.code,
+          PAGES_PER_CLIPPER,
+        );
+        discovered += res.discovered;
+        pageViews += res.withViews;
+        for (const u of res.urls) coveredUrls.add(u);
+        discoveryErrors.push(...res.errors);
       } catch (e) {
         discoveryErrors.push(`${c.code}: ${(e as Error).message.slice(0, 150)}`);
       }
     }
   }
 
-  // --- 2) refresh play counts ------------------------------------------------
+  // --- 2) orphan refresh (per-URL, only what leg 1 missed) -------------------
   let updated = 0;
   let failed = 0;
+  let skipped = 0;
   const refreshErrors: string[] = [];
+
   if (doRefresh) {
-    const videos = await sbGet<ClipperVideoRow[]>(
-      "clipper_videos?active=eq.true&platform=eq.facebook&select=id,url&limit=1000",
+    const all = await sbGet<ClipperVideoRow[]>(
+      "clipper_videos?active=eq.true&platform=eq.facebook&select=id,url,views,clipper_id&limit=1000",
     );
-    if (videos.length > 0) {
+    const candidates = all.filter((v) => !coveredUrls.has(v.url));
+    const orphans = candidates.slice(0, MAX_ORPHAN_REFRESH);
+    // Never let a cap silently look like full coverage.
+    skipped = candidates.length - orphans.length;
+    if (skipped > 0) {
+      refreshErrors.push(`orphan refresh capped: ${skipped} video(s) not refreshed this run`);
+    }
+
+    if (orphans.length > 0) {
       try {
-        const counts = await fetchPlayCounts(videos.map((v) => v.url));
+        const counts = await fetchViewsForUrls(orphans.map((v) => v.url));
         const byUrl = new Map(counts.map((c) => [c.url, c]));
-        const today = new Date().toISOString().slice(0, 10);
-        const historyRows: { video_id: string; date: string; views: number }[] = [];
-        for (const v of videos) {
+        const now = new Date().toISOString();
+        const date = todayISODate();
+        const patches: Record<string, unknown>[] = [];
+        const history: { video_id: string; date: string; views: number }[] = [];
+
+        for (const v of orphans) {
           const hit = byUrl.get(v.url);
-          if (!hit) {
-            failed++;
-            continue;
-          }
-          if (hit.playCount != null) {
-            await sbPatch(`clipper_videos?id=eq.${v.id}`, {
-              views: hit.playCount,
-              views_updated_at: new Date().toISOString(),
+          if (hit?.views != null && acceptViewUpdate(v.views, hit.views)) {
+            patches.push({
+              id: v.id,
+              clipper_id: v.clipper_id,
+              url: v.url,
+              views: hit.views,
+              views_updated_at: now,
               scrape_status: "ok",
             });
-            historyRows.push({ video_id: v.id, date: today, views: hit.playCount });
+            history.push({ video_id: v.id, date, views: hit.views });
             updated++;
           } else {
-            await sbPatch(`clipper_videos?id=eq.${v.id}`, { scrape_status: hit.status });
+            // Always leave a reason on the row — a stale count with no status
+            // is indistinguishable from a video nobody watched.
+            patches.push({
+              id: v.id,
+              clipper_id: v.clipper_id,
+              url: v.url,
+              scrape_status: hit?.status ?? "not_returned",
+            });
             failed++;
           }
         }
-        if (historyRows.length > 0) {
-          await sbPost("clipper_video_views", historyRows, { onConflict: "video_id,date" });
+
+        // Batched upserts instead of one PATCH per video (was up to 1000
+        // sequential round trips inside a 300s budget).
+        for (let i = 0; i < patches.length; i += CHUNK) {
+          try {
+            await sbPost("clipper_videos", patches.slice(i, i + CHUNK), { onConflict: "url" });
+          } catch (e) {
+            refreshErrors.push(`patch: ${(e as Error).message.slice(0, 150)}`);
+          }
         }
+        await writeViewHistory(history, refreshErrors);
       } catch (e) {
         refreshErrors.push((e as Error).message.slice(0, 200));
       }
@@ -126,11 +155,14 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    provider: fbProvider(),
     clippers: clippers.length,
     discovered,
+    pageViews,
     updated,
     failed,
-    ...(discoveryErrors.length ? { discoveryErrors } : {}),
-    ...(refreshErrors.length ? { refreshErrors } : {}),
+    skipped,
+    ...(discoveryErrors.length ? { discoveryErrors: discoveryErrors.slice(0, 20) } : {}),
+    ...(refreshErrors.length ? { refreshErrors: refreshErrors.slice(0, 20) } : {}),
   });
 }

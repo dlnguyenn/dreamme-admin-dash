@@ -7,28 +7,26 @@
  */
 import { NextResponse } from "next/server";
 import { clippersDbConfigured, sbGet, sbPost, type ClipperRow } from "@/lib/clippers";
+import { normalizeFacebookUrl } from "@/lib/facebookViews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_VIDEOS_PER_CLIPPER = 300;
 
+// Facebook only: it's the only platform we scrape views for. Accepting TikTok
+// or Instagram links here used to create rows that sat at 0 views forever with
+// no explanation, which reads as "my video flopped" rather than "not tracked".
 const ALLOWED_HOSTS = [
   "facebook.com",
   "www.facebook.com",
   "m.facebook.com",
+  "web.facebook.com",
+  "mbasic.facebook.com",
   "fb.watch",
-  "tiktok.com",
-  "www.tiktok.com",
-  "instagram.com",
-  "www.instagram.com",
 ];
 
-function platformForHost(host: string): string {
-  if (host.includes("tiktok")) return "tiktok";
-  if (host.includes("instagram")) return "instagram";
-  return "facebook";
-}
+const OTHER_PLATFORM_HOSTS = ["tiktok", "instagram", "youtube", "youtu.be"];
 
 export async function POST(req: Request) {
   if (!clippersDbConfigured()) {
@@ -52,12 +50,21 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid url" }, { status: 400 });
   }
-  if (!ALLOWED_HOSTS.includes(parsed.host.toLowerCase())) {
+  const host = parsed.host.toLowerCase();
+  if (!ALLOWED_HOSTS.includes(host)) {
+    const other = OTHER_PLATFORM_HOSTS.find((p) => host.includes(p));
     return NextResponse.json(
-      { error: "link must be a Facebook, TikTok, or Instagram video" },
+      {
+        error: other
+          ? "We only track Facebook views right now — paste a Facebook video or reel link"
+          : "link must be a Facebook video or reel",
+      },
       { status: 400 },
     );
   }
+  // Canonical form: the daily refresh matches scraper output to rows by exact
+  // URL string, and clipper_videos.url is globally unique.
+  const url = normalizeFacebookUrl(parsed.toString());
 
   const clippers = await sbGet<ClipperRow[]>(
     `clippers?token=eq.${encodeURIComponent(token)}&active=eq.true&select=id&limit=1`,
@@ -65,6 +72,21 @@ export async function POST(req: Request) {
   const clipper = clippers[0];
   if (!clipper) {
     return NextResponse.json({ error: "unknown token" }, { status: 404 });
+  }
+
+  // url is globally unique, so a plain upsert would silently reassign a video
+  // that already belongs to someone else.
+  const existing = await sbGet<{ id: string; clipper_id: string }[]>(
+    `clipper_videos?url=eq.${encodeURIComponent(url)}&select=id,clipper_id&limit=1`,
+  );
+  if (existing[0] && existing[0].clipper_id !== clipper.id) {
+    return NextResponse.json(
+      { error: "That video is already tracked by another creator" },
+      { status: 409 },
+    );
+  }
+  if (existing[0]) {
+    return NextResponse.json({ ok: true, alreadyTracked: true });
   }
 
   const count = await sbGet<{ id: string }[]>(
@@ -77,14 +99,7 @@ export async function POST(req: Request) {
   try {
     await sbPost(
       "clipper_videos",
-      [
-        {
-          clipper_id: clipper.id,
-          url: parsed.toString(),
-          platform: platformForHost(parsed.host.toLowerCase()),
-          source: "clipper",
-        },
-      ],
+      [{ clipper_id: clipper.id, url, platform: "facebook", source: "clipper" }],
       { onConflict: "url" },
     );
   } catch (e) {
