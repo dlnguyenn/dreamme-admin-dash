@@ -46,7 +46,13 @@ export function ThreadDetail({
   const [confirmSend, setConfirmSend] = React.useState<{
     body: string;
     draftId?: string;
+    /** minted when the dialog opens; dedupes retries server-side */
+    key: string;
   } | null>(null);
+  // Synchronous in-flight latch. React state updates on the NEXT render, so
+  // two clicks in the same tick both pass a state-based check — a ref is
+  // set immediately (this is how the double-send got through).
+  const sendingRef = React.useRef(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -77,10 +83,12 @@ export function ThreadDetail({
   );
   const replyTo = thread.counterpart_email;
 
-  const doSend = async (body: string, draftId?: string) => {
+  const doSend = async (body: string, draftId?: string, key?: string) => {
+    if (sendingRef.current) return; // double click / Enter, same tick
+    sendingRef.current = true;
     setBusy(true);
     try {
-      await sendReply(threadId, { body, draftId });
+      await sendReply(threadId, { body, draftId, idempotencyKey: key });
       toast(`Sent to ${replyTo}`);
       setCompose("");
       await load();
@@ -88,6 +96,7 @@ export function ThreadDetail({
     } catch (e) {
       toast(`Send failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      sendingRef.current = false;
       setBusy(false);
       setConfirmSend(null);
     }
@@ -318,6 +327,7 @@ export function ThreadDetail({
                     setConfirmSend({
                       body: draftEdits[d.id] ?? d.body,
                       draftId: d.id,
+                      key: crypto.randomUUID(),
                     })
                   }
                   disabled={busy || d.status === "sent"}
@@ -343,7 +353,9 @@ export function ThreadDetail({
                 variant="primary"
                 size="sm"
                 disabled={busy || !compose.trim()}
-                onClick={() => setConfirmSend({ body: compose })}
+                onClick={() =>
+                  setConfirmSend({ body: compose, key: crypto.randomUUID() })
+                }
               >
                 Send reply
               </Button>
@@ -400,7 +412,11 @@ export function ThreadDetail({
             </div>
           }
           confirmLabel="Send"
-          onConfirm={() => doSend(confirmSend.body, confirmSend.draftId)}
+          busy={busy}
+          busyLabel="Sending…"
+          onConfirm={() =>
+            doSend(confirmSend.body, confirmSend.draftId, confirmSend.key)
+          }
           onCancel={() => setConfirmSend(null)}
         />
       )}

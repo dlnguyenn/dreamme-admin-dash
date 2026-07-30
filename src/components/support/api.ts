@@ -65,7 +65,13 @@ export async function patchThread(
 
 export async function sendReply(
   id: string,
-  params: { body: string; draftId?: string; to?: string },
+  params: {
+    body: string;
+    draftId?: string;
+    to?: string;
+    /** per-dialog key so retries/double-clicks dedupe server-side */
+    idempotencyKey?: string;
+  },
 ): Promise<{ messageId: string; to: string }> {
   return json(
     await fetch(`/api/support/threads/${encodeURIComponent(id)}/reply`, {

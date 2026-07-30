@@ -75,6 +75,17 @@ export async function spPost<T>(
   return res.json() as Promise<T[]>;
 }
 
+export async function spDelete(pathWithFilter: string): Promise<void> {
+  if (!supportDbConfigured()) throw new Error("Supabase env missing");
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathWithFilter}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+  if (!res.ok) {
+    throw new Error(`Supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
 export async function spPatch<T>(
   pathWithFilter: string,
   patch: unknown,

@@ -18,6 +18,8 @@ import {
   getThread,
   getThreadMessages,
   patchThread,
+  spDelete,
+  spGet,
   spPatch,
   spPost,
   supportDbConfigured,
@@ -36,6 +38,13 @@ const Body = z.object({
   body: z.string().min(1).max(20_000),
   draftId: z.string().uuid().optional(),
   to: z.string().email().optional(),
+  /**
+   * Minted once per confirm dialog. Two clicks (or a retry, or a second
+   * tab) carry the SAME key, which we claim atomically below — a
+   * read-then-write duplicate check races and lets simultaneous sends
+   * through, as proven in testing.
+   */
+  idempotencyKey: z.string().min(8).max(80).optional(),
 });
 
 export async function POST(
@@ -103,7 +112,72 @@ export async function POST(
       );
     }
 
+    // --- duplicate-send guards ---------------------------------------
+    // A double "Send this reply" once emailed a user twice. The UI now
+    // locks synchronously, but tabs/retries/races still need a server
+    // backstop. Cheap checks first, then an ATOMIC claim.
+    if (parsed.data.draftId) {
+      const drafts = await spGet<Array<{ status: string }>>(
+        `support_drafts?id=eq.${encodeURIComponent(parsed.data.draftId)}&select=status&limit=1`,
+      );
+      if (drafts[0]?.status === "sent") {
+        return NextResponse.json(
+          { ok: false, error: "this draft was already sent" },
+          { status: 409 },
+        );
+      }
+    }
+
     const messages = await getThreadMessages(id);
+    const cutoff = Date.now() - 10 * 60_000;
+    const duplicate = messages.some(
+      (m) =>
+        m.direction === "outbound" &&
+        new Date(m.sent_at).getTime() > cutoff &&
+        (m.body_text ?? "").trim() === parsed.data.body.trim(),
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "an identical reply was sent on this thread minutes ago — refusing the duplicate",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Atomic claim: insert the outbound row BEFORE sending, keyed on the
+    // dialog's idempotency key via the unique message_id index. Two
+    // simultaneous requests both reach here; exactly one insert wins and
+    // the loser gets zero rows back. (A read-then-write check does NOT
+    // survive this — verified: 4 concurrent sends all passed it.)
+    const claimKey = `<claim-${parsed.data.idempotencyKey ?? crypto.randomUUID()}@dreamme.life>`;
+    const claimed = await spPost<{ id: string }>(
+      "support_messages",
+      [
+        {
+          thread_id: id,
+          direction: "outbound",
+          via: "email",
+          message_id: claimKey,
+          from_email: process.env.SUPPORT_FROM_EMAIL ?? "dan@dreamme.life",
+          to_email: to,
+          subject: replySubject(thread.subject),
+          body_text: parsed.data.body,
+          sent_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: "message_id", resolution: "ignore" },
+    );
+    if (claimed.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "this reply is already being sent" },
+        { status: 409 },
+      );
+    }
+    const claimId = claimed[0].id;
+
     const lastInbound = [...messages]
       .reverse()
       .find((m) => m.direction === "inbound" && m.via === "email");
@@ -116,30 +190,31 @@ export async function POST(
     }
 
     const subject = replySubject(thread.subject);
-    const sent = await sendSupportReply({
-      to,
-      subject,
-      bodyText: parsed.data.body,
-      inReplyTo: lastInbound?.message_id ?? null,
-      references: chain,
-    });
-
-    const nowIso = new Date().toISOString();
-    await spPost("support_messages", [
-      {
-        thread_id: id,
-        direction: "outbound",
-        via: "email",
-        message_id: sent.messageId,
-        in_reply_to: lastInbound?.message_id ?? null,
-        references_ids: chain,
-        from_email: process.env.SUPPORT_FROM_EMAIL ?? "dan@dreamme.life",
-        to_email: to,
+    let sent: Awaited<ReturnType<typeof sendSupportReply>>;
+    try {
+      sent = await sendSupportReply({
+        to,
         subject,
-        body_text: parsed.data.body,
-        sent_at: nowIso,
-      },
-    ]);
+        bodyText: parsed.data.body,
+        inReplyTo: lastInbound?.message_id ?? null,
+        references: chain,
+      });
+    } catch (sendErr) {
+      // Release the claim so a genuine retry isn't blocked by a send that
+      // never happened.
+      await spDelete(`support_messages?id=eq.${claimId}`).catch(() => {});
+      throw sendErr;
+    }
+
+    // Promote the claim row to the real sent message (its Message-ID is
+    // what future user replies thread against).
+    const nowIso = new Date().toISOString();
+    await spPatch(`support_messages?id=eq.${claimId}`, {
+      message_id: sent.messageId,
+      in_reply_to: lastInbound?.message_id ?? null,
+      references_ids: chain,
+      sent_at: nowIso,
+    });
 
     if (parsed.data.draftId) {
       await spPatch(

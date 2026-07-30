@@ -196,6 +196,9 @@ function SubscriptionCard({
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
   const [pending, setPending] = React.useState<PendingAction | null>(null);
+  // Synchronous latch — state-based checks miss same-tick double clicks,
+  // and a duplicate refund is real money.
+  const runningRef = React.useRef(false);
 
   const storeLabel =
     sub.store === "STRIPE"
@@ -243,7 +246,8 @@ function SubscriptionCard({
   };
 
   const execute = async () => {
-    if (!pending) return;
+    if (!pending || runningRef.current) return; // no double-fire
+    runningRef.current = true;
     setBusy(true);
     try {
       if (pending.kind === "stripe_cancel") {
@@ -270,6 +274,7 @@ function SubscriptionCard({
     } catch (e) {
       toast(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      runningRef.current = false;
       setBusy(false);
       setPending(null);
     }
@@ -401,6 +406,8 @@ function SubscriptionCard({
           confirmLabel={
             pending.kind === "play_refund" ? "Refund & revoke" : "Confirm"
           }
+          busy={busy}
+          busyLabel="Working…"
           onConfirm={execute}
           onCancel={() => setPending(null)}
         />

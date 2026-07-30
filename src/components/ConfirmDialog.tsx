@@ -11,6 +11,8 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = false,
+  busy = false,
+  busyLabel,
   onConfirm,
   onCancel,
 }: {
@@ -19,6 +21,14 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /**
+   * The confirmed action is in flight: both buttons and the Enter shortcut
+   * lock so a second click/keypress can't fire the action again (a double
+   * "Send this reply" once emailed a user twice).
+   */
+  busy?: boolean;
+  /** confirm-button label while busy (defaults to confirmLabel + "…") */
+  busyLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -26,11 +36,11 @@ export function ConfirmDialog({
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter") onConfirm();
+      if (e.key === "Enter" && !busy) onConfirm();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onConfirm]);
+  }, [onConfirm, busy]);
 
   return (
     <Sheet open={true} onClose={onCancel} desktopMaxWidth={420} ariaLabel={title}>
@@ -67,6 +77,7 @@ export function ConfirmDialog({
         <Button
           variant="ghost"
           onClick={onCancel}
+          disabled={busy}
           style={isMobile ? { width: "100%", justifyContent: "center" } : undefined}
         >
           {cancelLabel}
@@ -74,9 +85,10 @@ export function ConfirmDialog({
         <Button
           variant={destructive ? "danger" : "primary"}
           onClick={onConfirm}
+          disabled={busy}
           style={isMobile ? { width: "100%", justifyContent: "center" } : undefined}
         >
-          {confirmLabel}
+          {busy ? (busyLabel ?? `${confirmLabel}…`) : confirmLabel}
         </Button>
       </div>
     </Sheet>
