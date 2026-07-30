@@ -4,6 +4,9 @@
  * Query params:
  *   ?status=new|drafts_ready|waiting_user|closed|ignored (optional; default
  *     hides closed+ignored)
+ *   ?q=jane — search counterpart name/email/subject across ALL statuses
+ *     (finding a person matters regardless of closed/ignored); overrides
+ *     the status filter
  *   ?countOnly=1 — just the unread badge count
  * Snoozed threads (snoozed_until in the future) are excluded unless their
  * status is explicitly requested.
@@ -40,6 +43,20 @@ export async function GET(req: Request) {
     const unreadCount = unreadRows.length;
     if (countOnly) {
       return NextResponse.json({ ok: true, unreadCount });
+    }
+
+    // Search mode: name/email/subject, every status, newest first.
+    const q = url.searchParams.get("q")?.trim() ?? "";
+    if (q) {
+      // Strip characters PostgREST's or=() grammar or ilike patterns treat
+      // specially, then wildcard both ends.
+      const safe = q.replace(/[,()*%\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
+      if (!safe) return NextResponse.json({ ok: true, threads: [], unreadCount });
+      const pat = encodeURIComponent(`*${safe}*`);
+      const threads = await spGet<SupportThreadRow[]>(
+        `support_threads?or=(counterpart_email.ilike.${pat},counterpart_name.ilike.${pat},subject.ilike.${pat})&order=last_message_at.desc&limit=100`,
+      );
+      return NextResponse.json({ ok: true, threads, unreadCount });
     }
 
     const filter =

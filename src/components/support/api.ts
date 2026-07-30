@@ -19,11 +19,20 @@ async function json<T>(res: Response): Promise<T> {
   return body;
 }
 
-export async function fetchThreads(status?: ThreadStatus | "open"): Promise<{
+export async function fetchThreads(
+  status?: ThreadStatus | "open",
+  q?: string,
+): Promise<{
   threads: SupportThreadRow[];
   unreadCount: number;
 }> {
-  const qs = status && status !== "open" ? `?status=${status}` : "";
+  const params = new URLSearchParams();
+  if (q?.trim()) {
+    params.set("q", q.trim()); // search overrides the status filter
+  } else if (status && status !== "open") {
+    params.set("status", status);
+  }
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return json(await fetch(`/api/support/threads${qs}`, { cache: "no-store" }));
 }
 

@@ -67,15 +67,18 @@ export function SupportInbox({
   const [polling, setPolling] = React.useState(false);
   // Per-status counts derived from the "open" superset (no counts endpoint).
   const [counts, setCounts] = React.useState<Partial<Record<Filter, number>>>({});
+  // Search by name/email — overrides the status filter while non-empty.
+  const [search, setSearch] = React.useState("");
+  const searching = search.trim().length > 0;
 
   const load = React.useCallback(
-    async (f: Filter = filter) => {
+    async (f: Filter = filter, q: string = search) => {
       try {
         setError(null);
-        const { threads, unreadCount } = await fetchThreads(f);
+        const { threads, unreadCount } = await fetchThreads(f, q);
         setThreads(threads);
         onUnreadChange?.(unreadCount);
-        if (f === "open") {
+        if (f === "open" && !q.trim()) {
           const c: Partial<Record<Filter, number>> = { open: threads.length };
           for (const t of threads) {
             c[t.status as Filter] = (c[t.status as Filter] ?? 0) + 1;
@@ -88,13 +91,19 @@ export function SupportInbox({
         setLoading(false);
       }
     },
-    [filter, onUnreadChange],
+    [filter, search, onUnreadChange],
   );
 
   React.useEffect(() => {
     setLoading(true);
-    load(filter);
-  }, [filter, load]);
+    if (!searching) {
+      load(filter, "");
+      return;
+    }
+    // Debounce keystrokes so we don't query per character.
+    const t = setTimeout(() => load(filter, search), 300);
+    return () => clearTimeout(t);
+  }, [filter, search, searching, load]);
 
   const handlePoll = async () => {
     setPolling(true);
@@ -134,24 +143,78 @@ export function SupportInbox({
         }
       />
 
+      {/* Search by name or email — spans every status, incl. closed/ignored */}
+      <div style={{ position: "relative", maxWidth: isMobile ? "100%" : 340, marginBottom: 12 }}>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or email…"
+          aria-label="Search threads by name or email"
+          style={{
+            width: "100%",
+            padding: "9px 34px 9px 13px",
+            borderRadius: 12,
+            border: "1px solid var(--line-2)",
+            background: "var(--surface)",
+            color: "var(--ink)",
+            font: `400 ${isMobile ? 16 : 13.5}px var(--font-ui)`,
+            outline: "none",
+            boxShadow: "var(--shadow-card)",
+          }}
+        />
+        {searching && (
+          <button
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            style={{
+              position: "absolute",
+              right: 6,
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: 24,
+              height: 24,
+              borderRadius: 999,
+              border: "none",
+              background: "var(--surface-2)",
+              color: "var(--ink-3)",
+              cursor: "pointer",
+              font: "600 12px var(--font-ui)",
+              lineHeight: "24px",
+              minHeight: 0,
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       {/* Mobile: one thumb-scrollable row (wrapping eats vertical space);
           desktop: wrap as before. Negative margins let the row bleed to the
           screen edge under the shell's 16px padding. */}
       <div
-        style={
-          isMobile
+        style={{
+          ...(isMobile
             ? {
-                display: "flex",
+                display: "flex" as const,
                 gap: 8,
                 marginBottom: 14,
-                overflowX: "auto",
-                whiteSpace: "nowrap",
+                overflowX: "auto" as const,
+                whiteSpace: "nowrap" as const,
                 margin: "0 -16px 14px",
                 padding: "0 16px 4px",
-                scrollbarWidth: "none",
+                scrollbarWidth: "none" as const,
               }
-            : { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }
-        }
+            : {
+                display: "flex" as const,
+                gap: 8,
+                flexWrap: "wrap" as const,
+                marginBottom: 18,
+              }),
+          // Filters don't apply while a search is active.
+          ...(searching ? { opacity: 0.45, pointerEvents: "none" as const } : {}),
+        }}
       >
         {FILTERS.map((f) => (
           <FilterPill
@@ -197,7 +260,9 @@ export function SupportInbox({
                   borderRadius: 16,
                 }}
               >
-                Nothing here. Inbox zero.
+                {searching
+                  ? `No threads match "${search.trim()}"`
+                  : "Nothing here. Inbox zero."}
               </div>
             ) : (
               <div
@@ -215,6 +280,7 @@ export function SupportInbox({
                     thread={t}
                     first={i === 0}
                     active={t.id === selectedId}
+                    showStatus={searching}
                     onClick={() => setSelectedId(t.id)}
                   />
                 ))}
@@ -266,11 +332,14 @@ function ThreadListItem({
   thread,
   active,
   first,
+  showStatus = false,
   onClick,
 }: {
   thread: SupportThreadRow;
   active: boolean;
   first: boolean;
+  /** search results span all statuses, so say which one each row is in */
+  showStatus?: boolean;
   onClick: () => void;
 }) {
   const [hover, setHover] = React.useState(false);
@@ -371,6 +440,11 @@ function ThreadListItem({
           </div>
         )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {showStatus && (
+            <SourceTag size={9.5}>
+              {thread.status.replace("_", " ").toUpperCase()}
+            </SourceTag>
+          )}
           {cat && (
             <CategoryTag family={cat.family} size={9.5}>
               {cat.label}
