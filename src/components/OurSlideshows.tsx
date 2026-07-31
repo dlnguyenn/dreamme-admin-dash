@@ -40,7 +40,7 @@ interface OurSlideshow {
 // Single source of truth: adding a text-card style means adding it here (and to
 // the --style choices in text-cards/publish-to-dash.py). Everything below —
 // the union, the parse allow-list, the counts and the filter row — derives from it.
-const KNOWN_STYLES = ["flamingo", "gradient", "sunset", "editorial", "mascot"] as const;
+const KNOWN_STYLES = ["flamingo", "gradient", "sunset", "editorial", "notebook", "mascot"] as const;
 
 type StyleName = (typeof KNOWN_STYLES)[number] | "unknown";
 
@@ -49,9 +49,25 @@ const STYLE_FAMILY: Record<StyleName, Family> = {
   gradient: "info",
   sunset: "attention",
   editorial: "success",
+  notebook: "danger",
   mascot: "warning",
   unknown: "neutral",
 };
+
+/**
+ * Display label for a style. Only "unknown" differs from a plain capitalisation:
+ * a deck whose style this build does not recognise is still a real deck, so it
+ * reads as "Fun" rather than accusing it of being broken. Note that a style
+ * added to the generator but not yet deployed here lands in this bucket — if a
+ * whole batch suddenly reads "Fun", the fix is to ship KNOWN_STYLES, not to
+ * relabel again.
+ */
+const labelOf = (style: StyleName | "all") =>
+  style === "all"
+    ? "All"
+    : style === "unknown"
+      ? "Fun"
+      : style[0].toUpperCase() + style.slice(1);
 
 /**
  * Rows are written by text-cards/publish-to-dash.py with a synthetic URL of
@@ -211,7 +227,7 @@ export function OurSlideshows() {
         {(["all", ...KNOWN_STYLES] as const).map((f) => (
           <FilterPill
             key={f}
-            label={f === "all" ? "All" : f[0].toUpperCase() + f.slice(1)}
+            label={labelOf(f)}
             count={f === "all" ? rows.length : counts[f]}
             selected={filter === f}
             countFamily={f === "all" ? undefined : STYLE_FAMILY[f]}
@@ -572,7 +588,9 @@ function DeckLightbox({
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <CategoryTag family={STYLE_FAMILY[style]}>{style.toUpperCase()}</CategoryTag>
+        <CategoryTag family={STYLE_FAMILY[style]}>
+          {labelOf(style).toUpperCase()}
+        </CategoryTag>
         {date && <Chip title="Generated">{date}</Chip>}
         <Chip title="Aspect ratio">{aspectLabelOf(style)}</Chip>
         <Chip title="Slides">
