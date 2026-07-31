@@ -309,6 +309,16 @@ export const Icons = {
       <path d="M6 9l6 6 6-6" />
     </Icon>
   ),
+  ChevronLeft: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M15 6l-6 6 6 6" />
+    </Icon>
+  ),
+  ChevronRight: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M9 6l6 6-6 6" />
+    </Icon>
+  ),
   SignOut: (p: IconProps) => (
     <Icon {...p}>
       <path d="M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10.5 12H20M20 12l-3.2-3.2M20 12l-3.2 3.2" />
