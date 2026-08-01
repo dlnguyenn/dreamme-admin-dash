@@ -23,7 +23,15 @@ import type {
   SupportActionRow,
   SupportThreadRow,
 } from "@/lib/support/types";
-import { runAction, timeAgo, type StripeLookupResult } from "./api";
+import {
+  fetchSuggestions,
+  linkStripeCustomer,
+  runAction,
+  timeAgo,
+  type StripeLookupResult,
+  type StripeSuggestion,
+} from "./api";
+import { useIsMobile } from "@/lib/useIsMobile";
 import {
   APPLE_REFUND_TEMPLATE,
   appleRefundTemplate,
@@ -110,8 +118,12 @@ export function UserSidebar({
                 "this thread"
               )}
               . They may use a different email in the app (common with Apple
-              Hide My Email).
+              Hide My Email) or pay from another address.
             </div>
+            <StripeMatchPanel
+              thread={thread}
+              onActionDone={onActionDone}
+            />
             {relayStatus !== "no" && (
               <Button
                 size="sm"
@@ -208,6 +220,255 @@ type PendingAction =
   | { kind: "stripe_cancel"; atPeriodEnd: boolean; lookup: StripeLookupResult }
   | { kind: "stripe_refund"; lookup: StripeLookupResult }
   | { kind: "play_refund"; productId: string };
+
+/**
+ * "Maybe this user?" — Stripe customers whose card billing name matches
+ * the sender's display name, plus a manual name search. Exists because
+ * people email support from a different address than the card on file,
+ * and Stripe itself cannot be searched by name (we index billing names
+ * from charges instead).
+ */
+function StripeMatchPanel({
+  thread,
+  onActionDone,
+}: {
+  thread: SupportThreadRow;
+  onActionDone: () => void;
+}) {
+  const toast = useToast();
+  const isMobile = useIsMobile();
+  const linkedId = thread.user_context?.linkedStripeCustomerId ?? null;
+  const [suggestions, setSuggestions] = React.useState<StripeSuggestion[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [confirm, setConfirm] = React.useState<StripeSuggestion | null>(null);
+  const linkingRef = React.useRef(false);
+
+  const load = React.useCallback(
+    async (q: string) => {
+      setLoading(true);
+      try {
+        const { suggestions } = await fetchSuggestions(thread.id, q);
+        setSuggestions(suggestions);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [thread.id],
+  );
+
+  // Auto-suggest on open (skip once linked — the match is settled).
+  React.useEffect(() => {
+    if (linkedId) return;
+    if (!query.trim()) {
+      load("");
+      return;
+    }
+    const t = setTimeout(() => load(query), 300);
+    return () => clearTimeout(t);
+  }, [query, linkedId, load]);
+
+  const doLink = async (s: StripeSuggestion) => {
+    if (linkingRef.current) return; // same-tick double click
+    linkingRef.current = true;
+    setBusy(true);
+    try {
+      await linkStripeCustomer(thread.id, {
+        customerId: s.customerId,
+        name: s.name,
+      });
+      toast(`Linked ${s.name ?? s.customerId}`);
+      onActionDone();
+    } catch (e) {
+      toast(`Link failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      linkingRef.current = false;
+      setBusy(false);
+      setConfirm(null);
+    }
+  };
+
+  const doUnlink = async () => {
+    if (linkingRef.current) return;
+    linkingRef.current = true;
+    setBusy(true);
+    try {
+      await linkStripeCustomer(thread.id, { unlink: true });
+      toast("Unlinked");
+      onActionDone();
+    } catch (e) {
+      toast(`Unlink failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      linkingRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  if (linkedId) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 10px",
+          borderRadius: 10,
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+        }}
+      >
+        <span style={{ flex: 1, font: "500 12px var(--font-ui)", color: "var(--ink-2)" }}>
+          Linked to Stripe customer{" "}
+          <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 11 }}>
+            {linkedId}
+          </span>
+        </span>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={doUnlink}>
+          Unlink
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search Stripe by name…"
+        aria-label="Search Stripe customers by name"
+        style={{
+          width: "100%",
+          padding: "8px 11px",
+          borderRadius: 10,
+          border: "1px solid var(--line-2)",
+          background: "var(--surface)",
+          color: "var(--ink)",
+          font: `400 ${isMobile ? 16 : 13}px var(--font-ui)`,
+          outline: "none",
+        }}
+      />
+      {loading && (
+        <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-4)" }}>
+          Searching…
+        </span>
+      )}
+      {!loading && suggestions.length > 0 && (
+        <>
+          <span style={{ font: "650 11px var(--font-ui)", color: "var(--ink-3)" }}>
+            {query.trim() ? "Stripe matches" : "Maybe this user?"}
+          </span>
+          {suggestions.map((s) => (
+            <SuggestionRow
+              key={s.customerId}
+              s={s}
+              disabled={busy}
+              onLink={() => setConfirm(s)}
+            />
+          ))}
+        </>
+      )}
+      {!loading && query.trim().length >= 2 && suggestions.length === 0 && (
+        <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-4)" }}>
+          No Stripe customer matches that name.
+        </span>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title="Link this Stripe customer?"
+          message={
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div>
+                Attaches <strong>{confirm.name ?? confirm.customerId}</strong>
+                {confirm.email ? ` (${confirm.email})` : ""} to this thread, so
+                their subscription and the cancel/refund buttons become
+                available here.
+              </div>
+              <div style={{ color: "var(--ink-4)", fontSize: 12 }}>
+                Only do this if you are confident it is the same person. You can
+                unlink again at any time.
+              </div>
+            </div>
+          }
+          confirmLabel="Link"
+          busy={busy}
+          busyLabel="Linking…"
+          onConfirm={() => doLink(confirm)}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SuggestionRow({
+  s,
+  disabled,
+  onLink,
+}: {
+  s: StripeSuggestion;
+  disabled: boolean;
+  onLink: () => void;
+}) {
+  const sub = s.subscriptions[0];
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        borderRadius: 10,
+        border: "1px solid var(--line)",
+        background: "var(--surface)",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            font: "650 12.5px var(--font-ui)",
+            color: "var(--ink)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {s.name ?? "(no name on card)"}
+        </div>
+        <div
+          style={{
+            font: "400 11.5px var(--font-ui)",
+            color: "var(--ink-3)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {s.email ?? s.customerId}
+        </div>
+        <div style={{ display: "flex", gap: 5, marginTop: 4, flexWrap: "wrap" }}>
+          {sub?.plan && <Chip tone="neutral">{sub.plan}</Chip>}
+          {sub && (
+            <Chip tone={sub.isActive ? "success" : "neutral"}>
+              {sub.isActive ? (sub.isTrial ? "trial" : "active") : "inactive"}
+            </Chip>
+          )}
+          {s.totalSpentUsd > 0 && (
+            <Chip tone="neutral">${s.totalSpentUsd.toFixed(2)}</Chip>
+          )}
+        </div>
+      </div>
+      <Button size="sm" variant="secondary" disabled={disabled} onClick={onLink}>
+        Link
+      </Button>
+    </div>
+  );
+}
 
 /** Wraps an action button with the "already done" note underneath. */
 function LockedAction({

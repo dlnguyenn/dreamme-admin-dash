@@ -124,6 +124,46 @@ export async function runAction(
   );
 }
 
+export interface StripeSuggestion {
+  customerId: string;
+  name: string | null;
+  email: string | null;
+  lastChargeAt: string | null;
+  subscriptions: Array<{
+    plan: string | null;
+    isTrial: boolean;
+    isActive: boolean;
+    expiresAt: string | null;
+  }>;
+  totalSpentUsd: number;
+}
+
+/** "Maybe this user?" — auto-matched on the sender's name, or `q` search. */
+export async function fetchSuggestions(
+  id: string,
+  q?: string,
+): Promise<{ suggestions: StripeSuggestion[]; manual: boolean }> {
+  const qs = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return json(
+    await fetch(`/api/support/threads/${encodeURIComponent(id)}/suggestions${qs}`, {
+      cache: "no-store",
+    }),
+  );
+}
+
+export async function linkStripeCustomer(
+  id: string,
+  params: { customerId?: string; name?: string | null; unlink?: boolean },
+): Promise<{ thread: SupportThreadRow }> {
+  return json(
+    await fetch(`/api/support/threads/${encodeURIComponent(id)}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }),
+  );
+}
+
 export async function pollNow(): Promise<{
   report: {
     emailsFetched: number;

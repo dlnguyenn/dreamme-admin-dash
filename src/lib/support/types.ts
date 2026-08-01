@@ -140,6 +140,13 @@ export interface UserContext {
   accountCreatedAt?: string | null;
   /** last app sign-in */
   lastSeenAt?: string | null;
+  /**
+   * Set when a human linked this thread to a Stripe customer by name
+   * ("Maybe this user?"), because the sender emailed from an address that
+   * matches no account. Marks the context as manually attached rather
+   * than resolved, and drives the Unlink affordance.
+   */
+  linkedStripeCustomerId?: string | null;
 }
 
 export interface TriageResult {

@@ -24,6 +24,7 @@ import {
   type ConsumerFeedbackRow,
 } from "./consumer-db";
 import { resolveUser } from "./resolve-user";
+import { refreshStripeNameIndex } from "./stripe-names";
 import { isFeedbackMirror, triageThread } from "./triage";
 import type {
   SupportDraftRow,
@@ -48,6 +49,9 @@ export interface IngestReport {
   feedbackFetched: number;
   feedbackInserted: number;
   threadsTriaged: number;
+  /** Stripe billing-name index (powers "Maybe this user?") */
+  namesScanned: number;
+  namesIndexed: number;
   triageErrors: string[];
   legErrors: string[];
 }
@@ -522,6 +526,8 @@ export async function runIngest(): Promise<IngestReport> {
     feedbackFetched: 0,
     feedbackInserted: 0,
     threadsTriaged: 0,
+    namesScanned: 0,
+    namesIndexed: 0,
     triageErrors: [],
     legErrors: [],
   };
@@ -547,6 +553,18 @@ export async function runIngest(): Promise<IngestReport> {
   } catch (e) {
     report.legErrors.push(
       `feedback leg failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  // Keep the Stripe billing-name index warm so "Maybe this user?" can
+  // suggest a match the moment a thread opens. Incremental: a normal pass
+  // reads one page.
+  try {
+    const names = await refreshStripeNameIndex();
+    report.namesScanned = names.chargesScanned;
+    report.namesIndexed = names.customersUpserted;
+  } catch (e) {
+    report.legErrors.push(
+      `stripe name index failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
   try {

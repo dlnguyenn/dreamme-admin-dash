@@ -27,6 +27,11 @@ import {
   appleRelayStatus,
   isAppleRelayAddress,
 } from "@/lib/support/apple-relay";
+import {
+  nameMatches,
+  nameTokens,
+  sanitizeSearch,
+} from "@/lib/support/stripe-names";
 import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
@@ -452,6 +457,49 @@ describe("actionLock / completedActions", () => {
     ]);
     expect(done.get("stripe_refund")?.created_at).toBe("2026-07-31T12:00:00Z");
     expect(done.has("stripe_cancel_now")).toBe(false);
+  });
+});
+
+describe("Stripe name matching (Maybe this user?)", () => {
+  it("matches a reordered, comma'd name (real: Orsagos, Kristin)", () => {
+    expect(nameMatches("Orsagos, Kristin", "Kristin Orsagos")).toBe(true);
+  });
+
+  it("matches case and spacing differences (real: Steve MAY)", () => {
+    expect(nameMatches("Steve MAY", "Steve May")).toBe(true);
+    expect(nameMatches("deanna parr", "Deanna  Parr")).toBe(true);
+  });
+
+  it("never auto-suggests from a single token, however distinctive", () => {
+    // A length heuristic can't separate a rare surname from a common
+    // first name ("Melissa" is 7 chars), and a wrong auto-match here
+    // points at the refund buttons. Single tokens go through the manual
+    // search box instead, where the operator asserts intent.
+    expect(nameMatches("Melissa", "Melissa Nguyen")).toBe(false);
+    expect(nameMatches("Becky", "Becky Mitchell")).toBe(false);
+    expect(nameMatches("Novinski", "Kristy Novinski")).toBe(false);
+  });
+
+  it("requires every sender token to appear", () => {
+    expect(nameMatches("Kristy Novinski", "Kristy Alvarez")).toBe(false);
+    expect(nameMatches("Jamie Rodriguez", "Jamie Rodriguez")).toBe(true);
+  });
+
+  it("drops honorifics and initials from the token set", () => {
+    expect(nameTokens("Dr. Mijares")).toEqual(["mijares"]);
+    expect(nameTokens("J. K. Rowling")).toEqual(["rowling"]);
+  });
+
+  it("handles empty and junk input safely", () => {
+    expect(nameMatches(null, "Someone")).toBe(false);
+    expect(nameMatches("Steve May", null)).toBe(false);
+    expect(nameTokens("")).toEqual([]);
+  });
+
+  it("sanitises search input for PostgREST", () => {
+    expect(sanitizeSearch("no,vin(ski)*%\\")).toBe("no vin ski");
+    expect(sanitizeSearch("  spaced   out  ")).toBe("spaced out");
+    expect(sanitizeSearch("x".repeat(200)).length).toBe(100);
   });
 });
 

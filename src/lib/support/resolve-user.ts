@@ -10,6 +10,7 @@ import { spGet } from "./db";
 import {
   fetchConsumerSubscriptions,
   findUserByEmail,
+  userDisplayName,
   getAuthInfo,
   getUserById,
   type ConsumerSubscriptionRow,
@@ -341,12 +342,34 @@ async function stripeFallback(email: string): Promise<UserContext | null> {
   if (!stripeConfigured()) return null;
   try {
     const customers = await findCustomersByEmail(email);
+    return contextFromStripeCustomers(
+      customers.map((c) => c.id),
+      email,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a UserContext from Stripe customer ids alone. Shared by the
+ * email fallback and by manual linking ("Maybe this user?"), so both
+ * paths produce an identical shape and the action buttons behave the
+ * same. Returns null when none of the customers has a subscription.
+ */
+export async function contextFromStripeCustomers(
+  customerIds: string[],
+  emailLabel: string | null,
+  opts: { name?: string | null; linkedCustomerId?: string | null } = {},
+): Promise<UserContext | null> {
+  if (!stripeConfigured() || customerIds.length === 0) return null;
+  try {
     const subscriptions: SubscriptionInfo[] = [];
     let totalSpentUsd = 0;
-    for (const customer of customers) {
-      const subs = await listSubscriptionsForCustomer(customer.id);
+    for (const customerId of customerIds) {
+      const subs = await listSubscriptionsForCustomer(customerId);
       if (!subs.length) continue;
-      totalSpentUsd += (await sumPaidForCustomer(customer.id)) / 100;
+      totalSpentUsd += (await sumPaidForCustomer(customerId)) / 100;
       for (const s of subs) {
         subscriptions.push({
           store: "STRIPE" as Store,
@@ -378,13 +401,16 @@ async function stripeFallback(email: string): Promise<UserContext | null> {
     }
     return {
       appUserId: null,
-      email: email.toLowerCase(),
-      name: null,
+      email: emailLabel?.toLowerCase() ?? null,
+      name: opts.name ?? null,
       journeyStage: null,
       subscriptions,
       totalSpentUsd,
+      // Still no matched app account — the sidebar keeps saying so, but
+      // now with the Stripe subscription attached.
       noAccount: true,
       sandboxOnly: false,
+      linkedStripeCustomerId: opts.linkedCustomerId ?? null,
     };
   } catch {
     return null;
@@ -495,7 +521,7 @@ export async function resolveUser(
   return {
     appUserId: user.id,
     email: user.email?.toLowerCase() ?? email?.toLowerCase() ?? null,
-    name: user.name,
+    name: userDisplayName(user),
     journeyStage: user.glp1_journey_stage,
     subscriptions,
     totalSpentUsd,
