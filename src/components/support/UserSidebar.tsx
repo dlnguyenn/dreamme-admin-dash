@@ -29,6 +29,7 @@ import {
   appleRefundTemplate,
   appleRelayStatus,
 } from "@/lib/support/apple-relay";
+import { actionLock, type ActionLock } from "@/lib/support/action-effects";
 
 const APPLE_CANCEL_TEMPLATE = `Hey, thanks for reaching out.
 
@@ -152,6 +153,7 @@ export function UserSidebar({
           key={`${sub.originalTransactionId ?? i}`}
           thread={thread}
           sub={sub}
+          actions={actions}
           onInsertTemplate={onInsertTemplate}
           onActionDone={onActionDone}
         />
@@ -205,20 +207,65 @@ type PendingAction =
   | { kind: "stripe_refund"; lookup: StripeLookupResult }
   | { kind: "play_refund"; productId: string };
 
+/** Wraps an action button with the "already done" note underneath. */
+function LockedAction({
+  lock,
+  children,
+}: {
+  lock: ActionLock;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      {children}
+      {lock.disabled && lock.reason && (
+        <span
+          style={{
+            font: "500 11px var(--font-ui)",
+            color: "var(--ink-4)",
+            paddingLeft: 2,
+          }}
+        >
+          {lock.reason}
+          {lock.at ? ` · ${timeAgo(lock.at)}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SubscriptionCard({
   thread,
   sub,
+  actions,
   onInsertTemplate,
   onActionDone,
 }: {
   thread: SupportThreadRow;
   sub: SubscriptionInfo;
+  actions: SupportActionRow[];
   onInsertTemplate: (text: string) => void;
   onActionDone: () => void;
 }) {
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
   const [pending, setPending] = React.useState<PendingAction | null>(null);
+
+  // Money actions lock once they've succeeded for this user (across all
+  // their threads), and cancels lock when there's nothing left to cancel.
+  const locks = React.useMemo(
+    () => ({
+      stripe_cancel_at_period_end: actionLock(
+        "stripe_cancel_at_period_end",
+        sub,
+        actions,
+      ),
+      stripe_cancel_now: actionLock("stripe_cancel_now", sub, actions),
+      stripe_refund: actionLock("stripe_refund", sub, actions),
+      rc_play_refund_revoke: actionLock("rc_play_refund_revoke", sub, actions),
+    }),
+    [sub, actions],
+  );
   // Synchronous latch — state-based checks miss same-tick double clicks,
   // and a duplicate refund is real money.
   const runningRef = React.useRef(false);
@@ -355,44 +402,54 @@ function SubscriptionCard({
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
         {sub.store === "STRIPE" && (
           <>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => startStripeCancel(true)}
-            >
-              Cancel at period end
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              onClick={() => startStripeCancel(false)}
-            >
-              Cancel now
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              onClick={startStripeRefund}
-            >
-              Refund latest charge
-            </Button>
+            <LockedAction lock={locks.stripe_cancel_at_period_end}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy || locks.stripe_cancel_at_period_end.disabled}
+                onClick={() => startStripeCancel(true)}
+              >
+                Cancel at period end
+              </Button>
+            </LockedAction>
+            <LockedAction lock={locks.stripe_cancel_now}>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy || locks.stripe_cancel_now.disabled}
+                onClick={() => startStripeCancel(false)}
+              >
+                Cancel now
+              </Button>
+            </LockedAction>
+            <LockedAction lock={locks.stripe_refund}>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy || locks.stripe_refund.disabled}
+                onClick={startStripeRefund}
+              >
+                Refund latest charge
+              </Button>
+            </LockedAction>
           </>
         )}
         {sub.store === "PLAY_STORE" && (
           <>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy || !sub.productId}
-              onClick={() =>
-                setPending({ kind: "play_refund", productId: sub.productId! })
-              }
-            >
-              Refund & revoke (RevenueCat)
-            </Button>
+            <LockedAction lock={locks.rc_play_refund_revoke}>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={
+                  busy || !sub.productId || locks.rc_play_refund_revoke.disabled
+                }
+                onClick={() =>
+                  setPending({ kind: "play_refund", productId: sub.productId! })
+                }
+              >
+                Refund &amp; revoke (RevenueCat)
+              </Button>
+            </LockedAction>
             <Button
               size="sm"
               variant="secondary"

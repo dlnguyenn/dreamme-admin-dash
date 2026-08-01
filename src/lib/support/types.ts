@@ -80,6 +80,13 @@ export interface SupportDraftRow {
   updated_at: string;
 }
 
+/** Mutating subscription actions (stripe_lookup is read-only, never logged). */
+export type SubscriptionActionType =
+  | "stripe_cancel_at_period_end"
+  | "stripe_cancel_now"
+  | "stripe_refund"
+  | "rc_play_refund_revoke";
+
 export interface SupportActionRow {
   id: string;
   thread_id: string | null;

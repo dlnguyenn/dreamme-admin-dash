@@ -8,8 +8,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
+  getActionsForUserOrThread,
   getThread,
-  getThreadActions,
   getThreadDrafts,
   getThreadMessages,
   patchThread,
@@ -53,7 +53,8 @@ export async function GET(
     const [messages, drafts, actions] = await Promise.all([
       getThreadMessages(id),
       getThreadDrafts(id),
-      getThreadActions(id),
+      // User-scoped: a repeat emailer must not get refunded twice.
+      getActionsForUserOrThread(id, thread.resolved_app_user_id),
     ]);
     if (thread.unread) {
       await patchThread(id, { unread: false }).catch(() => {});

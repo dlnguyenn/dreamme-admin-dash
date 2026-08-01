@@ -136,6 +136,22 @@ export async function getThreadActions(
   );
 }
 
+/**
+ * Every action taken for a user, across ALL their threads — a person who
+ * emails twice must not get refunded twice, and the second thread has no
+ * knowledge of the first. Falls back to thread scope when the thread has
+ * no resolved account.
+ */
+export async function getActionsForUserOrThread(
+  threadId: string,
+  appUserId: string | null,
+): Promise<SupportActionRow[]> {
+  if (!appUserId) return getThreadActions(threadId);
+  return spGet<SupportActionRow[]>(
+    `support_actions?or=(app_user_id.eq.${encodeURIComponent(appUserId)},thread_id.eq.${encodeURIComponent(threadId)})&order=created_at.desc`,
+  );
+}
+
 export async function patchThread(
   id: string,
   patch: Record<string, unknown>,

@@ -14,7 +14,12 @@ import {
   planFromPeriod,
 } from "@/lib/support/resolve-user";
 import { planFromStripeRecurring } from "@/lib/vendors/stripe";
-import { applyActionToContext } from "@/lib/support/action-effects";
+import {
+  actionLock,
+  applyActionToContext,
+  completedActions,
+} from "@/lib/support/action-effects";
+import type { SupportActionRow } from "@/lib/support/types";
 import {
   appleRefundTemplate,
   appleRelayStatus,
@@ -322,6 +327,102 @@ describe("mergeConsumerSubscriptions", () => {
     const [m] = mergeConsumerSubscriptions([sub], [{ ...row, store: "stripe" }]);
     expect(m.plan).toBeNull();
     expect(m.autoRenew).toBeNull();
+  });
+});
+
+describe("actionLock / completedActions", () => {
+  const act = (
+    over: Partial<SupportActionRow> & Pick<SupportActionRow, "action_type">,
+  ): SupportActionRow => ({
+    id: Math.random().toString(36).slice(2),
+    thread_id: "t1",
+    app_user_id: "u1",
+    store: "STRIPE",
+    request: null,
+    response: null,
+    status: "success",
+    error: null,
+    created_at: "2026-07-31T10:00:00Z",
+    ...over,
+  });
+  const liveSub: SubscriptionInfo = {
+    store: "STRIPE",
+    productId: null,
+    transactionId: "si_1",
+    originalTransactionId: "sub_1",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "INITIAL_PURCHASE",
+    lastEventAt: "2026-07-01T00:00:00Z",
+    expiresAt: "2027-07-01T00:00:00Z",
+    cancelReason: null,
+    isActive: true,
+    totalPaidUsd: 69.99,
+    plan: "yearly",
+    startedAt: "2026-07-01T00:00:00Z",
+    autoRenew: true,
+    renewals: 0,
+  };
+
+  it("locks an action once it has succeeded", () => {
+    const lock = actionLock("stripe_refund", liveSub, [
+      act({ action_type: "stripe_refund" }),
+    ]);
+    expect(lock.disabled).toBe(true);
+    expect(lock.reason).toBe("Refunded");
+    expect(lock.at).toBe("2026-07-31T10:00:00Z");
+  });
+
+  it("keeps a FAILED action retryable", () => {
+    const lock = actionLock("stripe_refund", liveSub, [
+      act({ action_type: "stripe_refund", status: "error", error: "card error" }),
+    ]);
+    expect(lock.disabled).toBe(false);
+  });
+
+  it("locks per type, preserving the cancel-now escalation", () => {
+    const actions = [act({ action_type: "stripe_cancel_at_period_end" })];
+    expect(actionLock("stripe_cancel_at_period_end", liveSub, actions).disabled).toBe(true);
+    expect(actionLock("stripe_cancel_now", liveSub, actions).disabled).toBe(false);
+    expect(actionLock("stripe_refund", liveSub, actions).disabled).toBe(false);
+  });
+
+  it("locks cancels when the subscription already ended", () => {
+    const dead = { ...liveSub, isActive: false };
+    expect(actionLock("stripe_cancel_now", dead, []).reason).toBe(
+      "Subscription already ended",
+    );
+    // refunding a dead subscription is still legitimate
+    expect(actionLock("stripe_refund", dead, []).disabled).toBe(false);
+  });
+
+  it("locks cancel-at-period-end when auto-renew is already off", () => {
+    const lapsing = { ...liveSub, autoRenew: false };
+    expect(actionLock("stripe_cancel_at_period_end", lapsing, []).reason).toBe(
+      "Already set to not renew",
+    );
+    expect(actionLock("stripe_cancel_now", lapsing, []).disabled).toBe(false);
+  });
+
+  it("leaves everything open on a fresh subscription", () => {
+    for (const t of [
+      "stripe_cancel_at_period_end",
+      "stripe_cancel_now",
+      "stripe_refund",
+      "rc_play_refund_revoke",
+    ] as const) {
+      expect(actionLock(t, liveSub, []).disabled).toBe(false);
+    }
+  });
+
+  it("completedActions keeps the newest success per type", () => {
+    const done = completedActions([
+      act({ action_type: "stripe_refund", created_at: "2026-07-30T10:00:00Z" }),
+      act({ action_type: "stripe_refund", created_at: "2026-07-31T12:00:00Z" }),
+      act({ action_type: "stripe_cancel_now", status: "error" }),
+    ]);
+    expect(done.get("stripe_refund")?.created_at).toBe("2026-07-31T12:00:00Z");
+    expect(done.has("stripe_cancel_now")).toBe(false);
   });
 });
 

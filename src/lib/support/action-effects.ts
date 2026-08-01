@@ -4,7 +4,73 @@
  * (Active → Closed, "won't renew", reduced paid total) instead of waiting
  * for RevenueCat's webhook to catch up minutes later. Pure — unit-tested.
  */
-import type { SubscriptionInfo, UserContext } from "./types";
+import type {
+  SubscriptionActionType,
+  SubscriptionInfo,
+  SupportActionRow,
+  UserContext,
+} from "./types";
+
+/**
+ * The successful actions already taken for this user, newest first, keyed
+ * by type — money actions must not be repeatable by accident. Errors do
+ * NOT count: a failed refund should stay retryable. Pure, unit-tested.
+ */
+export function completedActions(
+  actions: SupportActionRow[],
+): Map<SubscriptionActionType, SupportActionRow> {
+  const done = new Map<SubscriptionActionType, SupportActionRow>();
+  for (const a of actions) {
+    if (a.status !== "success") continue;
+    const type = a.action_type as SubscriptionActionType;
+    const prev = done.get(type);
+    if (!prev || new Date(a.created_at) > new Date(prev.created_at)) {
+      done.set(type, a);
+    }
+  }
+  return done;
+}
+
+export interface ActionLock {
+  disabled: boolean;
+  /** short reason shown under the button, e.g. "Refunded 2h ago" */
+  reason: string | null;
+  /** ISO timestamp of the prior successful run, when that's the cause */
+  at: string | null;
+}
+
+const LABELS: Record<SubscriptionActionType, string> = {
+  stripe_cancel_at_period_end: "Cancelled at period end",
+  stripe_cancel_now: "Cancelled",
+  stripe_refund: "Refunded",
+  rc_play_refund_revoke: "Refunded & revoked",
+};
+
+/**
+ * Whether an action button should be locked. Two independent reasons:
+ *  - it already succeeded for this user (per type, so cancel-at-period-end
+ *    having run still leaves the cancel-now escalation available)
+ *  - there is nothing left to act on (cancels on an inactive subscription)
+ */
+export function actionLock(
+  type: SubscriptionActionType,
+  sub: SubscriptionInfo | null,
+  actions: SupportActionRow[],
+): ActionLock {
+  const done = completedActions(actions).get(type);
+  if (done) {
+    return { disabled: true, reason: LABELS[type], at: done.created_at };
+  }
+  const isCancel =
+    type === "stripe_cancel_now" || type === "stripe_cancel_at_period_end";
+  if (isCancel && sub && !sub.isActive) {
+    return { disabled: true, reason: "Subscription already ended", at: null };
+  }
+  if (type === "stripe_cancel_at_period_end" && sub?.autoRenew === false && sub?.isActive) {
+    return { disabled: true, reason: "Already set to not renew", at: null };
+  }
+  return { disabled: false, reason: null, at: null };
+}
 
 export interface ActionEffectInput {
   type:

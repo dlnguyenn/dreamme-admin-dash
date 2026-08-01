@@ -18,12 +18,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
+  getActionsForUserOrThread,
   getThread,
   logAction,
   patchThread,
   supportDbConfigured,
 } from "@/lib/support/db";
-import { applyActionToContext } from "@/lib/support/action-effects";
+import {
+  applyActionToContext,
+  completedActions,
+} from "@/lib/support/action-effects";
 import {
   cancelSubscription,
   createRefund,
@@ -172,6 +176,32 @@ export async function POST(
         { status: 500 },
       );
     }
+  }
+
+  // ---- repeat guard -------------------------------------------------------
+  // The buttons disable once an action has succeeded, but a stale tab or a
+  // direct call must not be able to refund/cancel the same person twice.
+  // Scoped to the USER so a second thread from the same emailer is covered.
+  try {
+    const prior = await getActionsForUserOrThread(
+      id,
+      thread.resolved_app_user_id,
+    );
+    const already = completedActions(prior).get(body.type);
+    if (already) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `${body.type} already succeeded for this user on ${new Date(
+            already.created_at,
+          ).toLocaleString()} — refusing to repeat it. If a genuinely new charge needs refunding, do it in the Stripe dashboard.`,
+        },
+        { status: 409 },
+      );
+    }
+  } catch {
+    // A guard lookup failure must not block support work; the UI lock and
+    // the confirm dialog still stand.
   }
 
   // ---- mutating actions (always audit-logged) -----------------------------
