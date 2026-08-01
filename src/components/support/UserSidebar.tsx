@@ -24,6 +24,11 @@ import type {
   SupportThreadRow,
 } from "@/lib/support/types";
 import { runAction, timeAgo, type StripeLookupResult } from "./api";
+import {
+  APPLE_REFUND_TEMPLATE,
+  appleRefundTemplate,
+  appleRelayStatus,
+} from "@/lib/support/apple-relay";
 
 const APPLE_CANCEL_TEMPLATE = `Hey, thanks for reaching out.
 
@@ -83,21 +88,39 @@ export function UserSidebar({
 }) {
   const ctx = thread.user_context;
   const subs = ctx?.subscriptions ?? [];
+  // Apple refunds only ever happen at reportaproblem.apple.com — surface
+  // that reply for confirmed Apple users AND for senders we couldn't match
+  // anywhere (usually Hide My Email).
+  const relayStatus = appleRelayStatus(thread.counterpart_email, ctx);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* User card */}
       <Card title="User" glyph="UserOutline" glyphFamily="accent">
         {!ctx || ctx.noAccount ? (
-          <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
-            No DreamMe account matched{" "}
-            {thread.counterpart_email ? (
-              <strong>{thread.counterpart_email}</strong>
-            ) : (
-              "this thread"
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
+              No DreamMe account matched{" "}
+              {thread.counterpart_email ? (
+                <strong>{thread.counterpart_email}</strong>
+              ) : (
+                "this thread"
+              )}
+              . They may use a different email in the app (common with Apple
+              Hide My Email).
+            </div>
+            {relayStatus !== "no" && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onInsertTemplate(appleRefundTemplate(relayStatus))}
+                title="Drops a reply into the compose box pointing them at reportaproblem.apple.com"
+              >
+                {relayStatus === "confirmed"
+                  ? "Insert Apple refund steps"
+                  : "Insert Apple refund steps (likely hidden email)"}
+              </Button>
             )}
-            . They may use a different email in the app (common with Apple
-            Hide My Email).
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
@@ -380,13 +403,23 @@ function SubscriptionCard({
           </>
         )}
         {sub.store === "APP_STORE" && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onInsertTemplate(APPLE_CANCEL_TEMPLATE)}
-          >
-            Insert Apple cancel/refund instructions
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onInsertTemplate(APPLE_CANCEL_TEMPLATE)}
+            >
+              Insert Apple cancel instructions
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onInsertTemplate(APPLE_REFUND_TEMPLATE)}
+              title="Refund-only reply pointing at reportaproblem.apple.com"
+            >
+              Insert Apple refund steps
+            </Button>
+          </>
         )}
       </div>
 

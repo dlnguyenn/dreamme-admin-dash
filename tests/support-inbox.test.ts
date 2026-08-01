@@ -15,6 +15,11 @@ import {
 } from "@/lib/support/resolve-user";
 import { planFromStripeRecurring } from "@/lib/vendors/stripe";
 import { applyActionToContext } from "@/lib/support/action-effects";
+import {
+  appleRefundTemplate,
+  appleRelayStatus,
+  isAppleRelayAddress,
+} from "@/lib/support/apple-relay";
 import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
@@ -317,6 +322,77 @@ describe("mergeConsumerSubscriptions", () => {
     const [m] = mergeConsumerSubscriptions([sub], [{ ...row, store: "stripe" }]);
     expect(m.plan).toBeNull();
     expect(m.autoRenew).toBeNull();
+  });
+});
+
+describe("appleRelayStatus / refund templates", () => {
+  const ctx = (over: Partial<UserContext>): UserContext => ({
+    appUserId: "u1",
+    email: "user@example.com",
+    name: null,
+    journeyStage: null,
+    subscriptions: [],
+    totalSpentUsd: 0,
+    noAccount: false,
+    sandboxOnly: false,
+    ...over,
+  });
+  const sub = (store: string): SubscriptionInfo => ({
+    store: store as SubscriptionInfo["store"],
+    productId: null,
+    transactionId: null,
+    originalTransactionId: null,
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "INITIAL_PURCHASE",
+    lastEventAt: "2026-07-01T00:00:00Z",
+    expiresAt: "2027-07-01T00:00:00Z",
+    cancelReason: null,
+    isActive: true,
+    totalPaidUsd: 69.99,
+    plan: "yearly",
+    startedAt: "2026-07-01T00:00:00Z",
+    autoRenew: true,
+    renewals: 0,
+  });
+
+  it("confirms a private relay sender", () => {
+    expect(appleRelayStatus("kpj5psbddn@privaterelay.appleid.com", null)).toBe("confirmed");
+    expect(isAppleRelayAddress("X@PrivateRelay.AppleID.com ")).toBe(true);
+    expect(isAppleRelayAddress("someone@gmail.com")).toBe(false);
+  });
+
+  it("confirms a resolved App Store subscriber", () => {
+    expect(appleRelayStatus("jane@gmail.com", ctx({ subscriptions: [sub("APP_STORE")] }))).toBe(
+      "confirmed",
+    );
+  });
+
+  it("suspects a sender we could not match anywhere", () => {
+    expect(appleRelayStatus("jane@gmail.com", ctx({ noAccount: true }))).toBe("suspected");
+    expect(appleRelayStatus("jane@gmail.com", null)).toBe("suspected");
+  });
+
+  it("stays silent for users resolved to a store we can act on", () => {
+    expect(appleRelayStatus("jane@gmail.com", ctx({ subscriptions: [sub("STRIPE")] }))).toBe("no");
+    expect(appleRelayStatus("jane@gmail.com", ctx({ subscriptions: [sub("PLAY_STORE")] }))).toBe(
+      "no",
+    );
+    // matched account, no subs on record — not an Apple guess
+    expect(appleRelayStatus("jane@gmail.com", ctx({}))).toBe("no");
+  });
+
+  it("picks hedged copy when suspected, direct copy when confirmed", () => {
+    const suspected = appleRefundTemplate("suspected");
+    const confirmed = appleRefundTemplate("confirmed");
+    expect(suspected).toMatch(/Hide My Email/);
+    expect(suspected).toMatch(/Android or through our website/); // escape hatch
+    expect(confirmed).not.toMatch(/Hide My Email/);
+    for (const t of [suspected, confirmed]) {
+      expect(t).toContain("https://reportaproblem.apple.com");
+      expect(t.trimEnd().endsWith("Dan, co-founder of DreamMe")).toBe(true);
+      expect(t).not.toMatch(/[—–]/); // Dan's voice: no em/en dashes
+    }
   });
 });
 
