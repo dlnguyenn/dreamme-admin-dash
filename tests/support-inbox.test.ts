@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   cleanDraft,
+  ensureEnthusiasm,
+  hasEnthusiasm,
   isDeniedSender,
   isFeedbackMirror,
   isInternalSender,
@@ -194,8 +196,35 @@ describe("cleanDraft", () => {
   });
 
   it("does not duplicate an existing sign-off", () => {
-    const out = cleanDraft("All set.\n\nDan, co-founder of DreamMe");
+    const out = cleanDraft("All set!\n\nDan, co-founder of DreamMe");
     expect(out.match(/co-founder of DreamMe/g)?.length).toBe(1);
+  });
+
+  // Brand voice: bubbly. The model goes flat on refund/apology replies
+  // even when told not to, so a draft with no "!" gets a warm closer.
+  it("rescues a flat draft with a warm closer above the sign-off", () => {
+    const flat =
+      "Hi Chelsea,\n\nDone. I've refunded the full $69.99.\n\nSorry for the confusion.\n\nDan, co-founder of DreamMe";
+    const out = cleanDraft(flat, 0);
+    expect(hasEnthusiasm(out)).toBe(true);
+    expect(out.trimEnd().endsWith("Dan, co-founder of DreamMe")).toBe(true);
+    // the apology itself stays exclamation-free
+    expect(out).not.toMatch(/sorry[^.\n]*!/i);
+    expect(out.indexOf("!")).toBeLessThan(out.lastIndexOf("Dan, co-founder"));
+  });
+
+  it("leaves an already-bubbly draft untouched", () => {
+    const bubbly = "Hi Jo! All sorted.\n\nDan, co-founder of DreamMe";
+    expect(cleanDraft(bubbly, 0)).toBe(bubbly);
+  });
+
+  it("varies the closer per draft so the pair don't end identically", () => {
+    const flat = "All done.\n\nDan, co-founder of DreamMe";
+    expect(ensureEnthusiasm(flat, 0)).not.toBe(ensureEnthusiasm(flat, 1));
+  });
+
+  it("appends a closer even when the sign-off is missing", () => {
+    expect(hasEnthusiasm(ensureEnthusiasm("no signoff here", 0))).toBe(true);
   });
 });
 
@@ -493,6 +522,10 @@ describe("appleRelayStatus / refund templates", () => {
       expect(t).toContain("https://reportaproblem.apple.com");
       expect(t.trimEnd().endsWith("Dan, co-founder of DreamMe")).toBe(true);
       expect(t).not.toMatch(/[—–]/); // Dan's voice: no em/en dashes
+      // Brand voice is bubbly: every template carries real enthusiasm...
+      expect((t.match(/!/g) ?? []).length).toBeGreaterThanOrEqual(2);
+      // ...but never exclaims at the apology itself.
+      expect(t).not.toMatch(/sorry[^.\n]*!/i);
     }
   });
 });

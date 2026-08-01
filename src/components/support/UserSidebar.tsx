@@ -31,29 +31,31 @@ import {
 } from "@/lib/support/apple-relay";
 import { actionLock, type ActionLock } from "@/lib/support/action-effects";
 
-const APPLE_CANCEL_TEMPLATE = `Hey, thanks for reaching out.
+const APPLE_CANCEL_TEMPLATE = `Hi there! Thanks so much for reaching out.
 
-Your subscription runs through Apple, so it has to be cancelled from your Apple account (I can't do it from our side, Apple keeps that control). It takes about 20 seconds:
+Your subscription runs through Apple, so it has to be cancelled from your Apple account (Apple keeps that control, I can't do it from my side). Good news, it only takes about 20 seconds:
 
 1. Open Settings on your iPhone
 2. Tap your name at the top, then Subscriptions
 3. Tap DreamMe and hit Cancel Subscription
 
-If you were charged and want a refund, Apple handles those directly at https://reportaproblem.apple.com. They usually respond within a day or two.
+That's it, no more charges! If you were already charged and want a refund, Apple handles those at https://reportaproblem.apple.com and they are usually quick about it.
 
-Sorry for the extra hoop. Let me know if anything is unclear.
+Sorry for the extra hoop, and thanks so much for giving DreamMe a try!
 
 Dan, co-founder of DreamMe`;
 
-const PLAY_CANCEL_TEMPLATE = `Hey, thanks for reaching out.
+const PLAY_CANCEL_TEMPLATE = `Hi there! Thanks so much for reaching out.
 
-Your subscription runs through Google Play, so cancelling takes about 20 seconds on your phone:
+Your subscription runs through Google Play, so cancelling takes about 20 seconds right on your phone:
 
 1. Open the Play Store app
 2. Tap your profile picture, then Payments and subscriptions
 3. Tap Subscriptions, pick DreamMe, and hit Cancel
 
-That stops any future charges. Let me know if you need anything else.
+That's it, no more charges! If your screen looks different, send me a screenshot and I will walk you through it.
+
+Thanks so much for giving DreamMe a try!
 
 Dan, co-founder of DreamMe`;
 

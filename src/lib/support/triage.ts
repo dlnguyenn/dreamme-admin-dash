@@ -99,7 +99,38 @@ export function isFeedbackMirror(
 
 const SIGNOFF = "Dan, co-founder of DreamMe";
 
-export function cleanDraft(raw: string): string {
+/**
+ * Warm closers used to rescue an off-brand draft. Chosen per variant so
+ * the two drafts don't end identically, and worded to sit correctly after
+ * an apology (which is exactly where the model tends to go flat).
+ */
+const WARM_CLOSERS = [
+  "Thanks so much for bearing with me!",
+  "Thanks so much for giving DreamMe a try!",
+];
+
+/** DreamMe's voice is bubbly: a reply with no exclamation mark is off-brand. */
+export function hasEnthusiasm(text: string): boolean {
+  return text.includes("!");
+}
+
+/**
+ * Guarantee the brand voice. The model reliably drops all enthusiasm on
+ * refund/apology replies even when the prompt forbids it, so if a draft
+ * still arrives flat we add a warm closing line above the sign-off rather
+ * than shipping an off-brand reply. Pure — unit-tested.
+ */
+export function ensureEnthusiasm(text: string, variant = 0): string {
+  if (hasEnthusiasm(text)) return text;
+  const closer = WARM_CLOSERS[variant % WARM_CLOSERS.length];
+  const idx = text.toLowerCase().lastIndexOf(SIGNOFF.toLowerCase());
+  if (idx === -1) return `${text.replace(/\s+$/, "")}\n\n${closer}`;
+  const bodyPart = text.slice(0, idx).replace(/\s+$/, "");
+  const signPart = text.slice(idx);
+  return `${bodyPart}\n\n${closer}\n\n${signPart}`;
+}
+
+export function cleanDraft(raw: string, variant = 0): string {
   let text = raw.trim();
   // No em/en dashes in Dan-voice email. Spaced dash reads as a pause →
   // comma; unspaced (word—word) → comma+space.
@@ -110,7 +141,7 @@ export function cleanDraft(raw: string): string {
   if (!text.toLowerCase().includes(SIGNOFF.toLowerCase())) {
     text = `${text.replace(/\s+$/, "")}\n\n${SIGNOFF}`;
   }
-  return text;
+  return ensureEnthusiasm(text, variant);
 }
 
 // ---------------------------------------------------------------------------
@@ -218,14 +249,23 @@ export async function triageThread(params: {
 
   const system = `You triage customer support for DreamMe, a GLP-1 weight-loss companion iOS/Android app with a subscription (7-day free trial). You classify the conversation and write TWO alternative reply drafts in the voice of Dan, the co-founder.
 
+DreamMe's brand voice is BUBBLY, warm and genuinely enthusiastic. Write like a happy human who is glad to help, never like a support desk.
+
 Dan's voice rules (strict):
-- Plain, warm, conversational. Short sentences. No corporate speak, no "we apologize for any inconvenience".
+- Be upbeat and use exclamation marks naturally, usually 1-3 per reply (the greeting, the "that's it!", the thank you). A reply with zero exclamation marks is off-brand.
+- Never aim that energy AT someone's problem. No exclamation mark on an apology or on bad news ("Sorry you were charged twice!" reads as flippant). Be sincere and warm there, and put the brightness in the help, the reassurance, and the thanks.
+- This still applies when someone is upset or owed a refund: apologise plainly, then close warm and bright ("Thanks so much for bearing with me!"). EVERY reply ends up with at least one exclamation mark somewhere. Zero is always wrong.
+- Plain, conversational, short sentences. No corporate speak, no "we apologize for any inconvenience".
+- Thank people warmly and let them feel like a person: we are a tiny team and it genuinely means a lot.
 - NEVER use em dashes or en dashes.
 - Sign off exactly: "${SIGNOFF}"
 - Keep replies short: 2-6 sentences before the sign-off in most cases.
 - Never promise features or timelines. Never give medical advice; suggest talking to their provider for dosing/medical questions.
 - If the user asked a how-to question, answer it concretely.
-- The two drafts should be genuinely different takes (e.g. one more brief/transactional, one warmer/more personal), not paraphrases.
+- The two drafts should be genuinely different takes (e.g. one short and punchy, one that explains a little more), not paraphrases. BOTH must sound bubbly and upbeat, neither is the "flat" option.
+
+This is the target voice, match this energy:
+"Hi Jo! Great news, I've gone ahead and cancelled your trial, so you won't be charged on July 31. Thanks so much for giving DreamMe a try, and if you ever fancy jumping back in you are always welcome!"
 
 Output STRICTLY JSON:
 {"is_spam": boolean, "classification": "refund_request"|"cancel_trial"|"question"|"feedback"|"other", "urgency": "low"|"normal"|"high", "summary": string, "drafts": [string, string]}
@@ -247,20 +287,37 @@ ${history || "(no body)"}
 
 Classify and draft two replies now.`;
 
-  const raw = await callClaude({
-    model: MODEL,
-    system,
-    content: [{ type: "text", text: user }],
-    maxTokens: 2000,
-  });
-
-  const parsed = firstJson(raw) as {
+  type TriageJson = {
     is_spam?: unknown;
     classification?: unknown;
     urgency?: unknown;
     summary?: unknown;
     drafts?: unknown;
   };
+  const ask = async (extra?: string): Promise<TriageJson> => {
+    const raw = await callClaude({
+      model: MODEL,
+      system,
+      content: [{ type: "text", text: extra ? `${user}\n\n${extra}` : user }],
+      maxTokens: 2000,
+    });
+    return firstJson(raw) as TriageJson;
+  };
+
+  let parsed = await ask();
+
+  // The model reliably strips ALL enthusiasm from refund/apology replies,
+  // even though the prompt forbids that. Give it one corrective pass
+  // before falling back to the mechanical closer in cleanDraft().
+  const flat = (p: TriageJson) =>
+    p.is_spam !== true &&
+    Array.isArray(p.drafts) &&
+    p.drafts.some((d) => typeof d === "string" && !hasEnthusiasm(d));
+  if (flat(parsed)) {
+    parsed = await ask(
+      "REWRITE: at least one of those drafts had no exclamation mark, which is off-brand for DreamMe. Keep the apology sincere and exclamation-free, but make sure every draft ends on a warm, bright note that uses one. Return the same JSON shape.",
+    ).catch(() => parsed);
+  }
 
   const classification = CATEGORIES.includes(parsed.classification as ThreadCategory)
     ? (parsed.classification as ThreadCategory)
@@ -275,7 +332,7 @@ Classify and draft two replies now.`;
     : (Array.isArray(parsed.drafts) ? parsed.drafts : [])
         .filter((d): d is string => typeof d === "string" && !!d.trim())
         .slice(0, 2)
-        .map(cleanDraft);
+        .map((d, i) => cleanDraft(d, i));
 
   return {
     triage: {

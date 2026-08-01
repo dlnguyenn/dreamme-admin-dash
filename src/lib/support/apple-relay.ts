@@ -50,13 +50,15 @@ const APPLE_REFUND_STEPS = `1. Go to https://reportaproblem.apple.com and sign i
 3. Choose "Request a refund", pick a reason, and submit`;
 
 /** Confirmed Apple purchaser asking for a refund. */
-export const APPLE_REFUND_TEMPLATE = `Hey, thanks for reaching out, and sorry for the hassle.
+export const APPLE_REFUND_TEMPLATE = `Hi there! Thanks so much for reaching out, and I'm sorry for the hassle.
 
-Your subscription was purchased through Apple, which means Apple handles the refund and I genuinely can't issue it from our side. Here is the fastest path:
+Your subscription was purchased through Apple, which means Apple handles the refund and I genuinely can't push it through from my side. Here is the fastest path:
 
 ${APPLE_REFUND_STEPS}
 
-Apple usually decides within a day or two. If they turn it down, reply here and let me know, and I will see what I can do.
+Apple is usually quick about it, often within a day or two! If they turn it down for any reason, just reply here and I will see what else I can do.
+
+Thanks for giving DreamMe a try, it really means a lot to our tiny team!
 
 ${SIGNOFF}`;
 
@@ -65,15 +67,17 @@ ${SIGNOFF}`;
  * from. Give them the Apple path, but leave an obvious door open if they
  * actually subscribed on Android or the website, where we CAN act.
  */
-export const APPLE_HIDDEN_EMAIL_TEMPLATE = `Hey, thanks for reaching out, and sorry for the hassle.
+export const APPLE_HIDDEN_EMAIL_TEMPLATE = `Hi there! Thanks so much for reaching out, and I'm sorry for the runaround.
 
-I could not find a DreamMe account under this email address. That usually means the subscription was set up with Apple's Hide My Email, so the address on the account is a private relay one rather than the email you are writing from.
+I had a look and couldn't find a DreamMe account under this email address. That almost always means the subscription was set up with Apple's Hide My Email, so the account sits under a private relay address rather than the one you are writing from.
 
-If you subscribed through the App Store, Apple handles refunds directly and I cannot issue one from our side:
+If you subscribed through the App Store, Apple handles refunds directly and I can't issue one from my side:
 
 ${APPLE_REFUND_STEPS}
 
-If you actually signed up on Android or through our website, tell me and I will take care of the cancellation and refund myself, no Apple involved.
+And if you actually signed up on Android or through our website, just say the word and I will take care of the cancellation and refund myself, no Apple needed!
+
+Thanks so much for bearing with me on this!
 
 ${SIGNOFF}`;
 
