@@ -50,6 +50,8 @@ export interface SupportMessageRow {
   in_reply_to: string | null;
   references_ids: string[];
   from_email: string | null;
+  /** sender display name as it arrived (From header / feedback user_name) */
+  from_name: string | null;
   to_email: string | null;
   subject: string | null;
   body_text: string | null;

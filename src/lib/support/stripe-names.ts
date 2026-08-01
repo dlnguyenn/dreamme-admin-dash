@@ -83,6 +83,38 @@ export function nameMatches(
   return tokens.every((t) => candTokens.has(t) || cand.includes(t));
 }
 
+/**
+ * Full-name guesses for a sender, combining every name we saw: the From
+ * display names and the names signed at the bottom of their emails.
+ *
+ * The point is the combination. "Dr. Mijares" alone is one token, which
+ * never auto-suggests; her sign-off says "Lilia"; together they make
+ * "Lilia Mijares", which matches the Stripe billing name "Lilia A.
+ * Mijares" on a completely different address. Pure — unit-tested.
+ */
+export function mergeNameCandidates(
+  headerNames: Array<string | null | undefined>,
+  signatureNames: Array<string | null | undefined>,
+): string[] {
+  const headerToks = [...new Set(headerNames.flatMap((n) => nameTokens(n)))];
+  const out: string[] = [];
+  const push = (tokens: string[]) => {
+    if (tokens.length < 2) return;
+    const s = tokens.join(" ");
+    if (!out.includes(s)) out.push(s);
+  };
+
+  // Names good enough on their own.
+  for (const n of [...headerNames, ...signatureNames]) push(nameTokens(n));
+  // Signature first name + whatever the header adds (usually the surname).
+  for (const sig of signatureNames) {
+    const sigToks = nameTokens(sig);
+    if (sigToks.length === 0) continue;
+    push([...sigToks, ...headerToks.filter((t) => !sigToks.includes(t))]);
+  }
+  return out;
+}
+
 /** PostgREST-safe fragment (same sanitisation as the thread search). */
 export function sanitizeSearch(q: string): string {
   return q

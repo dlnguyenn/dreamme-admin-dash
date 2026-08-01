@@ -11,12 +11,18 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { getThread, supportDbConfigured } from "@/lib/support/db";
 import {
+  getThread,
+  getThreadMessages,
+  supportDbConfigured,
+} from "@/lib/support/db";
+import {
+  mergeNameCandidates,
   searchStripeNames,
   suggestByName,
   type StripeNameRow,
 } from "@/lib/support/stripe-names";
+import { extractSignatureNames, messageText } from "@/lib/support/email-text";
 import { contextFromStripeCustomers } from "@/lib/support/resolve-user";
 
 export const runtime = "nodejs";
@@ -47,9 +53,33 @@ export async function GET(
     }
 
     const q = new URL(req.url).searchParams.get("q")?.trim() ?? "";
-    const rows: StripeNameRow[] = q
-      ? await searchStripeNames(q, ENRICH_LIMIT * 2)
-      : await suggestByName(thread.counterpart_name, ENRICH_LIMIT);
+    let rows: StripeNameRow[] = [];
+    let names: string[] = [];
+
+    if (q) {
+      rows = await searchStripeNames(q, ENRICH_LIMIT * 2);
+    } else {
+      // Pull every name this person has given us: the From display names
+      // AND the names they sign off with. A header alone is often partial
+      // ("Dr. Mijares"); the signature supplies the rest ("Lilia").
+      const messages = await getThreadMessages(id);
+      const inbound = messages.filter((m) => m.direction === "inbound");
+      names = mergeNameCandidates(
+        [thread.counterpart_name, ...inbound.map((m) => m.from_name)],
+        inbound.flatMap((m) =>
+          extractSignatureNames(messageText(m.body_text, m.body_html)),
+        ),
+      );
+      const seen = new Set<string>();
+      for (const name of names) {
+        for (const r of await suggestByName(name, ENRICH_LIMIT)) {
+          if (seen.has(r.customer_id)) continue;
+          seen.add(r.customer_id);
+          rows.push(r);
+        }
+        if (rows.length >= ENRICH_LIMIT) break;
+      }
+    }
 
     const suggestions = await Promise.all(
       rows.slice(0, ENRICH_LIMIT).map(async (r) => {
@@ -72,6 +102,8 @@ export async function GET(
     return NextResponse.json({
       ok: true,
       manual: !!q,
+      /** name guesses used for the automatic match, for transparency */
+      matchedOn: names,
       suggestions,
     });
   } catch (e) {

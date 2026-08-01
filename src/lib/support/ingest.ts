@@ -228,6 +228,10 @@ async function insertEmailMessage(msg: ParsedInbound): Promise<boolean> {
         in_reply_to: msg.inReplyTo,
         references_ids: refIds,
         from_email: msg.fromEmail,
+        // Kept per message: a later reply can carry a fuller name than the
+        // one the thread was created with, and names are how we find a
+        // Stripe customer who pays from a different address.
+        from_name: msg.fromName,
         to_email: msg.toEmail,
         subject: msg.subject,
         body_text: msg.text,
@@ -434,6 +438,7 @@ async function insertFeedbackThread(fb: ConsumerFeedbackRow): Promise<boolean> {
       direction: "inbound",
       via: "feedback",
       from_email: fb.reply_email?.toLowerCase() ?? null,
+      from_name: fb.user_name,
       subject,
       body_text: fb.message,
       attachments: fb.image_urls?.length

@@ -28,6 +28,7 @@ import {
   isAppleRelayAddress,
 } from "@/lib/support/apple-relay";
 import {
+  mergeNameCandidates,
   nameMatches,
   nameTokens,
   sanitizeSearch,
@@ -35,7 +36,11 @@ import {
 import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
 import { replySubject } from "@/lib/support/mailer";
 import { resolveCounterpart } from "@/lib/support/imap";
-import { htmlToPlainText, messageText } from "@/lib/support/email-text";
+import {
+  extractSignatureNames,
+  htmlToPlainText,
+  messageText,
+} from "@/lib/support/email-text";
 import { splitQuotedText } from "@/lib/support/email-text";
 
 describe("htmlToPlainText / messageText", () => {
@@ -457,6 +462,58 @@ describe("actionLock / completedActions", () => {
     ]);
     expect(done.get("stripe_refund")?.created_at).toBe("2026-07-31T12:00:00Z");
     expect(done.has("stripe_cancel_now")).toBe(false);
+  });
+});
+
+describe("signature name intake", () => {
+  // Real thread, 2026-08-01: header said only "Dr. Mijares", the body
+  // signed "Lilia", and Stripe billed "Lilia A. Mijares" on a different
+  // address entirely.
+  const liliaBody =
+    "I cancelled my subscription after the trial for a few days but I'm still\nbeing charged. Please reimburse and cancel it. I am no longer on the\nmedication due to an allergic reaction.\n\nThank you,\nLilia";
+
+  it("reads the name off a two-line sign-off", () => {
+    expect(extractSignatureNames(liliaBody)).toEqual(["Lilia"]);
+  });
+
+  it("reads an inline sign-off", () => {
+    expect(extractSignatureNames("please cancel\n\nThanks, Steve May")).toEqual([
+      "Steve May",
+    ]);
+  });
+
+  it("ignores device footers and quoted replies", () => {
+    expect(
+      extractSignatureNames("cancel please\n\nSent from my iPhone"),
+    ).toEqual([]);
+    const quoted =
+      "ok thanks\n\nOn Fri, Aug 1, 2026 at 9:00 AM Dan N <dan@dreamme.life> wrote:\n> Thanks,\n> Dan";
+    expect(extractSignatureNames(quoted)).not.toContain("Dan");
+  });
+
+  it("does not mistake a sentence for a name", () => {
+    expect(
+      extractSignatureNames("I want a refund because it did not work."),
+    ).toEqual([]);
+  });
+
+  it("combines a partial header name with the signature (the Lilia case)", () => {
+    const names = mergeNameCandidates(
+      ["Dr. Mijares"],
+      extractSignatureNames(liliaBody),
+    );
+    expect(names).toContain("lilia mijares");
+    // and that guess matches the Stripe billing name with a middle initial
+    expect(nameMatches("lilia mijares", "Lilia A. Mijares")).toBe(true);
+  });
+
+  it("keeps a full header name usable on its own", () => {
+    expect(mergeNameCandidates(["Steve MAY"], [])).toContain("steve may");
+  });
+
+  it("yields nothing when there is no usable name", () => {
+    expect(mergeNameCandidates(["Melissa"], [])).toEqual([]);
+    expect(mergeNameCandidates([null], [null])).toEqual([]);
   });
 });
 
