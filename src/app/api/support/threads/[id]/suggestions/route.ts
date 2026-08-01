@@ -24,6 +24,7 @@ import {
 } from "@/lib/support/stripe-names";
 import { extractSignatureNames, messageText } from "@/lib/support/email-text";
 import { contextFromStripeCustomers } from "@/lib/support/resolve-user";
+import { getCustomerChargeSummary } from "@/lib/vendors/stripe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,16 +84,30 @@ export async function GET(
 
     const suggestions = await Promise.all(
       rows.slice(0, ENRICH_LIMIT).map(async (r) => {
-        const ctx = await contextFromStripeCustomers(
-          [r.customer_id],
-          r.email,
-          { name: r.name },
-        ).catch(() => null);
+        // Trial window + when billing actually began: the dates are what
+        // let Dan confirm this is the right person before linking, and
+        // they usually settle the complaint too ("cancelled in the trial
+        // but still charged" is answered by trial_end vs first charge).
+        const [ctx, charges] = await Promise.all([
+          contextFromStripeCustomers([r.customer_id], r.email, {
+            name: r.name,
+          }).catch(() => null),
+          getCustomerChargeSummary(r.customer_id).catch(() => null),
+        ]);
+        const sub = ctx?.subscriptions?.[0];
         return {
           customerId: r.customer_id,
           name: r.name,
           email: r.email,
           lastChargeAt: r.last_charge_at,
+          trialStartedAt: sub?.trialStartedAt ?? null,
+          trialEndsAt: sub?.trialEndsAt ?? null,
+          firstChargeAt: charges?.firstChargeAt
+            ? new Date(charges.firstChargeAt * 1000).toISOString()
+            : null,
+          chargeCount: charges?.succeededCount ?? 0,
+          chargedUsd: (charges?.grossCents ?? 0) / 100,
+          refundedUsd: (charges?.refundedCents ?? 0) / 100,
           subscriptions: ctx?.subscriptions ?? [],
           totalSpentUsd: ctx?.totalSpentUsd ?? 0,
         };

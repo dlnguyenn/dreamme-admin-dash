@@ -390,6 +390,12 @@ export async function contextFromStripeCustomers(
           startedAt: s.start_date
             ? new Date(s.start_date * 1000).toISOString()
             : null,
+          trialStartedAt: s.trial_start
+            ? new Date(s.trial_start * 1000).toISOString()
+            : null,
+          trialEndsAt: s.trial_end
+            ? new Date(s.trial_end * 1000).toISOString()
+            : null,
           autoRenew: s.status === "canceled" ? false : !s.cancel_at_period_end,
           renewals: null,
         });

@@ -123,6 +123,9 @@ export interface SubscriptionInfo {
   plan: string | null;
   /** original purchase date (subscription age) */
   startedAt: string | null;
+  /** free-trial window — Stripe only; null when never trialed or unknown */
+  trialStartedAt?: string | null;
+  trialEndsAt?: string | null;
   autoRenew: boolean | null;
   renewals: number | null;
 }

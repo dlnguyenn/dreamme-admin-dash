@@ -77,6 +77,7 @@ export interface StripeSubscription {
    */
   current_period_end: number;
   customer: string; // cus_…
+  trial_start?: number | null;
   trial_end: number | null;
   start_date?: number | null;
   /** unix seconds — set once the subscription is fully canceled */
@@ -228,14 +229,44 @@ export interface StripeChargeRow {
  * Returns null when there is nothing refundable (trial that never paid, or
  * every charge already refunded).
  */
-/** Net cents actually collected from a customer (succeeded minus refunds). */
-export async function sumPaidForCustomer(customerId: string): Promise<number> {
+export interface CustomerChargeSummary {
+  /** net cents collected (succeeded minus refunds) */
+  netCents: number;
+  /** cents actually charged, before refunds */
+  grossCents: number;
+  /** cents given back — net can be 0 while a real charge happened */
+  refundedCents: number;
+  /** unix seconds of the FIRST succeeded charge — when billing really began */
+  firstChargeAt: number | null;
+  lastChargeAt: number | null;
+  succeededCount: number;
+}
+
+/**
+ * One pass over a customer's charges. Separated out because the support
+ * UI needs both the net total and the date billing actually started, and
+ * a past_due customer's failed retries must not count as either.
+ */
+export async function getCustomerChargeSummary(
+  customerId: string,
+): Promise<CustomerChargeSummary> {
   const res = await stripeFetch<{ data?: StripeChargeRow[] }>(
     `/charges?customer=${encodeURIComponent(customerId)}&limit=100`,
   );
-  return (res.data ?? [])
-    .filter((c) => c.status === "succeeded")
-    .reduce((sum, c) => sum + (c.amount - c.amount_refunded), 0);
+  const ok = (res.data ?? []).filter((c) => c.status === "succeeded");
+  return {
+    netCents: ok.reduce((sum, c) => sum + (c.amount - c.amount_refunded), 0),
+    grossCents: ok.reduce((sum, c) => sum + c.amount, 0),
+    refundedCents: ok.reduce((sum, c) => sum + c.amount_refunded, 0),
+    firstChargeAt: ok.length ? Math.min(...ok.map((c) => c.created)) : null,
+    lastChargeAt: ok.length ? Math.max(...ok.map((c) => c.created)) : null,
+    succeededCount: ok.length,
+  };
+}
+
+/** Net cents actually collected from a customer (succeeded minus refunds). */
+export async function sumPaidForCustomer(customerId: string): Promise<number> {
+  return (await getCustomerChargeSummary(customerId)).netCents;
 }
 
 export function pickRefundableCharge(

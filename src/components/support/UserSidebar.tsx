@@ -462,6 +462,53 @@ function SuggestionRow({
             <Chip tone="neutral">${s.totalSpentUsd.toFixed(2)}</Chip>
           )}
         </div>
+        {/* Dates are how you confirm it's the right person before linking,
+            and they usually answer the complaint too ("cancelled in the
+            trial but still charged" = trial end vs first charge). */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            marginTop: 5,
+            font: "400 11px var(--font-ui)",
+            color: "var(--ink-3)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          <span>
+            Trial{" "}
+            {s.trialStartedAt || s.trialEndsAt ? (
+              <>
+                {s.trialStartedAt ? shortDate(s.trialStartedAt) : "?"} →{" "}
+                {s.trialEndsAt ? shortDate(s.trialEndsAt) : "?"}
+              </>
+            ) : (
+              <span style={{ color: "var(--ink-4)" }}>none</span>
+            )}
+          </span>
+          <span>
+            First charge{" "}
+            {s.firstChargeAt ? (
+              <>
+                {shortDate(s.firstChargeAt)}
+                {s.chargedUsd > 0 ? ` · $${s.chargedUsd.toFixed(2)}` : ""}
+                {s.chargeCount > 1 ? ` (${s.chargeCount}x)` : ""}
+                {/* net $0 with a real charge behind it means refunded —
+                    say so, or the row reads like they never paid */}
+                {s.refundedUsd > 0 && (
+                  <span style={{ color: "var(--warning-text, var(--ink-3))" }}>
+                    {s.refundedUsd >= s.chargedUsd
+                      ? " · refunded"
+                      : ` · $${s.refundedUsd.toFixed(2)} refunded`}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "var(--ink-4)" }}>never charged</span>
+            )}
+          </span>
+        </div>
       </div>
       <Button size="sm" variant="secondary" disabled={disabled} onClick={onLink}>
         Link

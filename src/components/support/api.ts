@@ -129,6 +129,14 @@ export interface StripeSuggestion {
   name: string | null;
   email: string | null;
   lastChargeAt: string | null;
+  /** free-trial window and when billing actually started */
+  trialStartedAt: string | null;
+  trialEndsAt: string | null;
+  firstChargeAt: string | null;
+  chargeCount: number;
+  /** gross charged and refunded — net can be $0 with a real charge behind it */
+  chargedUsd: number;
+  refundedUsd: number;
   subscriptions: Array<{
     plan: string | null;
     isTrial: boolean;
