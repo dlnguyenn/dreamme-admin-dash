@@ -25,6 +25,7 @@ import { visibleNavItems, type DashId, type NavItem } from "./Shell";
  */
 
 export type MobileTab =
+  | "overview"
   | "pipeline"
   | "captions"
   | "hooks"
@@ -46,12 +47,13 @@ const PRIMARY_TABS: TabDef[] = [
   { id: "more", label: "More", icon: "MoreVertical" },
 ];
 
-// Admins triage support daily, so Support earns the fourth slot; the
-// Transformation library stays reachable inside Pipeline's After/Before
-// tabs. Creators keep the original lineup.
+// Admins land on Overview and triage support daily, so those take the first
+// and fourth slots; Captions drops to More (it's a creator tool, and admins
+// reach it there) and the Transformation library stays reachable inside
+// Pipeline's After/Before tabs. Creators keep the original lineup.
 const ADMIN_TABS: TabDef[] = [
+  { id: "overview", label: "Overview", icon: "Sparkles" },
   { id: "pipeline", label: "Pipeline", icon: "Grid" },
-  { id: "captions", label: "Captions", icon: "Message" },
   { id: "hooks", label: "Hooks", icon: "Chart" },
   { id: "support", label: "Support", icon: "Send" },
   { id: "more", label: "More", icon: "MoreVertical" },
@@ -62,6 +64,7 @@ export function tabForDash(
   current: DashId,
   pipelineMode: "after" | "before",
 ): MobileTab {
+  if (current === "overview") return "overview";
   if (current === "content") return pipelineMode === "before" ? "before" : "pipeline";
   if (current === "captions") return "captions";
   if (current === "hooks") return "hooks";

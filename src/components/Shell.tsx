@@ -5,6 +5,7 @@ import { Icons, type IconName } from "./Icons";
 import { useIsMobile } from "@/lib/useIsMobile";
 
 export type DashId =
+  | "overview"
   | "content"
   | "captions"
   | "analytics"
@@ -38,6 +39,10 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
+  // adminOnly because it surfaces revenue and ad spend — which also means the
+  // visibleNavItems/allowed[0] bounce in App.tsx sends viewers to Content
+  // Pipeline with no extra branching.
+  { id: "overview", label: "Overview", icon: "Sparkles", status: "live", desc: "Everything at a glance", adminOnly: true, group: "Home" },
   { id: "content", label: "Content Pipeline", icon: "Sun", status: "live", desc: "Daily 3-persona output", group: "Content" },
   { id: "captions", label: "Caption Library", icon: "Chat", status: "live", desc: "All captions, searchable" },
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },

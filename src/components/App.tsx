@@ -11,6 +11,7 @@ import {
   type MobileTab,
 } from "./MobileTabBar";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { Overview } from "./Overview";
 import { ContentPipeline } from "./ContentPipeline";
 import { CaptionLibrary } from "./CaptionLibrary";
 import { HookAnalytics } from "./HookAnalytics";
@@ -51,7 +52,7 @@ export function App() {
   const [loading, setLoading] = React.useState(true);
   const [syncError, setSyncError] = React.useState<string | null>(null);
 
-  const [current, setCurrent] = React.useState<DashId>("content");
+  const [current, setCurrent] = React.useState<DashId>("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [tweaks, setTweaks] = React.useState<Tweaks>(TWEAK_DEFAULTS);
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
@@ -83,7 +84,9 @@ export function App() {
           setViewAs(savedRole);
         }
       }
-      const savedCur = localStorage.getItem("dreamme.currentDash");
+      // Key is versioned: every existing browser has "content" stored under
+      // the v1 key and would never see Overview become the landing tab.
+      const savedCur = localStorage.getItem("dreamme.currentDash.v2");
       if (
         savedCur &&
         NAV_ITEMS.some((n) => n.id === savedCur)
@@ -107,7 +110,7 @@ export function App() {
 
   React.useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("dreamme.currentDash", current);
+    localStorage.setItem("dreamme.currentDash.v2", current);
   }, [current, hydrated]);
 
   React.useEffect(() => {
@@ -116,9 +119,14 @@ export function App() {
   }, [viewAs, hydrated]);
 
   React.useEffect(() => {
+    // Must wait for hydration: viewAs starts at "user" and only becomes
+    // "admin" once storage is read. Running this on the first render would
+    // bounce an adminOnly landing tab (Overview) to Content Pipeline before
+    // the real role ever arrives, and the bounce is not undone afterwards.
+    if (!hydrated) return;
     const allowed = visibleNavItems(viewAs).map((n) => n.id);
     if (!allowed.includes(current)) setCurrent(allowed[0]);
-  }, [viewAs, current]);
+  }, [viewAs, current, hydrated]);
 
   React.useEffect(() => {
     if (!hydrated) return;
@@ -250,6 +258,12 @@ export function App() {
   let screen: React.ReactNode;
   if (loading) {
     screen = <LoadingScreen />;
+  } else if (current === "overview") {
+    // Defense-in-depth: nav hides it for non-admins, but the dash id persists
+    // in localStorage so re-check the role at render time.
+    screen = role === "admin"
+      ? <Overview onNavigate={setCurrent} />
+      : <ComingSoon item={currentItem} />;
   } else if (current === "content") {
     screen = (
       <ContentPipeline
@@ -399,7 +413,9 @@ function AppShell({
         : navLabel;
 
     const handleTabChange = (next: MobileTab) => {
-      if (next === "pipeline") {
+      if (next === "overview") {
+        setCurrent("overview");
+      } else if (next === "pipeline") {
         setCurrent("content");
         setMobilePipelineMode("after");
       } else if (next === "before") {
@@ -451,7 +467,7 @@ function AppShell({
           viewAs={viewAs}
           setViewAs={setViewAs}
           onLogout={logout}
-          excludeIds={supportInBar ? ["support"] : []}
+          excludeIds={supportInBar ? ["overview", "support"] : []}
         />
       </div>
     );
