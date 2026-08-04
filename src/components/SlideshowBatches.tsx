@@ -4,6 +4,10 @@
  * TikTok batches — the daily nine-persona slideshow batches drafted by the
  * pipeline in the claude repo and queued to Doublespeed.
  *
+ * Renders as the first SECTION of Our Slideshows (not a tab — Dan wants
+ * everything on one page, grouped, rather than behind a tab click), with the
+ * text-card decks grid below it. Each batch is its own collapsible group.
+ *
  * Rows are pushed by claude/scripts/publish-batch-to-dash.py (Vercel can't read
  * that machine's disk) and read back through /api/slideshow-batches. Lives in
  * its own file so OurSlideshows.tsx doesn't grow past its already-large size.
@@ -15,8 +19,13 @@
 
 import * as React from "react";
 import { Icons } from "./Icons";
-import { Button, Chip } from "./ui";
-import { CategoryTag, ErrorBanner, type Family } from "./porcelain";
+import { Chip } from "./ui";
+import {
+  CategoryTag,
+  ErrorBanner,
+  SectionHeader,
+  type Family,
+} from "./porcelain";
 import { PERSONAS, type PersonaId } from "@/lib/personas";
 import { useIsMobile } from "@/lib/useIsMobile";
 
@@ -419,23 +428,34 @@ export function SlideshowBatches() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>
-          Daily nine-persona batches drafted for TikTok and queued to Doublespeed.
-        </div>
-        <div style={{ marginLeft: "auto" }}>
-          <Button variant="secondary" icon={<Icons.Refresh />} onClick={refresh}>
+      <SectionHeader
+        family="accent"
+        icon="Sparkles"
+        title="TikTok batches"
+        meta="nine personas a day, queued to Doublespeed"
+        style={{ marginTop: 0 }}
+        right={
+          <button
+            type="button"
+            onClick={refresh}
+            title="Refresh batches"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              font: "600 12px var(--font-ui)",
+              color: "var(--ink-3)",
+            }}
+          >
+            <Icons.Refresh size={13} />
             Refresh
-          </Button>
-        </div>
-      </div>
+          </button>
+        }
+      />
 
       {error && <ErrorBanner>{error}</ErrorBanner>}
 

@@ -8,6 +8,7 @@ import {
   CategoryTag,
   ErrorBanner,
   FilterPill,
+  SectionHeader,
   Segmented,
   fam,
   type Family,
@@ -129,15 +130,12 @@ const overlayPill: React.CSSProperties = {
   pointerEvents: "none",
 };
 
-type SubtabId = "decks" | "batches";
-
 export function OurSlideshows() {
   const [rows, setRows] = React.useState<OurSlideshow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<"all" | StyleName>("all");
   const [sort, setSort] = React.useState<"new" | "views">("new");
-  const [subtab, setSubtab] = React.useState<SubtabId>("decks");
   const [openDeck, setOpenDeck] = React.useState<OurSlideshow | null>(null);
   const isMobile = useIsMobile();
 
@@ -201,42 +199,40 @@ export function OurSlideshows() {
         title="Our Slideshows"
         subtitle="Text-card and mascot decks we generate in-house. Click a hook to read the whole deck."
         actions={
-          // Sort and Refresh belong to the decks grid; the batches tab brings
-          // its own refresh.
-          subtab === "decks" ? (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Segmented
-                size="sm"
-                value={sort}
-                onChange={(v) => setSort(v as "new" | "views")}
-                options={[
-                  { value: "new", label: "Newest" },
-                  { value: "views", label: "Top views" },
-                ]}
-              />
-              <Button variant="secondary" icon={<Icons.Refresh />} onClick={refresh}>
-                Refresh
-              </Button>
-            </div>
-          ) : null
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Segmented
+              size="sm"
+              value={sort}
+              onChange={(v) => setSort(v as "new" | "views")}
+              options={[
+                { value: "new", label: "Newest" },
+                { value: "views", label: "Top views" },
+              ]}
+            />
+            <Button variant="secondary" icon={<Icons.Refresh />} onClick={refresh}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
-      <div style={{ marginBottom: 16 }}>
-        <Segmented
-          value={subtab}
-          onChange={(v) => setSubtab(v as SubtabId)}
-          options={[
-            { value: "decks", label: "Decks" },
-            { value: "batches", label: "TikTok batches" },
-          ]}
-        />
-      </div>
+      {/* Everything lives on one page, in groups: the daily persona batches
+          first (each batch its own collapsible group), then the text-card
+          decks. Sort/Refresh in the header act on the decks grid below. */}
+      <SlideshowBatches />
 
-      {subtab === "batches" && <SlideshowBatches />}
+      <SectionHeader
+        family="info"
+        icon="Layers"
+        title="Text-card decks"
+        meta="click a hook to read the whole deck"
+        right={
+          <span style={{ font: "400 13px var(--font-ui)", color: "var(--ink-3)" }}>
+            {rows.length}
+          </span>
+        }
+      />
 
-      {subtab === "decks" && (
-        <>
       {/* Style filter */}
       <div
         style={{
@@ -311,8 +307,6 @@ export function OurSlideshows() {
         isMobile={isMobile}
         onClose={() => setOpenDeck(null)}
       />
-        </>
-      )}
     </>
   );
 }
