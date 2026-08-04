@@ -161,6 +161,11 @@ export function UserSidebar({
         )}
       </Card>
 
+      {/* File as a Trello ticket — deliberately outside the User card and
+          the subscription cards, because the threads most worth ticketing
+          are often the ones that matched no account at all. */}
+      <TrelloTicketCard thread={thread} actions={actions} onActionDone={onActionDone} />
+
       {/* Per-subscription cards */}
       {subs.map((sub, i) => (
         <SubscriptionCard
@@ -220,6 +225,150 @@ type PendingAction =
   | { kind: "stripe_cancel"; atPeriodEnd: boolean; lookup: StripeLookupResult }
   | { kind: "stripe_refund"; lookup: StripeLookupResult }
   | { kind: "play_refund"; productId: string };
+
+/**
+ * File the thread as a Trello card (plus a duplicate in Feature Requests),
+ * so a feature ask that arrives by email lands on the roadmap board instead
+ * of being retyped by hand or forgotten.
+ *
+ * Locks after one success — per THREAD, not per user, matching the server
+ * guard: the same person writing in twice with two different ideas should
+ * get two cards.
+ */
+function TrelloTicketCard({
+  thread,
+  actions,
+  onActionDone,
+}: {
+  thread: SupportThreadRow;
+  actions: SupportActionRow[];
+  onActionDone: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = React.useState(false);
+  const [confirming, setConfirming] = React.useState(false);
+  // Synchronous latch — state alone misses same-tick double clicks, and a
+  // duplicate card is exactly what this feature must not produce.
+  const runningRef = React.useRef(false);
+
+  // The sidebar is handed a USER-scoped action list (it spans the person's
+  // other threads); a ticket is per-conversation, so narrow it here.
+  const threadActions = React.useMemo(
+    () => actions.filter((a) => a.thread_id === thread.id),
+    [actions, thread.id],
+  );
+  const lock = React.useMemo(
+    () => actionLock("trello_create_card", null, threadActions),
+    [threadActions],
+  );
+  const existingCardUrl = React.useMemo(() => {
+    const done = threadActions.find(
+      (a) => a.action_type === "trello_create_card" && a.status === "success",
+    );
+    const url = done?.response?.cardUrl;
+    return typeof url === "string" ? url : null;
+  }, [threadActions]);
+
+  const execute = async () => {
+    if (runningRef.current) return; // no double-fire
+    runningRef.current = true;
+    setBusy(true);
+    try {
+      const res = (await runAction(thread.id, { type: "trello_create_card" })) as {
+        response?: { featureCardUrl?: string; featureCardError?: string };
+      };
+      const r = res.response ?? {};
+      // A missing duplicate is worth saying out loud — the primary card
+      // landed, so silence would read as "both filed".
+      if (r.featureCardError) {
+        toast(`Ticket created, but the Feature Requests copy failed: ${r.featureCardError}`);
+      } else if (r.featureCardUrl) {
+        toast("Ticket created in both lists!");
+      } else {
+        toast("Ticket created!");
+      }
+      onActionDone();
+    } catch (e) {
+      toast(`Could not create ticket: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      runningRef.current = false;
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
+
+  const title = cardTitlePreview(thread);
+
+  return (
+    <Card title="Trello" glyph="Bookmark" glyphFamily="accent">
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
+          Files this thread as a card carrying their email, their own words,
+          and a link back here.
+        </div>
+        <LockedAction lock={lock}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy || lock.disabled}
+            onClick={() => setConfirming(true)}
+            style={{ alignSelf: "flex-start" }}
+          >
+            Create ticket
+          </Button>
+        </LockedAction>
+        {existingCardUrl && (
+          <a
+            href={existingCardUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              font: "600 12px var(--font-ui)",
+              color: "var(--accent)",
+              textDecoration: "none",
+              alignSelf: "flex-start",
+            }}
+          >
+            View ticket →
+          </a>
+        )}
+      </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title="Create Trello ticket?"
+          message={
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+              <div>
+                Card title: <strong>{title}</strong>
+              </div>
+              <div style={{ color: "var(--ink-3)" }}>
+                Goes on your default list, with a duplicate in Feature
+                Requests. Nothing is sent to the user.
+              </div>
+            </div>
+          }
+          confirmLabel="Create ticket"
+          busy={busy}
+          busyLabel="Creating…"
+          onConfirm={execute}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+    </Card>
+  );
+}
+
+/** Mirrors cardTitle() server-side so the dialog previews the real title. */
+function cardTitlePreview(thread: SupportThreadRow): string {
+  const raw =
+    thread.triage?.summary?.trim() ||
+    thread.subject?.trim() ||
+    (thread.counterpart_email
+      ? `Support request from ${thread.counterpart_email}`
+      : "Support request");
+  return raw.length > 100 ? `${raw.slice(0, 99).trimEnd()}…` : raw;
+}
 
 /**
  * "Maybe this user?" — Stripe customers whose card billing name matches

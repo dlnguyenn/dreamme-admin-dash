@@ -5,9 +5,9 @@
  * for RevenueCat's webhook to catch up minutes later. Pure — unit-tested.
  */
 import type {
-  SubscriptionActionType,
   SubscriptionInfo,
   SupportActionRow,
+  SupportActionType,
   UserContext,
 } from "./types";
 
@@ -18,11 +18,11 @@ import type {
  */
 export function completedActions(
   actions: SupportActionRow[],
-): Map<SubscriptionActionType, SupportActionRow> {
-  const done = new Map<SubscriptionActionType, SupportActionRow>();
+): Map<SupportActionType, SupportActionRow> {
+  const done = new Map<SupportActionType, SupportActionRow>();
   for (const a of actions) {
     if (a.status !== "success") continue;
-    const type = a.action_type as SubscriptionActionType;
+    const type = a.action_type as SupportActionType;
     const prev = done.get(type);
     if (!prev || new Date(a.created_at) > new Date(prev.created_at)) {
       done.set(type, a);
@@ -39,11 +39,12 @@ export interface ActionLock {
   at: string | null;
 }
 
-const LABELS: Record<SubscriptionActionType, string> = {
+const LABELS: Record<SupportActionType, string> = {
   stripe_cancel_at_period_end: "Cancelled at period end",
   stripe_cancel_now: "Cancelled",
   stripe_refund: "Refunded",
   rc_play_refund_revoke: "Refunded & revoked",
+  trello_create_card: "Ticket created",
 };
 
 /**
@@ -53,7 +54,7 @@ const LABELS: Record<SubscriptionActionType, string> = {
  *  - there is nothing left to act on (cancels on an inactive subscription)
  */
 export function actionLock(
-  type: SubscriptionActionType,
+  type: SupportActionType,
   sub: SubscriptionInfo | null,
   actions: SupportActionRow[],
 ): ActionLock {

@@ -90,6 +90,13 @@ export function App() {
       ) {
         setCurrent(savedCur as DashId);
       }
+      // ?tab= wins over the remembered tab, so a link from elsewhere (a
+      // Trello ticket, a bookmark) lands where it points. Validated against
+      // NAV_ITEMS — never trust the param.
+      const urlTab = new URLSearchParams(window.location.search).get("tab");
+      if (urlTab && NAV_ITEMS.some((n) => n.id === urlTab)) {
+        setCurrent(urlTab as DashId);
+      }
       const savedTweaks = localStorage.getItem("dreamme.tweaks");
       if (savedTweaks) {
         setTweaks({ ...TWEAK_DEFAULTS, ...JSON.parse(savedTweaks) });

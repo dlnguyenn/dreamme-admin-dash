@@ -71,6 +71,32 @@ export function SupportInbox({
   const [search, setSearch] = React.useState("");
   const searching = search.trim().length > 0;
 
+  // ---- deep links ---------------------------------------------------------
+  // A thread is addressable as ?tab=support&thread=<id>, which is what the
+  // Trello ticket links back to. Read on mount rather than in the useState
+  // initializer so the server render (always null) and the first client
+  // render agree.
+  React.useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("thread");
+    if (id) setSelectedId(id);
+  }, []);
+
+  /** Keep the URL in step with the open thread, without adding history
+   *  entries — the mobile "← Back to list" button owns back-navigation. */
+  const selectThread = React.useCallback((id: string | null) => {
+    setSelectedId(id);
+    try {
+      const url = new URL(window.location.href);
+      if (id) {
+        url.searchParams.set("tab", "support");
+        url.searchParams.set("thread", id);
+      } else {
+        url.searchParams.delete("thread");
+      }
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
+  }, []);
+
   const load = React.useCallback(
     async (f: Filter = filter, q: string = search) => {
       try {
@@ -281,7 +307,7 @@ export function SupportInbox({
                     first={i === 0}
                     active={t.id === selectedId}
                     showStatus={searching}
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => selectThread(t.id)}
                   />
                 ))}
               </div>
@@ -295,7 +321,7 @@ export function SupportInbox({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setSelectedId(null)}
+                onClick={() => selectThread(null)}
                 style={{ marginBottom: 10 }}
               >
                 ← Back to list

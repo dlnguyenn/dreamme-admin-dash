@@ -21,7 +21,12 @@ import {
   applyActionToContext,
   completedActions,
 } from "@/lib/support/action-effects";
-import type { SupportActionRow } from "@/lib/support/types";
+import type { SupportActionRow, SupportThreadRow } from "@/lib/support/types";
+import {
+  buildTrelloCard,
+  cardTitle,
+  senderLabel,
+} from "@/lib/support/trello-card";
 import {
   appleRefundTemplate,
   appleRelayStatus,
@@ -449,9 +454,33 @@ describe("actionLock / completedActions", () => {
       "stripe_cancel_now",
       "stripe_refund",
       "rc_play_refund_revoke",
+      "trello_create_card",
     ] as const) {
       expect(actionLock(t, liveSub, []).disabled).toBe(false);
     }
+  });
+
+  it("offers a Trello ticket even with no subscription to act on", () => {
+    // The threads most worth ticketing are often the unmatched ones — a
+    // null sub must not lock the button the way it locks a cancel.
+    expect(actionLock("trello_create_card", null, []).disabled).toBe(false);
+    expect(actionLock("stripe_cancel_now", null, []).disabled).toBe(false);
+  });
+
+  it("locks the Trello ticket once one has been filed", () => {
+    const lock = actionLock("trello_create_card", null, [
+      act({ action_type: "trello_create_card", store: null }),
+    ]);
+    expect(lock.disabled).toBe(true);
+    expect(lock.reason).toBe("Ticket created");
+    expect(lock.at).toBe("2026-07-31T10:00:00Z");
+  });
+
+  it("keeps the Trello ticket retryable after a failure", () => {
+    const lock = actionLock("trello_create_card", null, [
+      act({ action_type: "trello_create_card", status: "error", store: null }),
+    ]);
+    expect(lock.disabled).toBe(false);
   });
 
   it("completedActions keeps the newest success per type", () => {
@@ -909,5 +938,137 @@ describe("deriveSubscriptions", () => {
     expect(subscriptions).toHaveLength(2);
     // newest activity first
     expect(subscriptions[0].store).toBe("APP_STORE");
+  });
+});
+
+describe("buildTrelloCard", () => {
+  const thread = (over: Partial<SupportThreadRow> = {}): SupportThreadRow => ({
+    id: "11111111-2222-3333-4444-555555555555",
+    source: "email",
+    channel: null,
+    status: "new",
+    snoozed_until: null,
+    unread: true,
+    subject: "Feature idea",
+    counterpart_email: "lamija.travels@gmail.com",
+    counterpart_name: "Lilia",
+    category: "feedback",
+    urgency: "normal",
+    resolved_app_user_id: null,
+    resolved_store: null,
+    user_context: null,
+    triage: null,
+    feedback_id: null,
+    last_message_at: "2026-08-02T10:00:00Z",
+    last_inbound_at: "2026-08-02T10:00:00Z",
+    created_at: "2026-08-02T10:00:00Z",
+    updated_at: "2026-08-02T10:00:00Z",
+    ...over,
+  });
+  const url = "https://dash.example/?tab=support&thread=11111111-2222-3333-4444-555555555555";
+
+  it("prefers the triage summary as the title, then subject, then the email", () => {
+    expect(
+      cardTitle(
+        thread({
+          triage: {
+            is_spam: false,
+            classification: "feedback",
+            urgency: "normal",
+            summary: "Wants a weekly weigh-in reminder",
+          },
+        }),
+      ),
+    ).toBe("Wants a weekly weigh-in reminder");
+    expect(cardTitle(thread())).toBe("Feature idea");
+    expect(cardTitle(thread({ subject: null }))).toBe(
+      "Support request from lamija.travels@gmail.com",
+    );
+  });
+
+  it("never returns an empty title — Trello rejects those", () => {
+    const t = cardTitle(thread({ subject: "  ", counterpart_email: null }));
+    expect(t).toBe("Support request");
+  });
+
+  it("truncates a long title to 100 chars", () => {
+    const t = cardTitle(thread({ subject: "x".repeat(300) }));
+    expect(t).toHaveLength(100);
+    expect(t.endsWith("…")).toBe(true);
+  });
+
+  it("puts the sender's email and the thread link in the description", () => {
+    const { desc } = buildTrelloCard({
+      thread: thread(),
+      inboundBody: "Could you add a weekly weigh-in reminder?",
+      threadUrl: url,
+    });
+    expect(desc).toContain("lamija.travels@gmail.com");
+    expect(desc).toContain("Lilia");
+    expect(desc).toContain(`[Open in Support Inbox](${url})`);
+    expect(desc).toContain("> Could you add a weekly weigh-in reminder?");
+  });
+
+  it("keeps only the author's words, not the quoted reply chain", () => {
+    const { desc } = buildTrelloCard({
+      thread: thread(),
+      inboundBody:
+        "Any chance of a food-noise tracker?\n\nOn Sat, Aug 1, 2026 at 9:02 AM Dan <dan@dreamme.life> wrote:\n> Thanks for writing in!\n> Dan",
+      threadUrl: url,
+    });
+    expect(desc).toContain("food-noise tracker");
+    expect(desc).not.toContain("Thanks for writing in");
+    expect(desc).not.toContain("dan@dreamme.life");
+  });
+
+  it("caps a runaway body so the card stays readable", () => {
+    const { desc } = buildTrelloCard({
+      thread: thread(),
+      inboundBody: "y".repeat(9000),
+      threadUrl: url,
+    });
+    expect(desc).toContain("…");
+    expect(desc.length).toBeLessThan(4400);
+  });
+
+  it("still builds a usable card when the message body is empty", () => {
+    const { name, desc } = buildTrelloCard({
+      thread: thread(),
+      inboundBody: null,
+      threadUrl: url,
+    });
+    expect(name).toBe("Feature idea");
+    expect(desc).toContain("lamija.travels@gmail.com");
+    expect(desc).toContain(url);
+  });
+
+  it("prefers the linked Stripe billing name over the From display name", () => {
+    // Cross-email senders get their real name only after a "Maybe this
+    // user?" link — that's the name worth carrying onto the board.
+    const ctxThread = thread({
+      user_context: {
+        appUserId: null,
+        email: "lamija.travels@gmail.com",
+        name: "Lilia A. Mijares",
+        journeyStage: null,
+        subscriptions: [],
+        totalSpentUsd: 0,
+        noAccount: true,
+        sandboxOnly: false,
+        linkedStripeCustomerId: "cus_x",
+      },
+    });
+    expect(senderLabel(ctxThread)).toBe(
+      "Lilia A. Mijares <lamija.travels@gmail.com>",
+    );
+  });
+
+  it("degrades to whichever half of the identity exists", () => {
+    expect(senderLabel(thread({ counterpart_name: null }))).toBe(
+      "lamija.travels@gmail.com",
+    );
+    expect(
+      senderLabel(thread({ counterpart_email: null, counterpart_name: null })),
+    ).toBe("unknown sender");
   });
 });

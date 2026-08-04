@@ -89,6 +89,13 @@ export type SubscriptionActionType =
   | "stripe_refund"
   | "rc_play_refund_revoke";
 
+/**
+ * Everything the audit log locks after one success. Trello card creation
+ * isn't a subscription action — it touches no money and no store — but it
+ * shares the "don't do this twice" machinery.
+ */
+export type SupportActionType = SubscriptionActionType | "trello_create_card";
+
 export interface SupportActionRow {
   id: string;
   thread_id: string | null;

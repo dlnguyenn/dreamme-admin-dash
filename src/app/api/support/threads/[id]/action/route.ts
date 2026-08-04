@@ -13,6 +13,8 @@
  *   stripe_refund                — { paymentIntentId, amountCents? }
  *   rc_play_refund_revoke        — { productId } (refunds latest Play charge
  *                                  AND revokes access, via RevenueCat v1)
+ *   trello_create_card           — files the thread as a Trello card, plus a
+ *                                  duplicate in the Feature Requests list
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -20,6 +22,8 @@ import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   getActionsForUserOrThread,
   getThread,
+  getThreadActions,
+  getThreadMessages,
   logAction,
   patchThread,
   supportDbConfigured,
@@ -43,6 +47,15 @@ import {
   refundAndRevokePlaySubscription,
   revenueCatConfigured,
 } from "@/lib/vendors/revenuecat-actions";
+import {
+  copyCard,
+  createCard,
+  getFeatureListId,
+  getListId,
+  trelloConfigured,
+} from "@/lib/vendors/trello";
+import { buildTrelloCard } from "@/lib/support/trello-card";
+import { messageText } from "@/lib/support/email-text";
 import type { SupportThreadRow } from "@/lib/support/types";
 
 export const runtime = "nodejs";
@@ -56,6 +69,7 @@ const Body = z.object({
     "stripe_cancel_now",
     "stripe_refund",
     "rc_play_refund_revoke",
+    "trello_create_card",
   ]),
   /** rc_events transaction id (si_…) to resolve the Stripe subscription */
   transactionId: z.string().max(200).optional(),
@@ -141,9 +155,17 @@ export async function POST(
       { status: 503 },
     );
   }
+  if (body.type === "trello_create_card" && !trelloConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "TRELLO_API_KEY / TRELLO_TOKEN / TRELLO_LIST_ID not set" },
+      { status: 503 },
+    );
+  }
 
   // Guard: the action must match the resolved store (lookup is exempt so the
-  // sidebar can probe when resolution was fuzzy).
+  // sidebar can probe when resolution was fuzzy). trello_create_card is
+  // deliberately exempt too — feature requests routinely arrive from senders
+  // who match no account, and those are exactly the ones worth filing.
   const store = thread.resolved_store;
   if (isStripe && body.type !== "stripe_lookup" && store !== "STRIPE") {
     return NextResponse.json(
@@ -181,20 +203,25 @@ export async function POST(
   // ---- repeat guard -------------------------------------------------------
   // The buttons disable once an action has succeeded, but a stale tab or a
   // direct call must not be able to refund/cancel the same person twice.
-  // Scoped to the USER so a second thread from the same emailer is covered.
+  // Money actions are scoped to the USER so a second thread from the same
+  // emailer is covered. A Trello ticket is scoped to the THREAD instead —
+  // one card per conversation, so someone who writes in twice with two
+  // different ideas gets two cards.
   try {
-    const prior = await getActionsForUserOrThread(
-      id,
-      thread.resolved_app_user_id,
-    );
+    const prior =
+      body.type === "trello_create_card"
+        ? await getThreadActions(id)
+        : await getActionsForUserOrThread(id, thread.resolved_app_user_id);
     const already = completedActions(prior).get(body.type);
     if (already) {
+      const when = new Date(already.created_at).toLocaleString();
       return NextResponse.json(
         {
           ok: false,
-          error: `${body.type} already succeeded for this user on ${new Date(
-            already.created_at,
-          ).toLocaleString()} — refusing to repeat it. If a genuinely new charge needs refunding, do it in the Stripe dashboard.`,
+          error:
+            body.type === "trello_create_card"
+              ? `A Trello ticket was already created for this thread on ${when}. Open the existing card instead.`
+              : `${body.type} already succeeded for this user on ${when} — refusing to repeat it. If a genuinely new charge needs refunding, do it in the Stripe dashboard.`,
         },
         { status: 409 },
       );
@@ -253,6 +280,46 @@ export async function POST(
         } as Record<string, unknown>;
         break;
       }
+      case "trello_create_card": {
+        const messages = await getThreadMessages(id);
+        const firstInbound = messages.find((m) => m.direction === "inbound");
+        const origin = new URL(req.url).origin;
+        const card = buildTrelloCard({
+          thread,
+          inboundBody: firstInbound
+            ? messageText(firstInbound.body_text, firstInbound.body_html)
+            : null,
+          threadUrl: `${origin}/?tab=support&thread=${encodeURIComponent(id)}`,
+          receivedAt: firstInbound?.sent_at ?? thread.last_inbound_at,
+        });
+
+        const created = await createCard({ idList: getListId(), ...card });
+        response = {
+          cardId: created.id,
+          cardUrl: created.shortUrl,
+          name: created.name,
+        };
+
+        // The duplicate is a nice-to-have on top of a card that already
+        // exists. If it fails, report the partial rather than throwing —
+        // throwing would log an error the operator would retry, and the
+        // retry would create a second copy of the primary card.
+        const featureListId = getFeatureListId();
+        if (featureListId && featureListId !== getListId()) {
+          try {
+            const dupe = await copyCard({
+              idCardSource: created.id,
+              idList: featureListId,
+            });
+            response.featureCardId = dupe.id;
+            response.featureCardUrl = dupe.shortUrl;
+          } catch (e) {
+            response.featureCardError =
+              e instanceof Error ? e.message : String(e);
+          }
+        }
+        break;
+      }
       default:
         throw new Error(`unhandled action ${body.type}`);
     }
@@ -266,16 +333,21 @@ export async function POST(
 
     // Flip the sidebar immediately (Active → closed / won't renew / paid
     // total) — RC's webhook takes minutes to reflect what we just did.
-    const updatedCtx = applyActionToContext(thread.user_context, {
-      type: body.type,
-      subscriptionId:
-        (response.subscriptionId as string | undefined) ?? body.subscriptionId,
-      currentPeriodEnd: (response.current_period_end as number | undefined) ?? null,
-      refundedCents: (response.amount as number | undefined) ?? null,
-      at: new Date().toISOString(),
-    });
-    if (updatedCtx) {
-      await patchThread(id, { user_context: updatedCtx }).catch(() => {});
+    // Filing a ticket changes nothing about the subscription, so it is
+    // excluded (which also narrows body.type to the effect union).
+    if (body.type !== "trello_create_card") {
+      const updatedCtx = applyActionToContext(thread.user_context, {
+        type: body.type,
+        subscriptionId:
+          (response.subscriptionId as string | undefined) ?? body.subscriptionId,
+        currentPeriodEnd:
+          (response.current_period_end as number | undefined) ?? null,
+        refundedCents: (response.amount as number | undefined) ?? null,
+        at: new Date().toISOString(),
+      });
+      if (updatedCtx) {
+        await patchThread(id, { user_context: updatedCtx }).catch(() => {});
+      }
     }
 
     return NextResponse.json({ ok: true, action: logged, response });
