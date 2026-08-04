@@ -194,3 +194,19 @@ export async function logAction(
   const rows = await spPost<SupportActionRow>("support_actions", [entry]);
   return rows[0];
 }
+
+/**
+ * File a support thread into the Feature Requests tab. Same table the
+ * /api/ingest/feature-request route writes to; inserted here directly
+ * because that route is token-gated and calling ourselves over HTTP just to
+ * reach one INSERT would add a hop that can fail on its own.
+ */
+export async function createFeatureRequest(row: {
+  title: string;
+  description: string;
+  submitter_email: string | null;
+  status: "new";
+}): Promise<{ id: string }> {
+  const rows = await spPost<{ id: string }>("feature_requests", [row]);
+  return rows[0];
+}

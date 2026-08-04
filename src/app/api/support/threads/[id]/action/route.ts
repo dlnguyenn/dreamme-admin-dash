@@ -13,13 +13,15 @@
  *   stripe_refund                — { paymentIntentId, amountCents? }
  *   rc_play_refund_revoke        — { productId } (refunds latest Play charge
  *                                  AND revokes access, via RevenueCat v1)
- *   trello_create_card           — files the thread as a Trello card, plus a
- *                                  duplicate in the Feature Requests list
+ *   trello_create_card           — files the thread as a Trello card, plus
+ *                                  the same ticket as a row in the dash's
+ *                                  own Feature Requests tab
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
+  createFeatureRequest,
   getActionsForUserOrThread,
   getThread,
   getThreadActions,
@@ -47,14 +49,11 @@ import {
   refundAndRevokePlaySubscription,
   revenueCatConfigured,
 } from "@/lib/vendors/revenuecat-actions";
+import { createCard, getListId, trelloConfigured } from "@/lib/vendors/trello";
 import {
-  copyCard,
-  createCard,
-  getFeatureListId,
-  getListId,
-  trelloConfigured,
-} from "@/lib/vendors/trello";
-import { buildTrelloCard } from "@/lib/support/trello-card";
+  buildFeatureRequest,
+  buildTrelloCard,
+} from "@/lib/support/trello-card";
 import { messageText } from "@/lib/support/email-text";
 import type { SupportThreadRow } from "@/lib/support/types";
 
@@ -284,39 +283,38 @@ export async function POST(
         const messages = await getThreadMessages(id);
         const firstInbound = messages.find((m) => m.direction === "inbound");
         const origin = new URL(req.url).origin;
-        const card = buildTrelloCard({
+        const ticket = {
           thread,
           inboundBody: firstInbound
             ? messageText(firstInbound.body_text, firstInbound.body_html)
             : null,
           threadUrl: `${origin}/?tab=support&thread=${encodeURIComponent(id)}`,
           receivedAt: firstInbound?.sent_at ?? thread.last_inbound_at,
-        });
+        };
 
-        const created = await createCard({ idList: getListId(), ...card });
+        const created = await createCard({
+          idList: getListId(),
+          ...buildTrelloCard(ticket),
+        });
         response = {
           cardId: created.id,
           cardUrl: created.shortUrl,
           name: created.name,
         };
 
-        // The duplicate is a nice-to-have on top of a card that already
-        // exists. If it fails, report the partial rather than throwing —
-        // throwing would log an error the operator would retry, and the
-        // retry would create a second copy of the primary card.
-        const featureListId = getFeatureListId();
-        if (featureListId && featureListId !== getListId()) {
-          try {
-            const dupe = await copyCard({
-              idCardSource: created.id,
-              idList: featureListId,
-            });
-            response.featureCardId = dupe.id;
-            response.featureCardUrl = dupe.shortUrl;
-          } catch (e) {
-            response.featureCardError =
-              e instanceof Error ? e.message : String(e);
-          }
+        // Same ticket into the dash's own Feature Requests tab. It runs
+        // second so the row can carry the card link. If it fails, report
+        // the partial rather than throwing — throwing would log an error
+        // the operator would retry, and the retry would create a SECOND
+        // Trello card for a thread that already has one.
+        try {
+          const fr = await createFeatureRequest(
+            buildFeatureRequest({ ...ticket, cardUrl: created.shortUrl }),
+          );
+          response.featureRequestId = fr?.id ?? null;
+        } catch (e) {
+          response.featureRequestError =
+            e instanceof Error ? e.message : String(e);
         }
         break;
       }

@@ -1,9 +1,11 @@
 /**
- * Support Inbox → Trello card content. Pure and unit-tested: the HTTP lives
- * in vendors/trello.ts, so everything that decides what the card SAYS can be
+ * Support Inbox → ticket content, for both destinations: a Trello card and
+ * a row in the dash's own feature_requests table (the Feature Requests tab).
+ * Pure and unit-tested — the HTTP lives in vendors/trello.ts and the insert
+ * in support/db.ts, so everything that decides what the ticket SAYS can be
  * exercised without a token.
  *
- * The card has to stand on its own weeks later, when the thread is cold, so
+ * A ticket has to stand on its own weeks later, when the thread is cold, so
  * it carries the sender's email (the follow-up handle), their unedited words
  * (not a paraphrase — the phrasing is the feature request), and a link back
  * to the conversation.
@@ -101,4 +103,37 @@ export function buildTrelloCard(input: TrelloCardInput): TrelloCardContent {
   parts.push("---", `[Open in Support Inbox](${threadUrl})`);
 
   return { name: cardTitle(thread), desc: parts.join("\n\n") };
+}
+
+export interface FeatureRequestInsert {
+  title: string;
+  description: string;
+  submitter_email: string | null;
+  status: "new";
+}
+
+/**
+ * The same ticket as a Feature Requests row. The table has a dedicated
+ * submitter_email column, so the email comes out of the prose and into the
+ * field the tab actually filters and displays on.
+ */
+export function buildFeatureRequest(
+  input: TrelloCardInput & { cardUrl?: string | null },
+): FeatureRequestInsert {
+  const { thread, inboundBody, threadUrl } = input;
+  const { main } = splitQuotedText(inboundBody ?? "");
+  const body = truncate(main, MAX_BODY);
+
+  const parts: string[] = [];
+  if (body) parts.push(body);
+  const links = [`Support thread: ${threadUrl}`];
+  if (input.cardUrl) links.push(`Trello: ${input.cardUrl}`);
+  parts.push(links.join("\n"));
+
+  return {
+    title: cardTitle(thread),
+    description: parts.join("\n\n"),
+    submitter_email: thread.counterpart_email?.trim() || null,
+    status: "new",
+  };
 }

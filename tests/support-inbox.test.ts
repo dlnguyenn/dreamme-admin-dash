@@ -23,6 +23,7 @@ import {
 } from "@/lib/support/action-effects";
 import type { SupportActionRow, SupportThreadRow } from "@/lib/support/types";
 import {
+  buildFeatureRequest,
   buildTrelloCard,
   cardTitle,
   senderLabel,
@@ -1070,5 +1071,88 @@ describe("buildTrelloCard", () => {
     expect(
       senderLabel(thread({ counterpart_email: null, counterpart_name: null })),
     ).toBe("unknown sender");
+  });
+});
+
+describe("buildFeatureRequest", () => {
+  const thread = (over: Partial<SupportThreadRow> = {}): SupportThreadRow => ({
+    id: "11111111-2222-3333-4444-555555555555",
+    source: "email",
+    channel: null,
+    status: "new",
+    snoozed_until: null,
+    unread: true,
+    subject: "Feature idea",
+    counterpart_email: "lamija.travels@gmail.com",
+    counterpart_name: "Lilia",
+    category: "feedback",
+    urgency: "normal",
+    resolved_app_user_id: null,
+    resolved_store: null,
+    user_context: null,
+    triage: null,
+    feedback_id: null,
+    last_message_at: "2026-08-02T10:00:00Z",
+    last_inbound_at: "2026-08-02T10:00:00Z",
+    created_at: "2026-08-02T10:00:00Z",
+    updated_at: "2026-08-02T10:00:00Z",
+    ...over,
+  });
+  const url = "https://dash.example/?tab=support&thread=11111111-2222-3333-4444-555555555555";
+
+  it("puts the email in submitter_email, not buried in the prose", () => {
+    // feature_requests has a dedicated column the tab filters on, so the
+    // address belongs there rather than in the description body.
+    const fr = buildFeatureRequest({
+      thread: thread(),
+      inboundBody: "Could you add a weekly weigh-in reminder?",
+      threadUrl: url,
+    });
+    expect(fr.submitter_email).toBe("lamija.travels@gmail.com");
+    expect(fr.status).toBe("new");
+    expect(fr.title).toBe("Feature idea");
+    expect(fr.description).toContain("weekly weigh-in reminder");
+    expect(fr.description).toContain(`Support thread: ${url}`);
+  });
+
+  it("carries the Trello card link when one was just created", () => {
+    const fr = buildFeatureRequest({
+      thread: thread(),
+      inboundBody: "add dark mode please",
+      threadUrl: url,
+      cardUrl: "https://trello.com/c/abc12345",
+    });
+    expect(fr.description).toContain("Trello: https://trello.com/c/abc12345");
+  });
+
+  it("omits the Trello line when the card link is missing", () => {
+    const fr = buildFeatureRequest({
+      thread: thread(),
+      inboundBody: "add dark mode please",
+      threadUrl: url,
+    });
+    expect(fr.description).not.toContain("Trello:");
+  });
+
+  it("nulls submitter_email rather than writing an empty string", () => {
+    // The ingest route's zod schema coerces "" to null; the column is
+    // nullable, and an empty string would defeat any filter on it.
+    const fr = buildFeatureRequest({
+      thread: thread({ counterpart_email: null }),
+      inboundBody: "hi",
+      threadUrl: url,
+    });
+    expect(fr.submitter_email).toBeNull();
+  });
+
+  it("strips the quoted reply chain, same as the card", () => {
+    const fr = buildFeatureRequest({
+      thread: thread(),
+      inboundBody:
+        "Any chance of a food-noise tracker?\n\nOn Sat, Aug 1, 2026 at 9:02 AM Dan <dan@dreamme.life> wrote:\n> Thanks for writing in!",
+      threadUrl: url,
+    });
+    expect(fr.description).toContain("food-noise tracker");
+    expect(fr.description).not.toContain("Thanks for writing in");
   });
 });

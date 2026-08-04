@@ -275,17 +275,17 @@ function TrelloTicketCard({
     setBusy(true);
     try {
       const res = (await runAction(thread.id, { type: "trello_create_card" })) as {
-        response?: { featureCardUrl?: string; featureCardError?: string };
+        response?: { featureRequestId?: string | null; featureRequestError?: string };
       };
       const r = res.response ?? {};
-      // A missing duplicate is worth saying out loud — the primary card
+      // A missing feature request is worth saying out loud — the Trello card
       // landed, so silence would read as "both filed".
-      if (r.featureCardError) {
-        toast(`Ticket created, but the Feature Requests copy failed: ${r.featureCardError}`);
-      } else if (r.featureCardUrl) {
-        toast("Ticket created in both lists!");
+      if (r.featureRequestError) {
+        toast(
+          `Trello card created, but the Feature Requests row failed: ${r.featureRequestError}`,
+        );
       } else {
-        toast("Ticket created!");
+        toast("Filed to Trello and Feature Requests!");
       }
       onActionDone();
     } catch (e) {
@@ -300,11 +300,11 @@ function TrelloTicketCard({
   const title = cardTitlePreview(thread);
 
   return (
-    <Card title="Trello" glyph="Bookmark" glyphFamily="accent">
+    <Card title="File as ticket" glyph="Bookmark" glyphFamily="accent">
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
-          Files this thread as a card carrying their email, their own words,
-          and a link back here.
+          Files this thread to Trello and the Feature Requests tab, carrying
+          their email, their own words, and a link back here.
         </div>
         <LockedAction lock={lock}>
           <Button
@@ -336,15 +336,15 @@ function TrelloTicketCard({
 
       {confirming && (
         <ConfirmDialog
-          title="Create Trello ticket?"
+          title="File this thread as a ticket?"
           message={
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
               <div>
-                Card title: <strong>{title}</strong>
+                Title: <strong>{title}</strong>
               </div>
               <div style={{ color: "var(--ink-3)" }}>
-                Goes on your default list, with a duplicate in Feature
-                Requests. Nothing is sent to the user.
+                Creates a Trello card and the same ticket in the Feature
+                Requests tab. Nothing is sent to the user.
               </div>
             </div>
           }

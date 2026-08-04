@@ -7,10 +7,9 @@
  * oauth_token="…"` — so the credentials never appear in a request URL, a
  * Vercel access log, or an error message we echo back to the UI.
  *
- * Duplicating a card is a first-class Trello operation: POST /cards with
- * idCardSource + keepFromSource=all copies name/desc/labels into another
- * list, and works across boards. That's what backs the "also file it in
- * Feature Requests" half of the support action.
+ * The "also file it as a feature request" half of the support action does
+ * NOT live here — it writes a row to the dash's own feature_requests table
+ * (the Feature Requests tab), not a second Trello list.
  *
  * Get the two secrets at https://trello.com/power-ups/admin (API key) then
  * https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&key=…
@@ -30,9 +29,6 @@ function getToken(): string {
 }
 export function getListId(): string {
   return process.env.TRELLO_LIST_ID ?? "";
-}
-export function getFeatureListId(): string {
-  return process.env.TRELLO_FEATURE_LIST_ID ?? "";
 }
 
 /** Credentials AND a destination list — a card needs somewhere to land. */
@@ -114,22 +110,6 @@ export async function createCard(params: {
       idList: params.idList,
       name: params.name,
       desc: params.desc,
-      pos: "top",
-    },
-  });
-}
-
-/** Trello's native duplicate — copies name/desc/labels into another list. */
-export async function copyCard(params: {
-  idCardSource: string;
-  idList: string;
-}): Promise<TrelloCard> {
-  return trelloFetch<TrelloCard>("/cards", {
-    method: "POST",
-    form: {
-      idCardSource: params.idCardSource,
-      idList: params.idList,
-      keepFromSource: "all",
       pos: "top",
     },
   });
