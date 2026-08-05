@@ -3,6 +3,7 @@
  * same-origin calls behind the password gate).
  */
 import type {
+  SubscriptionInfo,
   SupportDraftRow,
   SupportThreadRow,
   ThreadDetailPayload,
@@ -137,12 +138,10 @@ export interface StripeSuggestion {
   /** gross charged and refunded — net can be $0 with a real charge behind it */
   chargedUsd: number;
   refundedUsd: number;
-  subscriptions: Array<{
-    plan: string | null;
-    isTrial: boolean;
-    isActive: boolean;
-    expiresAt: string | null;
-  }>;
+  /** full SubscriptionInfo rows — the server embeds ctx.subscriptions
+   *  verbatim, and the chips need stripeStatus/lastEventType to tell a
+   *  past_due (still-retrying) sub from a truly inactive one */
+  subscriptions: SubscriptionInfo[];
   totalSpentUsd: number;
 }
 

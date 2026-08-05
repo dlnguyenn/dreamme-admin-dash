@@ -98,9 +98,12 @@ async function resolveStripeSub(
   const customers = await findCustomersByEmail(email);
   for (const c of customers) {
     const subs = await listSubscriptionsForCustomer(c.id);
+    // past_due/unpaid rank with the live ones: those subs are still open
+    // (Stripe mid-retry) and are exactly the ones a cancel must reach.
     const active =
-      subs.find((s) => s.status === "trialing" || s.status === "active") ??
-      subs[0];
+      subs.find((s) =>
+        ["trialing", "active", "past_due", "unpaid"].includes(s.status),
+      ) ?? subs[0];
     if (active) return active;
   }
   return null;

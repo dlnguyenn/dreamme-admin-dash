@@ -48,6 +48,32 @@ const LABELS: Record<SupportActionType, string> = {
 };
 
 /**
+ * The raw Stripe status behind a subscription row, wherever it was stored:
+ * the stripeStatus field on fresh contexts, or the "stripe:<status>"
+ * lastEventType that older stored thread snapshots carry.
+ */
+export function stripeStatusOf(sub: SubscriptionInfo | null): string | null {
+  if (!sub || sub.store !== "STRIPE") return null;
+  if (sub.stripeStatus) return sub.stripeStatus;
+  return sub.lastEventType?.startsWith("stripe:")
+    ? sub.lastEventType.slice("stripe:".length)
+    : null;
+}
+
+/**
+ * past_due / unpaid: the subscription is NOT over — Stripe is still
+ * retrying the customer's card, and every declined attempt can show on
+ * their bank statement. Cancelling is the remedy, so these states must
+ * never read as "already ended". (Maria M., 2026-08-05: a past_due sub
+ * rendered as inactive, locked the cancel button, and the reply said
+ * "you're safe" while retries continued.)
+ */
+export function isStripeRetrying(sub: SubscriptionInfo | null): boolean {
+  const status = stripeStatusOf(sub);
+  return status === "past_due" || status === "unpaid";
+}
+
+/**
  * Whether an action button should be locked. Two independent reasons:
  *  - it already succeeded for this user (per type, so cancel-at-period-end
  *    having run still leaves the cancel-now escalation available)
@@ -64,7 +90,7 @@ export function actionLock(
   }
   const isCancel =
     type === "stripe_cancel_now" || type === "stripe_cancel_at_period_end";
-  if (isCancel && sub && !sub.isActive) {
+  if (isCancel && sub && !sub.isActive && !isStripeRetrying(sub)) {
     return { disabled: true, reason: "Subscription already ended", at: null };
   }
   if (type === "stripe_cancel_at_period_end" && sub?.autoRenew === false && sub?.isActive) {

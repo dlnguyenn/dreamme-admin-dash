@@ -135,6 +135,15 @@ export interface SubscriptionInfo {
   trialEndsAt?: string | null;
   autoRenew: boolean | null;
   renewals: number | null;
+  /**
+   * Raw Stripe subscription status (trialing | active | past_due | unpaid |
+   * canceled | …) when the state came from Stripe itself. past_due/unpaid
+   * matter: the subscription is NOT over — Stripe is still retrying the
+   * card, and "inactive" was exactly the misread that told a past_due
+   * customer she was safe (Maria M., 2026-08-05). Older stored contexts
+   * carry the same fact in lastEventType ("stripe:past_due").
+   */
+  stripeStatus?: string | null;
 }
 
 export interface UserContext {
@@ -159,6 +168,13 @@ export interface UserContext {
    * than resolved, and drives the Unlink affordance.
    */
   linkedStripeCustomerId?: string | null;
+  /**
+   * FAILED Stripe charge attempts on the customer(s). "$0 collected" with
+   * failed attempts behind it is a completely different situation from "$0,
+   * never charged": every declined retry can show on the customer's bank
+   * statement, which is usually the complaint itself.
+   */
+  stripeFailedCharges?: { count: number; lastAt: string | null } | null;
 }
 
 export interface TriageResult {

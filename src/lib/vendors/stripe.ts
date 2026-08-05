@@ -240,6 +240,9 @@ export interface CustomerChargeSummary {
   firstChargeAt: number | null;
   lastChargeAt: number | null;
   succeededCount: number;
+  /** declined attempts — each one can show on the customer's bank statement */
+  failedCount: number;
+  lastFailedAt: number | null;
 }
 
 /**
@@ -254,6 +257,7 @@ export async function getCustomerChargeSummary(
     `/charges?customer=${encodeURIComponent(customerId)}&limit=100`,
   );
   const ok = (res.data ?? []).filter((c) => c.status === "succeeded");
+  const failed = (res.data ?? []).filter((c) => c.status === "failed");
   return {
     netCents: ok.reduce((sum, c) => sum + (c.amount - c.amount_refunded), 0),
     grossCents: ok.reduce((sum, c) => sum + c.amount, 0),
@@ -261,6 +265,8 @@ export async function getCustomerChargeSummary(
     firstChargeAt: ok.length ? Math.min(...ok.map((c) => c.created)) : null,
     lastChargeAt: ok.length ? Math.max(...ok.map((c) => c.created)) : null,
     succeededCount: ok.length,
+    failedCount: failed.length,
+    lastFailedAt: failed.length ? Math.max(...failed.map((c) => c.created)) : null,
   };
 }
 

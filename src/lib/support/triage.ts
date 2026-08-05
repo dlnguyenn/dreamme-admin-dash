@@ -9,7 +9,9 @@
  */
 import { callClaude, firstJson, anthropicConfigured } from "@/lib/anthropic";
 import { messageText } from "./email-text";
+import { isStripeRetrying, stripeStatusOf } from "./action-effects";
 import type {
+  SubscriptionInfo,
   SupportMessageRow,
   ThreadCategory,
   TriageResult,
@@ -146,7 +148,44 @@ export function cleanDraft(raw: string, variant = 0): string {
 
 // ---------------------------------------------------------------------------
 
-function describeUser(ctx: UserContext | null): string {
+/** One human-readable state label per subscription, past_due-aware. */
+function subStateLabel(s: SubscriptionInfo): string {
+  if (isStripeRetrying(s)) {
+    return "PAST DUE — the charge FAILED and Stripe is STILL RETRYING their card";
+  }
+  const status = stripeStatusOf(s);
+  if (status === "canceled") return "CANCELLED (fully ended, will not bill again)";
+  return s.isActive ? "ACTIVE" : "expired/inactive";
+}
+
+/**
+ * Money-safety guidance for the drafts. The old note ("$0.00 + inactive
+ * usually means never charged, worth saying plainly") told the model to
+ * reassure a past_due customer whose card was mid-retry — she was told
+ * "you're safe" while Stripe kept attempting $69.99. Safety may only be
+ * asserted for a subscription that has truly ENDED.
+ */
+function moneyGuidance(ctx: UserContext): string {
+  const lines: string[] = [];
+  const failed = ctx.stripeFailedCharges;
+  if (failed?.count) {
+    lines.push(
+      `Stripe shows ${failed.count} FAILED charge attempt(s)${failed.lastAt ? `, most recent ${failed.lastAt.slice(0, 10)}` : ""}. Declined attempts can appear as pending charges/holds on the customer's bank statement — that is usually exactly what they're writing about, so acknowledge it instead of saying "nothing happened".`,
+    );
+  }
+  if (ctx.subscriptions.some((s) => isStripeRetrying(s))) {
+    lines.push(
+      "AT LEAST ONE SUBSCRIPTION IS PAST DUE: it is NOT over. Stripe will keep retrying the card and a retry CAN STILL SUCCEED and charge them. NEVER tell this customer they are safe, that the plan is inactive, or that no charge will happen. The correct reply: Dan will cancel the subscription from his side (he'll press the cancel button before sending) so the retries stop, and no money has been collected so far.",
+    );
+  } else {
+    lines.push(
+      'Only claim "you\'re safe / you won\'t be charged" when every subscription is fully CANCELLED or expired. $0.00 paid on a CANCELLED/ended subscription genuinely means their card was never successfully charged, and saying so plainly is reassuring.',
+    );
+  }
+  return lines.join("\n");
+}
+
+export function describeUser(ctx: UserContext | null): string {
   if (!ctx || (ctx.noAccount && ctx.subscriptions.length === 0)) {
     return "No DreamMe account was found for this email address.";
   }
@@ -155,25 +194,28 @@ function describeUser(ctx: UserContext | null): string {
     const subs = ctx.subscriptions
       .map(
         (s) =>
-          `- STRIPE (web checkout) · ${s.isActive ? "ACTIVE" : "cancelled/inactive"}${s.isTrial ? " (TRIAL)" : ""}${s.expiresAt ? `, period ends ${s.expiresAt.slice(0, 10)}` : ""}`,
+          `- STRIPE (web checkout) · ${subStateLabel(s)}${s.isTrial ? " (TRIAL)" : ""}${s.expiresAt ? `, period ends ${s.expiresAt.slice(0, 10)}` : ""}`,
       )
       .join("\n");
     return [
       `No DreamMe app account matched this email, but Stripe DOES have a billing record for it (they subscribed via the website). Paid $${ctx.totalSpentUsd.toFixed(2)} total.`,
       `Subscriptions:\n${subs}`,
-      "Dan CAN cancel/refund these directly. Note: $0.00 paid + inactive usually means their card was never successfully charged (failed payment), which is worth saying plainly if they're worried about a charge.",
+      "Dan CAN cancel/refund these directly.",
+      moneyGuidance(ctx),
     ].join("\n");
   }
   const subs = ctx.subscriptions
     .map((s) => {
-      const state = s.isActive ? "ACTIVE" : "expired/inactive";
+      const state = subStateLabel(s);
       const kind = s.isTrial
         ? `on TRIAL${s.plan ? ` of the ${s.plan} plan` : ""}`
         : `PAID ${s.plan ?? "unknown"} plan`;
       const exp = s.expiresAt ? `, ${s.isActive ? "renews/expires" : "expired"} ${s.expiresAt.slice(0, 10)}` : "";
       const since = s.startedAt ? `, subscriber since ${s.startedAt.slice(0, 10)}` : "";
       const renew =
-        s.autoRenew === false && s.isActive ? ", auto-renew already OFF (cancelled, will lapse)" : "";
+        s.autoRenew === false && s.isActive && !isStripeRetrying(s)
+          ? ", auto-renew already OFF (cancelled, will lapse)"
+          : "";
       return `- ${s.store} · ${kind} · ${state}${exp}${since}${renew} · paid $${s.totalPaidUsd.toFixed(2)} total`;
     })
     .join("\n");
@@ -185,6 +227,7 @@ function describeUser(ctx: UserContext | null): string {
     ctx.subscriptions.length
       ? `Subscriptions:\n${subs}`
       : "No subscriptions on record.",
+    ctx.subscriptions.length ? moneyGuidance(ctx) : "",
     ctx.sandboxOnly ? "NOTE: only sandbox purchases found (likely a tester)." : "",
   ]
     .filter(Boolean)
@@ -192,7 +235,13 @@ function describeUser(ctx: UserContext | null): string {
 }
 
 function storeGuidance(ctx: UserContext | null): string {
-  const store = ctx?.subscriptions[0]?.store;
+  // The sub most worth acting on: a live (or still-retrying) one beats a
+  // dead one — a mixed-store history must not route the reply to the
+  // wrong platform's cancel instructions.
+  const relevant =
+    ctx?.subscriptions.find((s) => s.isActive || isStripeRetrying(s)) ??
+    ctx?.subscriptions[0];
+  const store = relevant?.store;
   if (store === "APP_STORE") {
     return `This user subscribed through Apple. Dan CANNOT cancel or refund Apple subscriptions himself. For cancel: Settings app > tap their name > Subscriptions > DreamMe > Cancel. For refunds they must use https://reportaproblem.apple.com and Apple decides. Drafts should explain the relevant steps warmly and apologize for the extra hoop.`;
   }
