@@ -12,6 +12,12 @@ import { SUPABASE_URL } from "@/lib/supabase";
 import { syncBatchPostState } from "@/lib/batchState";
 import type { TilePost } from "@/lib/batchDisplay";
 import {
+  doublespeedConfigured,
+  dsAccounts,
+  dsPosts,
+} from "@/lib/viewsources/doublespeed";
+import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
+import {
   dateWindow,
   easternDate,
   easternDateOffset,
@@ -192,6 +198,8 @@ export interface OverviewPayload {
   views: ViewsSection | null;
   support: SupportSection | null;
   today: TodaySection | null;
+  /** Fleet-wide queue coverage; null when the Doublespeed key isn't set. */
+  queue: QueueCoverage | null;
   topPosts: TopPost[] | null;
   paid: PaidSection | null;
   ops: OpsCheck[] | null;
@@ -619,6 +627,28 @@ async function fetchToday(): Promise<TodaySection> {
   };
 }
 
+/**
+ * Queue coverage across the whole Doublespeed fleet.
+ *
+ * Reads the vendor API directly rather than our tables: slideshow_batch_posts
+ * only knows about the nine-persona TikTok batch, and the other 45 accounts
+ * have no representation in our schema at all. Two calls — what's scheduled,
+ * and what's already posted today — because an account that has already gone
+ * out is covered just as much as one still queued.
+ */
+async function fetchQueueCoverage(): Promise<QueueCoverage | null> {
+  if (!doublespeedConfigured()) return null;
+  const today = easternDate(new Date());
+  const [accounts, scheduled, posted] = await Promise.all([
+    dsAccounts(),
+    dsPosts("scheduled"),
+    // date_from bounds the posted pull; the Eastern-vs-UTC edge is re-checked
+    // per post inside buildQueueCoverage, so a day either side is harmless.
+    dsPosts("posted", easternDateOffset(1)),
+  ]);
+  return buildQueueCoverage(accounts, [...scheduled, ...posted], today);
+}
+
 /** Lifetime views for a set of batch posts, keyed by doublespeed_post_id. */
 async function fetchBatchViews(
   posts: { doublespeed_post_id: string | null }[],
@@ -868,13 +898,14 @@ async function section<T>(
 export async function buildOverview(): Promise<OverviewPayload> {
   const errors: string[] = [];
 
-  const [rc, trialStarts, views, support, today, topPosts, paid, ops] =
+  const [rc, trialStarts, views, support, today, queue, topPosts, paid, ops] =
     await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
       section("trial-starts", errors, fetchTrialStarts),
       section("views", errors, fetchViews),
       section("support", errors, fetchSupport),
       section("today", errors, fetchToday),
+      section("queue", errors, fetchQueueCoverage),
       section("top-posts", errors, fetchTopPosts),
       section("paid", errors, fetchPaid),
       section("ops", errors, fetchOps),
@@ -887,6 +918,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     views,
     support,
     today,
+    queue: queue ?? null,
     topPosts,
     paid,
     ops,

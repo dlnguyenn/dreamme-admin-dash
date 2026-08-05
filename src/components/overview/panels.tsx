@@ -22,6 +22,7 @@ import {
   tileGridStyle,
 } from "../SlideshowTile";
 import type { TilePost } from "@/lib/batchDisplay";
+import type { QueueCoverage } from "@/lib/queueCoverage";
 import {
   EmptyState,
   GoToLink,
@@ -613,3 +614,109 @@ export function PaidPanel({
 }
 
 export { fmtPct };
+
+// ---------------------------------------------------------------------------
+// Fleet queue coverage
+
+/**
+ * Which accounts across the whole Doublespeed fleet have something going out
+ * today. The nine-persona batch is only a fifth of 56 accounts; the rest had
+ * no coverage anywhere, so an account that quietly stopped being queued was
+ * invisible.
+ *
+ * Uncovered handles are listed by name — a count alone tells you a gap exists
+ * without telling you where, which is the same failure the batch pill had.
+ */
+export function QueuePanel({ queue }: { queue: QueueCoverage | null }) {
+  const isMobile = useIsMobile();
+  if (!queue) return null;
+
+  const gaps = queue.totalAccounts - queue.totalCovered;
+
+  return (
+    <>
+      <SectionHeader
+        family={gaps > 0 ? "warning" : "success"}
+        icon="Grid"
+        title="Account queue"
+        meta={
+          gaps > 0
+            ? `${gaps} of ${queue.totalAccounts} with nothing today`
+            : `all ${queue.totalAccounts} covered`
+        }
+      />
+      <Card pad={isMobile ? "14px 14px" : "16px 18px"}>
+        <div style={{ display: "grid", gap: 10 }}>
+          {queue.groups.map((g) => {
+            const missing = g.accounts.filter((a) => !a.covered);
+            const family = missing.length === 0 ? "success" : "warning";
+            return (
+              <div
+                key={g.key}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "9px 11px",
+                  borderRadius: 10,
+                  background: "var(--surface-2)",
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  style={{
+                    font: "650 12.5px var(--font-ui)",
+                    color: "var(--ink)",
+                    width: isMobile ? 96 : 132,
+                    flex: "none",
+                  }}
+                >
+                  {g.label}
+                </span>
+                <span
+                  style={{
+                    font: "700 12px var(--font-ui)",
+                    fontVariantNumeric: "tabular-nums",
+                    background: fam(family).soft,
+                    color: fam(family).text,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    flex: "none",
+                  }}
+                >
+                  {g.covered}/{g.total}
+                </span>
+                <span
+                  style={{
+                    font: "400 11.5px/1.5 var(--font-ui)",
+                    color: missing.length ? "var(--warning-text)" : "var(--ink-4)",
+                    minWidth: 0,
+                    flex: 1,
+                  }}
+                  title={missing.map((a) => a.handle).join(", ")}
+                >
+                  {missing.length === 0
+                    ? "all queued"
+                    : `needs queueing: ${missing.map((a) => `@${a.handle}`).join(", ")}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            marginTop: 10,
+            font: "400 11px/1.5 var(--font-ui)",
+            color: "var(--ink-4)",
+          }}
+        >
+          Covered = a post scheduled or already posted for {queue.date} (ET).
+          Groups come from Doublespeed&apos;s <code>gender</code> and platform —
+          its richer account_groups field is MCP-only and can&apos;t be read
+          server-side. Accounts that post every other day will show a gap on
+          their off day.
+        </div>
+      </Card>
+    </>
+  );
+}

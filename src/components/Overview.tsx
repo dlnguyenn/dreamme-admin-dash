@@ -21,6 +21,7 @@ import { ViewsPanel } from "./overview/ViewsPanel";
 import {
   OpsPanel,
   PaidPanel,
+  QueuePanel,
   SupportPanel,
   TodayPanel,
   TopPostsPanel,
@@ -226,6 +227,7 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
                 today={data?.today ?? null}
                 onOpen={() => onNavigate("our-slideshows")}
               />
+              <QueuePanel queue={data?.queue ?? null} />
             </div>
             <div style={{ minWidth: 0 }}>
               <SupportPanel

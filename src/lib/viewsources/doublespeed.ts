@@ -79,6 +79,69 @@ const num = (v: unknown): number | null => {
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
+export function doublespeedConfigured(): boolean {
+  return KEY !== "";
+}
+
+/**
+ * Raw fleet reads for the Overview's queue-coverage panel.
+ *
+ * Deliberately separate from the ViewSource mapping above: that shape drops
+ * everything the view sync doesn't need (gender, status, scheduled posts),
+ * and coverage needs exactly those.
+ */
+export async function dsAccounts(): Promise<
+  {
+    id: string;
+    username: string;
+    account_type: string | null;
+    gender: string | null;
+    status: string | null;
+  }[]
+> {
+  const body = await get<{ ok: boolean; accounts: DsAccount[] }>("/api/v1/accounts");
+  return (body.accounts ?? []).map((a) => ({
+    id: a.id,
+    username: a.username,
+    account_type: a.account_type,
+    // `gender` is the only grouping signal the REST API exposes — the richer
+    // account_groups field is MCP-only. See lib/queueCoverage.ts.
+    gender: (a as { gender?: string | null }).gender ?? null,
+    status: a.status,
+  }));
+}
+
+export async function dsPosts(
+  status: "scheduled" | "posted",
+  dateFrom?: string,
+): Promise<
+  {
+    status: string | null;
+    post_time: string | null;
+    account: { username: string | null; account_type: string | null } | null;
+  }[]
+> {
+  const out: DsPost[] = [];
+  let page = 1;
+  let totalPages = 1;
+  while (page <= totalPages && page <= 10) {
+    const body = await get<DsPostsPage>(
+      `/api/v1/posts?status=${status}&page_size=${PAGE_SIZE}&page=${page}` +
+        (dateFrom ? `&date_from=${dateFrom}` : ""),
+    );
+    totalPages = Number(body.total_pages) || 1;
+    const rows = body.posts ?? [];
+    if (rows.length === 0) break;
+    out.push(...rows);
+    page++;
+  }
+  return out.map((p) => ({
+    status: p.status,
+    post_time: p.post_time ?? p.succeeded_at,
+    account: p.account,
+  }));
+}
+
 export const doublespeedSource: ViewSource = {
   key: "doublespeed",
 
