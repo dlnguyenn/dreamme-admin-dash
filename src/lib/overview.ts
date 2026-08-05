@@ -11,6 +11,8 @@
 import { SUPABASE_URL } from "@/lib/supabase";
 import {
   dateWindow,
+  easternDate,
+  easternDateOffset,
   gainedSeries,
   isoDate,
   pickDailyMode,
@@ -225,15 +227,18 @@ interface TrialStartsRow {
  * newest row is a mid-day snapshot and reads as a ~60% crash).
  */
 async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
-  const since = dateWindow(WINDOW_DAYS)[0];
+  // Eastern, to match how migration 0060 buckets the view.
+  const since = easternDateOffset(WINDOW_DAYS - 1);
   return sbGet<TrialStartsRow[]>(
     `rc_trial_starts_daily?select=date,trial_starts&date=gte.${since}&order=date.asc&limit=${WINDOW_DAYS + 1}`,
   );
 }
 
-export function buildNorthStar(rows: TrialStartsRow[] | null): NorthStar {
-  const today = isoDate(new Date());
-  const yesterday = isoDate(new Date(Date.now() - 86_400_000));
+export function buildNorthStar(rows: TrialStartsRow[] | null, now = new Date()): NorthStar {
+  // Must be Eastern: the view groups by America/New_York, so asking for the UTC
+  // date would read the wrong bucket for the last 4-5 hours of every day.
+  const today = easternDate(now);
+  const yesterday = easternDateOffset(1, now);
 
   if (!rows) {
     return {

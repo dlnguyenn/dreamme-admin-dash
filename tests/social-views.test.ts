@@ -90,3 +90,43 @@ describe("pickDailyMode", () => {
     expect(pickDailyMode("2026-06-01", 30, now).mode).toBe("gained");
   });
 });
+
+describe("eastern business day", () => {
+  it("keeps late-evening Eastern on the correct day when UTC has already rolled over", async () => {
+    const { easternDate } = await import("@/lib/socialViews");
+    // 03:05 UTC on Aug 5 is 23:05 EDT on Aug 4 — the exact case that made the
+    // north-star tile appear to reset at 8pm.
+    expect(easternDate(new Date("2026-08-05T03:05:00Z"))).toBe("2026-08-04");
+  });
+
+  it("agrees with UTC during the Eastern daytime", async () => {
+    const { easternDate } = await import("@/lib/socialViews");
+    expect(easternDate(new Date("2026-08-04T16:00:00Z"))).toBe("2026-08-04");
+  });
+
+  it("follows EST in winter, not a fixed offset", async () => {
+    const { easternDate } = await import("@/lib/socialViews");
+    // January is EST (UTC-5): 04:30Z is 23:30 the previous day.
+    expect(easternDate(new Date("2026-01-15T04:30:00Z"))).toBe("2026-01-14");
+    expect(easternDate(new Date("2026-01-15T05:30:00Z"))).toBe("2026-01-15");
+  });
+
+  it("steps whole calendar days across the DST boundary", async () => {
+    const { easternDateOffset } = await import("@/lib/socialViews");
+    // 2026-11-01 is the EDT->EST transition (a 25-hour local day). Subtracting
+    // 86_400_000ms would land on the wrong date; stepping the calendar does not.
+    const inNov = new Date("2026-11-02T12:00:00Z");
+    expect(easternDateOffset(0, inNov)).toBe("2026-11-02");
+    expect(easternDateOffset(1, inNov)).toBe("2026-11-01");
+    expect(easternDateOffset(2, inNov)).toBe("2026-10-31");
+  });
+
+  it("builds an inclusive oldest-first window", async () => {
+    const { easternWindow } = await import("@/lib/socialViews");
+    expect(easternWindow(3, new Date("2026-08-05T16:00:00Z"))).toEqual([
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+    ]);
+  });
+});

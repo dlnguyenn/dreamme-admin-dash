@@ -438,3 +438,9 @@ select {
     transform: translate(20px, -20px) scale(1.05);
   }
 }
+/* Busy spinner for manual-refresh affordances (Overview). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

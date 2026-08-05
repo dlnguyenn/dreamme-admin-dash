@@ -13,6 +13,7 @@
 import * as React from "react";
 import type { DashId } from "./Shell";
 import { PageHeader } from "./Shell";
+import { Icons } from "./Icons";
 import { useIsMobile } from "@/lib/useIsMobile";
 import type { OverviewPayload } from "@/lib/overview";
 import { Card, ErrorBanner, HeroCard, StatStrip } from "./porcelain";
@@ -28,11 +29,54 @@ import { fmtMoney, fmtNum, fmtPct, relTime } from "./overview/shared";
 
 const REFRESH_MS = 120_000;
 
+/**
+ * Manual poll. The screen already refreshes on a 2-minute timer, but trial
+ * starts land in rc_events within seconds of happening, so when you're watching
+ * the number you want it now rather than up to two minutes from now.
+ */
+function RefreshButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: `1px solid ${hover && !busy ? "var(--ink-4)" : "var(--line-2)"}`,
+        background: hover && !busy ? "var(--neutral-soft)" : "transparent",
+        font: "600 13px var(--font-ui)",
+        color: busy ? "var(--ink-4)" : "var(--ink-2)",
+        cursor: busy ? "default" : "pointer",
+        transition: "background 140ms ease, border-color 140ms ease",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          animation: busy ? "spin 900ms linear infinite" : "none",
+        }}
+      >
+        <Icons.Refresh size={14} stroke="currentColor" />
+      </span>
+      {busy ? "Refreshing…" : "Refresh"}
+    </button>
+  );
+}
+
 export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
   const isMobile = useIsMobile();
   const [data, setData] = React.useState<OverviewPayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+
+  const [refreshing, setRefreshing] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -77,10 +121,23 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
         title="Overview"
         subtitle={
           data
-            ? `Updated ${relTime(data.generatedAt)}`
+            ? `Updated ${relTime(data.generatedAt)} · auto-refreshes every 2 min`
             : loading
               ? "Loading…"
               : undefined
+        }
+        actions={
+          <RefreshButton
+            busy={refreshing}
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                await load();
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+          />
         }
       />
 
@@ -139,7 +196,9 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
                 {
                   label: "Trials today",
                   value: ns?.trialStartsToday != null ? fmtNum(ns.trialStartsToday) : "—",
-                  note: "live, so far",
+                  // Days are Eastern, not UTC — say so, because a UTC day would
+                  // roll this over at 8pm and look like a reset.
+                  note: "live · ET day",
                 },
                 { label: "MRR", value: fmtMoney(rev?.mrr) },
                 {

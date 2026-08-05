@@ -62,6 +62,48 @@ export function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * The business day, in US Eastern wall-clock.
+ *
+ * Trial starts are bucketed by America/New_York in the database (migration
+ * 0060) because a UTC day rolls over at 8pm Eastern, which made the north-star
+ * tile appear to reset mid-evening. This has to agree with that view exactly:
+ * if the SQL says Eastern and the server asks for the UTC date, the tile reads
+ * the wrong bucket for the last four hours of every day and silently shows a
+ * near-empty count.
+ *
+ * en-CA formats as YYYY-MM-DD, and the zone follows EDT/EST on its own.
+ */
+export function easternDate(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/**
+ * `n` days before the current Eastern date, as a calendar step.
+ *
+ * Stepping the calendar string rather than subtracting 24h of milliseconds:
+ * on the two DST-transition days a day is 23 or 25 hours long, so millisecond
+ * arithmetic lands on the wrong date twice a year.
+ */
+export function easternDateOffset(n: number, now = new Date()): string {
+  const [y, m, d] = easternDate(now).split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  utc.setUTCDate(utc.getUTCDate() - n);
+  return utc.toISOString().slice(0, 10);
+}
+
+/** Inclusive list of the last `days` Eastern dates, oldest first. */
+export function easternWindow(days: number, now = new Date()): string[] {
+  const out: string[] = [];
+  for (let i = days - 1; i >= 0; i--) out.push(easternDateOffset(i, now));
+  return out;
+}
+
 /** Inclusive list of the last `days` UTC dates, oldest first. */
 export function dateWindow(days: number, end = new Date()): string[] {
   const out: string[] = [];
