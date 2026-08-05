@@ -81,6 +81,7 @@ export function TodayPanel({
                   today.posts.filter((p) => p.state === s).length;
                 const posted = n("posted");
                 const queued = n("queued");
+                const draft = n("draft");
                 const failed = n("failed");
                 const unknown = n("unknown");
                 const total = today.posts.length;
@@ -94,6 +95,11 @@ export function TodayPanel({
                     {queued > 0 && (
                       <StatusPill kind="attention">
                         {queued}/{total} QUEUED
+                      </StatusPill>
+                    )}
+                    {draft > 0 && (
+                      <StatusPill kind="danger">
+                        {draft}/{total} STUCK IN DRAFT
                       </StatusPill>
                     )}
                     {failed > 0 && (
@@ -209,7 +215,7 @@ export function TodayPanel({
                             ? "var(--success)"
                             : p.state === "queued"
                               ? "var(--attention)"
-                              : p.state === "failed"
+                              : p.state === "failed" || p.state === "draft"
                                 ? "var(--danger)"
                                 : "var(--neutral)",
                       }}
@@ -218,9 +224,11 @@ export function TodayPanel({
                           ? `posted${p.postedAt ? ` ${relTime(p.postedAt)}` : ""}`
                           : p.state === "queued"
                             ? "queued at Doublespeed, not out yet"
-                            : p.state === "failed"
-                              ? "failed at Doublespeed"
-                              : "state not verified yet"
+                            : p.state === "draft"
+                              ? "reverted to draft at Doublespeed — will NOT post"
+                              : p.state === "failed"
+                                ? "failed at Doublespeed"
+                                : "state not verified yet"
                       }
                     />
                   </div>

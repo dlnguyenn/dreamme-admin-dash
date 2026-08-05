@@ -127,7 +127,12 @@ export interface SupportSection {
 }
 
 /** Live Doublespeed state for one batch post. */
-export type BatchPostState = "queued" | "posted" | "failed" | "unknown";
+export type BatchPostState =
+  | "queued"
+  | "posted"
+  | "draft"
+  | "failed"
+  | "unknown";
 
 export interface TodaySection {
   batchKey: string | null;
@@ -482,6 +487,10 @@ function toBatchPostState(row: BatchPostRow): BatchPostState {
     case "posted":
     case "succeeded":
       return "posted";
+    case "draft":
+      // Queued then reverted to draft: it is NOT going out and never will
+      // without intervention. Distinct from "failed" and from "unknown".
+      return "draft";
     case "failed":
     case "error":
       return "failed";

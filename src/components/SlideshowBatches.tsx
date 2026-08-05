@@ -87,10 +87,12 @@ function stateSummary(posts: BatchPost[]): {
   const n = (s: string) => posts.filter((p) => p.post_status === s).length;
   const posted = n("posted") + n("succeeded");
   const queued = n("scheduled") + n("pending");
+  const draft = n("draft");
   const failed = n("failed") + n("error");
   const total = posts.length;
 
   if (failed > 0) return { label: `${failed} FAILED`, family: "danger" };
+  if (draft > 0) return { label: `${draft} NOT POSTED`, family: "danger" };
   if (posted === total) return { label: "POSTED", family: "success" };
   if (queued === total) return { label: "QUEUED", family: "attention" };
   if (posted > 0 || queued > 0)

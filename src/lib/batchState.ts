@@ -168,8 +168,10 @@ export async function syncBatchPostState(opts?: {
 
     const since = new Date(Date.now() - lookbackDays * 86_400_000);
     const remote = new Map<string, BatchPostState>();
-    // Order matters: a post can appear in more than one filter across a
-    // transition, and "posted" is the more advanced state, so it wins.
+    // Order matters: later writes win, so go least -> most advanced. A post
+    // that silently reverted to draft (seen on b28 maya) must surface as
+    // DRAFT, not sit in "unverified" where it looks like a sync gap.
+    await collect("draft", since, remote);
     await collect("scheduled", since, remote);
     await collect("posted", since, remote);
 
