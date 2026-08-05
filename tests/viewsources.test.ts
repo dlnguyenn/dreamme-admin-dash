@@ -135,12 +135,120 @@ describe("doublespeedSource.listPosts", () => {
   });
 });
 
-describe("sideshiftSource", () => {
-  it("reports itself unconfigured so the cron skips it", async () => {
+async function loadSideshift(key = "sk_live_test") {
+  vi.resetModules();
+  process.env.SIDESHIFT_API_KEY = key;
+  process.env.SIDESHIFT_API_BASE = "https://ss.test/api/v1";
+  return import("@/lib/viewsources/sideshift");
+}
+
+const ssPost = (id: string, views: number, uploadedAt: number, platform = "tiktok") => ({
+  id,
+  title: `creator hook ${id}\nmore caption`,
+  platform,
+  views,
+  likes: 5,
+  comments: 1,
+  shares: 2,
+  contractorName: "Julia Phillips",
+  uploadedAt,
+});
+
+describe("sideshift tsToIso", () => {
+  /**
+   * The API documents "All timestamps are Unix timestamps in milliseconds" and
+   * then returns seconds for uploadedAt. Verified live 2026-08-05: 1785878767
+   * is 2026-08-04 as seconds, 1970-01-21 as ms. Believing the docs would date
+   * every post to 1970 and silently drop them from the 30-day window.
+   */
+  it("reads a seconds timestamp as seconds despite the docs claiming ms", async () => {
+    const { tsToIso } = await loadSideshift();
+    expect(tsToIso(1785878767)).toBe("2026-08-04T21:26:07.000Z");
+  });
+
+  it("still reads a genuine milliseconds timestamp correctly", async () => {
+    const { tsToIso } = await loadSideshift();
+    expect(tsToIso(1785878767000)).toBe("2026-08-04T21:26:07.000Z");
+  });
+
+  it("returns null for missing or nonsense values", async () => {
+    const { tsToIso } = await loadSideshift();
+    expect(tsToIso(null)).toBe(null);
+    expect(tsToIso(undefined)).toBe(null);
+    expect(tsToIso(0)).toBe(null);
+    expect(tsToIso(-1)).toBe(null);
+  });
+});
+
+describe("sideshiftSource.listPosts", () => {
+  it("maps creator posts and pages by total", async () => {
+    const pages = [
+      { data: [ssPost("a", 100, 1785878767), ssPost("b", 200, 1785878579, "instagram")], page: 1, total: 3 },
+      { data: [ssPost("c", 300, 1785878317, "facebook")], page: 2, total: 3 },
+    ];
+    let n = 0;
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return { ok: true, json: async () => pages[n++] } as Response;
+    }));
+
+    const { sideshiftSource } = await loadSideshift();
+    const out = await sideshiftSource.listPosts(new Date("2026-07-06T00:00:00Z"));
+
+    expect(out.map((p) => p.sourcePostId)).toEqual(["a", "b", "c"]);
+    expect(out.map((p) => p.platform)).toEqual(["tiktok", "instagram", "facebook"]);
+    expect(out[0]).toMatchObject({
+      // The creator who made it, not an account we run.
+      handle: "Julia Phillips",
+      hook: "creator hook a",
+      views: 100,
+      shares: 2,
+      postUrl: null,
+      postedAt: "2026-08-04T21:26:07.000Z",
+    });
+    expect(urls[0]).toContain("fromDate=2026-07-06");
+    expect(urls[0]).toContain("limit=100");
+    expect(urls[1]).toContain("page=2");
+  });
+
+  it("drops posts that fall outside the requested window", async () => {
+    // A server-side fromDate filter and our own reading of uploadedAt can
+    // disagree precisely because of the units bug — trust neither alone.
+    const old = ssPost("old", 9, 1748000000); // 2025-05
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ data: [ssPost("new", 1, 1785878767), old], page: 1, total: 2 }),
+    }) as Response));
+
+    const { sideshiftSource } = await loadSideshift();
+    const out = await sideshiftSource.listPosts(new Date("2026-07-06T00:00:00Z"));
+    expect(out.map((p) => p.sourcePostId)).toEqual(["new"]);
+  });
+
+  it("exposes no accounts — creators are not handles we run", async () => {
+    const { sideshiftSource } = await loadSideshift();
+    // Creating social_accounts rows for creators would corrupt the
+    // "N accounts we run" count, which is a Doublespeed-fleet concept.
+    await expect(sideshiftSource.listAccounts()).resolves.toEqual([]);
+  });
+
+  it("is skipped by the cron when no key is set", async () => {
     vi.resetModules();
+    delete process.env.SIDESHIFT_API_KEY;
     const { sideshiftSource } = await import("@/lib/viewsources/sideshift");
     expect(sideshiftSource.configured()).toBe(false);
-    // No speculative client: returns empty rather than calling a guessed API.
-    await expect(sideshiftSource.listAccounts()).resolves.toEqual([]);
+  });
+
+  it("never leaks the API key into an error message", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 402,
+      text: async () => '{"error":"Active subscription required"}',
+    }) as Response));
+
+    const { sideshiftSource } = await loadSideshift("sk_live_super_secret");
+    await expect(sideshiftSource.listPosts(new Date())).rejects.toThrow(/Sideshift 402/);
+    await expect(sideshiftSource.listPosts(new Date())).rejects.not.toThrow(/super_secret/);
   });
 });
