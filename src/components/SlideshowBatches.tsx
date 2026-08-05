@@ -79,7 +79,10 @@ const isPersonaId = (v: string): v is PersonaId => v in PERSONAS;
  * showing it made three-week-old batches read as still queued. These counts
  * come from post_status, refreshed from Doublespeed.
  */
-function stateSummary(posts: BatchPost[]): {
+function stateSummary(
+  posts: BatchPost[],
+  batchDate: string,
+): {
   label: string;
   family: Family;
 } | null {
@@ -91,13 +94,25 @@ function stateSummary(posts: BatchPost[]): {
   const failed = n("failed") + n("error");
   const total = posts.length;
 
+  // Doublespeed drains its own queue within minutes, so anything still queued
+  // the day after its batch date is stuck, not pending. Without this a post
+  // that never publishes reads as a normal QUEUED forever -- exactly how b28
+  // maya sat unpublished for 30 hours with the dashboard showing nothing wrong.
+  const stale = batchDate < isoToday();
+
   if (failed > 0) return { label: `${failed} FAILED`, family: "danger" };
   if (draft > 0) return { label: `${draft} NOT POSTED`, family: "danger" };
+  if (queued > 0 && stale)
+    return { label: `${queued} STUCK IN QUEUE`, family: "danger" };
   if (posted === total) return { label: "POSTED", family: "success" };
   if (queued === total) return { label: "QUEUED", family: "attention" };
   if (posted > 0 || queued > 0)
     return { label: `${posted}/${total} POSTED`, family: "attention" };
   return { label: "UNVERIFIED", family: "neutral" };
+}
+
+function isoToday(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function formatDate(iso: string): string {
@@ -302,7 +317,7 @@ function BatchCard({
 }) {
   const [showAllThesis, setShowAllThesis] = React.useState(false);
   const thesis = batch.experiment ?? batch.note;
-  const summary = stateSummary(batch.posts);
+  const summary = stateSummary(batch.posts, batch.batch_date);
 
   return (
     <div

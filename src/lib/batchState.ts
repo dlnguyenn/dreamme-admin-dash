@@ -96,9 +96,15 @@ async function ds<T>(path: string): Promise<T> {
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-/** Page one status filter into a map keyed by Doublespeed post id. */
+/**
+ * Page one status filter into a map keyed by Doublespeed post id.
+ *
+ * `status` accepts ONLY 'all' | 'scheduled' | 'posted'. Anything else is a hard
+ * 400 ("Invalid enum value") that aborts the whole sync, so the union is
+ * enforced here rather than trusted at the call site.
+ */
 async function collect(
-  status: string,
+  status: "all" | "scheduled" | "posted",
   since: Date,
   into: Map<string, BatchPostState>,
 ): Promise<void> {
@@ -168,12 +174,15 @@ export async function syncBatchPostState(opts?: {
 
     const since = new Date(Date.now() - lookbackDays * 86_400_000);
     const remote = new Map<string, BatchPostState>();
-    // Order matters: later writes win, so go least -> most advanced. A post
-    // that silently reverted to draft (seen on b28 maya) must surface as
-    // DRAFT, not sit in "unverified" where it looks like a sync gap.
-    await collect("draft", since, remote);
-    await collect("scheduled", since, remote);
-    await collect("posted", since, remote);
+    // One 'all' pass covers both live states. An earlier version called
+    // collect('draft') first to catch posts that had fallen back to draft; that
+    // is not a value this API accepts, so it 400'd on every run and the catch
+    // below swallowed it, leaving the sync writing nothing at all. Drafts are
+    // simply not exposed here: 'all' over 45 days returns only 'posted' and
+    // 'scheduled'. A post that never drains therefore shows as QUEUED forever,
+    // which is the honest reading, and the stuck-queue check below is what
+    // turns a stale QUEUED into something visible.
+    await collect("all", since, remote);
 
     const now = new Date().toISOString();
     let updated = 0;
