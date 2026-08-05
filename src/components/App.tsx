@@ -84,18 +84,18 @@ export function App() {
           setViewAs(savedRole);
         }
       }
-      // Key is versioned: every existing browser has "content" stored under
-      // the v1 key and would never see Overview become the landing tab.
-      const savedCur = localStorage.getItem("dreamme.currentDash.v2");
-      if (
-        savedCur &&
-        NAV_ITEMS.some((n) => n.id === savedCur)
-      ) {
-        setCurrent(savedCur as DashId);
-      }
-      // ?tab= wins over the remembered tab, so a link from elsewhere (a
-      // Trello ticket, a bookmark) lands where it points. Validated against
-      // NAV_ITEMS — never trust the param.
+      // Deliberately NOT restoring the last-visited tab. Every launch lands on
+      // Overview (the `current` initial state), because the whole point of that
+      // screen is to be the thing you see before you go looking for anything
+      // else — and a remembered tab meant one trip to Support left you landing
+      // on Support every morning after.
+      //
+      // Viewers can't see Overview (adminOnly), so the visibleNavItems bounce
+      // below drops them onto Content Pipeline as before.
+      //
+      // ?tab= still wins, so a link from elsewhere (a Trello ticket, a
+      // bookmark) lands where it points. Validated against NAV_ITEMS — never
+      // trust the param.
       const urlTab = new URLSearchParams(window.location.search).get("tab");
       if (urlTab && NAV_ITEMS.some((n) => n.id === urlTab)) {
         setCurrent(urlTab as DashId);
@@ -108,10 +108,8 @@ export function App() {
     setHydrated(true);
   }, []);
 
-  React.useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem("dreamme.currentDash.v2", current);
-  }, [current, hydrated]);
+  // No tab persistence: nothing reads it back, so writing it would only leave
+  // a stale key behind for the next person to wonder about.
 
   React.useEffect(() => {
     if (!hydrated) return;
