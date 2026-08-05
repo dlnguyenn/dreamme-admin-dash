@@ -15,6 +15,7 @@ import {
 } from "./porcelain";
 import { Sheet } from "./Sheet";
 import { SlideshowBatches } from "./SlideshowBatches";
+import { OVERLAY_BG, OVERLAY_FG, overlayPill } from "./tileOverlay";
 import { formatRelative } from "@/lib/format";
 import { useIsMobile } from "@/lib/useIsMobile";
 
@@ -105,30 +106,6 @@ const isViral = (d: OurSlideshow) =>
 
 const num = (v: number | null | undefined) =>
   typeof v === "number" ? v.toLocaleString() : "—";
-
-/**
- * Pills and scrims that sit ON TOP of slide artwork can't use surface tokens —
- * the artwork is arbitrary colour. These two literals are the design-specified
- * exception (same pair already used elsewhere in the dash for image overlays).
- */
-const OVERLAY_BG = "rgba(29,29,31,0.6)";
-const OVERLAY_FG = "#F5F5F7";
-
-const overlayPill: React.CSSProperties = {
-  position: "absolute",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  font: "700 9.5px var(--font-ui)",
-  letterSpacing: "0.03em",
-  background: OVERLAY_BG,
-  color: OVERLAY_FG,
-  padding: "3px 7px",
-  borderRadius: 99,
-  backdropFilter: "blur(4px)",
-  WebkitBackdropFilter: "blur(4px)",
-  pointerEvents: "none",
-};
 
 export function OurSlideshows() {
   const [rows, setRows] = React.useState<OurSlideshow[]>([]);

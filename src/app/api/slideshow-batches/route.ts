@@ -25,6 +25,8 @@ function sbHeaders() {
 interface BatchPost {
   batch_key: string;
   sort_order: number;
+  /** Join key into social_posts.source_post_id for the view count. */
+  doublespeed_post_id: string | null;
 }
 
 /**
@@ -91,12 +93,52 @@ export async function GET(req: Request) {
     }
     const posts = (await postRes.json()) as BatchPost[];
 
+    // Attach lifetime views. slideshow_batch_posts.doublespeed_post_id is the
+    // same id social_posts stores as source_post_id, which is why that column
+    // was chosen as the key when the view-sync tables were designed.
+    //
+    // Non-fatal: a post published outside the sync's 90-day window (or before
+    // the sync existed) simply has no row, and the tile shows "—" rather than
+    // a zero. A zero would read as "nobody watched it", which is a different
+    // and much more alarming claim than "we haven't measured this one".
+    const viewsById = new Map<string, number | null>();
+    const dsIds = [
+      ...new Set(posts.map((p) => p.doublespeed_post_id).filter(Boolean)),
+    ] as string[];
+    if (dsIds.length > 0) {
+      try {
+        const idList = dsIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+        const viewRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/social_posts` +
+            `?select=source_post_id,views&source=eq.doublespeed` +
+            `&source_post_id=in.(${encodeURIComponent(idList)})&limit=2000`,
+          { headers: sbHeaders(), cache: "no-store" },
+        );
+        if (viewRes.ok) {
+          const rows = (await viewRes.json()) as {
+            source_post_id: string;
+            views: number | null;
+          }[];
+          for (const r of rows) viewsById.set(r.source_post_id, r.views);
+        }
+      } catch {
+        // Views are a nice-to-have on this screen; the batch state is not.
+        // Never let this leg take down the page.
+      }
+    }
+
     // Group server-side so the component never has to know about the join.
-    const byBatch = new Map<string, BatchPost[]>();
+    const byBatch = new Map<string, (BatchPost & { views: number | null })[]>();
     for (const p of posts) {
+      const withViews = {
+        ...p,
+        views: p.doublespeed_post_id
+          ? (viewsById.get(p.doublespeed_post_id) ?? null)
+          : null,
+      };
       const list = byBatch.get(p.batch_key);
-      if (list) list.push(p);
-      else byBatch.set(p.batch_key, [p]);
+      if (list) list.push(withViews);
+      else byBatch.set(p.batch_key, [withViews]);
     }
 
     return NextResponse.json({
