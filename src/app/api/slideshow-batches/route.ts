@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
+import { syncBatchPostState } from "@/lib/batchState";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,11 @@ export async function GET(req: Request) {
     Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 30;
 
   try {
+    // Refresh live post state first. Rate-limited and non-fatal inside: on
+    // failure rows keep their last known state and render as unverified,
+    // rather than the section asserting a stale "QUEUED".
+    await syncBatchPostState();
+
     const batchRes = await fetch(
       `${SUPABASE_URL}/rest/v1/slideshow_batches` +
         `?select=*&order=batch_date.desc,batch_no.desc&limit=${limit}`,

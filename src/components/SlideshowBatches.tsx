@@ -44,6 +44,9 @@ interface BatchPost {
   caption: string | null;
   review_url: string | null;
   doublespeed_post_id: string | null;
+  post_status: string | null;
+  posted_at: string | null;
+  public_post_url: string | null;
   image_url: string | null;
 }
 
@@ -68,11 +71,31 @@ const TIER_FAMILY: Record<string, Family> = {
 
 const isPersonaId = (v: string): v is PersonaId => v in PERSONAS;
 
-/** "QUEUED (all 9, ...)" is too long for a tag — keep the first word. */
-function shortStatus(status: string | null): string | null {
-  if (!status) return null;
-  const first = status.split(/[\s(,;]/)[0]?.trim();
-  return first ? first.toUpperCase() : null;
+/**
+ * Live state summary for a batch.
+ *
+ * Deliberately NOT derived from slideshow_batches.status — that column holds a
+ * free-text snapshot written once at publish time ("QUEUED (all 9, ...)"), so
+ * showing it made three-week-old batches read as still queued. These counts
+ * come from post_status, refreshed from Doublespeed.
+ */
+function stateSummary(posts: BatchPost[]): {
+  label: string;
+  family: Family;
+} | null {
+  if (posts.length === 0) return null;
+  const n = (s: string) => posts.filter((p) => p.post_status === s).length;
+  const posted = n("posted") + n("succeeded");
+  const queued = n("scheduled") + n("pending");
+  const failed = n("failed") + n("error");
+  const total = posts.length;
+
+  if (failed > 0) return { label: `${failed} FAILED`, family: "danger" };
+  if (posted === total) return { label: "POSTED", family: "success" };
+  if (queued === total) return { label: "QUEUED", family: "attention" };
+  if (posted > 0 || queued > 0)
+    return { label: `${posted}/${total} POSTED`, family: "attention" };
+  return { label: "UNVERIFIED", family: "neutral" };
 }
 
 function formatDate(iso: string): string {
@@ -277,7 +300,7 @@ function BatchCard({
 }) {
   const [showAllThesis, setShowAllThesis] = React.useState(false);
   const thesis = batch.experiment ?? batch.note;
-  const status = shortStatus(batch.status);
+  const summary = stateSummary(batch.posts);
 
   return (
     <div
@@ -325,7 +348,9 @@ function BatchCard({
           <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>
             {batch.posts.length} posts
           </span>
-          {status && <CategoryTag family="neutral">{status}</CategoryTag>}
+          {summary && (
+            <CategoryTag family={summary.family}>{summary.label}</CategoryTag>
+          )}
         </span>
       </button>
 

@@ -9,6 +9,7 @@
  * Per-file PostgREST helper, same convention as clippers.ts and support/db.ts.
  */
 import { SUPABASE_URL } from "@/lib/supabase";
+import { syncBatchPostState } from "@/lib/batchState";
 import {
   dateWindow,
   easternDate,
@@ -125,6 +126,9 @@ export interface SupportSection {
   }[];
 }
 
+/** Live Doublespeed state for one batch post. */
+export type BatchPostState = "queued" | "posted" | "failed" | "unknown";
+
 export interface TodaySection {
   batchKey: string | null;
   batchDate: string | null;
@@ -137,7 +141,15 @@ export interface TodaySection {
     tier: string | null;
     engine: string | null;
     reviewUrl: string | null;
-    queued: boolean;
+    postUrl: string | null;
+    /**
+     * "unknown" is a real answer: it means this row has not been verified
+     * against Doublespeed yet, and it must NOT be collapsed into "queued".
+     * Treating a write-once post id as current state is the bug this replaced,
+     * which made a long-published batch read as 9/9 QUEUED forever.
+     */
+    state: BatchPostState;
+    postedAt: string | null;
   }[];
 }
 
@@ -449,7 +461,33 @@ interface BatchPostRow {
   engine: string | null;
   review_url: string | null;
   doublespeed_post_id: string | null;
+  post_status: string | null;
+  posted_at: string | null;
+  public_post_url: string | null;
   sort_order: number;
+}
+
+/**
+ * Map Doublespeed's status vocabulary onto the four states the UI shows.
+ * A row with an id but no synced status is UNKNOWN, never "queued" — that
+ * conflation is what made a published batch report as still queued.
+ */
+function toBatchPostState(row: BatchPostRow): BatchPostState {
+  if (!row.doublespeed_post_id) return "unknown";
+  switch ((row.post_status ?? "").toLowerCase()) {
+    case "scheduled":
+    case "pending":
+    case "queued":
+      return "queued";
+    case "posted":
+    case "succeeded":
+      return "posted";
+    case "failed":
+    case "error":
+      return "failed";
+    default:
+      return "unknown";
+  }
 }
 
 /**
@@ -475,8 +513,13 @@ async function fetchToday(): Promise<TodaySection> {
     };
   }
 
+  // Refresh live state before reading it. Non-fatal and rate-limited inside:
+  // if Doublespeed is down or slow this returns an error and the rows simply
+  // read as their last known state (or "unknown"), which is the honest answer.
+  await syncBatchPostState({ batchKey: batch.batch_key });
+
   const posts = await sbGet<BatchPostRow[]>(
-    `slideshow_batch_posts?select=batch_key,persona,hook,tier,engine,review_url,doublespeed_post_id,sort_order` +
+    `slideshow_batch_posts?select=batch_key,persona,hook,tier,engine,review_url,doublespeed_post_id,post_status,posted_at,public_post_url,sort_order` +
       `&batch_key=eq.${encodeURIComponent(batch.batch_key)}&order=sort_order.asc&limit=50`,
   );
 
@@ -495,7 +538,9 @@ async function fetchToday(): Promise<TodaySection> {
       tier: p.tier,
       engine: p.engine,
       reviewUrl: p.review_url,
-      queued: !!p.doublespeed_post_id,
+      postUrl: p.public_post_url,
+      state: toBatchPostState(p),
+      postedAt: p.posted_at,
     })),
   };
 }

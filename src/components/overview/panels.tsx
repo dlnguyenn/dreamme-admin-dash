@@ -73,12 +73,42 @@ export function TodayPanel({
                 marginBottom: 14,
               }}
             >
-              <StatusPill
-                kind={today.posts.every((p) => p.queued) ? "running" : "attention"}
-              >
-                {today.posts.filter((p) => p.queued).length}/{today.posts.length}{" "}
-                QUEUED
-              </StatusPill>
+              {/* State comes from Doublespeed, not from "we have a post id".
+                  Posted and queued are different facts and get different
+                  pills; unknown is shown as unknown rather than guessed. */}
+              {(() => {
+                const n = (s: string) =>
+                  today.posts.filter((p) => p.state === s).length;
+                const posted = n("posted");
+                const queued = n("queued");
+                const failed = n("failed");
+                const unknown = n("unknown");
+                const total = today.posts.length;
+                return (
+                  <>
+                    {posted > 0 && (
+                      <StatusPill kind={posted === total ? "running" : "attention"}>
+                        {posted}/{total} POSTED
+                      </StatusPill>
+                    )}
+                    {queued > 0 && (
+                      <StatusPill kind="attention">
+                        {queued}/{total} QUEUED
+                      </StatusPill>
+                    )}
+                    {failed > 0 && (
+                      <StatusPill kind="danger">
+                        {failed}/{total} FAILED
+                      </StatusPill>
+                    )}
+                    {unknown > 0 && (
+                      <StatusPill kind="neutral">
+                        {unknown}/{total} UNKNOWN
+                      </StatusPill>
+                    )}
+                  </>
+                );
+              })()}
               {today.experiment && (
                 // Batch theses run to several hundred words; two lines is
                 // enough to recognise which experiment is running, and the
@@ -174,11 +204,24 @@ export function TodayPanel({
                         height: 7,
                         borderRadius: 999,
                         flex: "none",
-                        background: p.queued
-                          ? "var(--success)"
-                          : "var(--warning)",
+                        background:
+                          p.state === "posted"
+                            ? "var(--success)"
+                            : p.state === "queued"
+                              ? "var(--attention)"
+                              : p.state === "failed"
+                                ? "var(--danger)"
+                                : "var(--neutral)",
                       }}
-                      title={p.queued ? "queued to Doublespeed" : "not queued"}
+                      title={
+                        p.state === "posted"
+                          ? `posted${p.postedAt ? ` ${relTime(p.postedAt)}` : ""}`
+                          : p.state === "queued"
+                            ? "queued at Doublespeed, not out yet"
+                            : p.state === "failed"
+                              ? "failed at Doublespeed"
+                              : "state not verified yet"
+                      }
                     />
                   </div>
                 );
