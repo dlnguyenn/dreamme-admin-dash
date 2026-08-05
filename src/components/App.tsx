@@ -77,12 +77,24 @@ export function App() {
         stored === "admin" || stored === "user" ? stored : bypass ? "admin" : null;
       if (savedRole === "admin" || savedRole === "user") {
         setRole(savedRole);
-        const savedView = localStorage.getItem("dreamme.viewAs");
+        // viewAs is read from sessionStorage, NOT localStorage, and is cleared
+        // when the browser closes. It exists so an admin can preview what a
+        // creator sees; it is a debug affordance, not a saved preference.
+        //
+        // In localStorage it was a trap with no visible cause: one click of the
+        // sidebar Admin/User toggle, at any point, silently demoted you on
+        // every subsequent visit forever. Every adminOnly screen vanished and
+        // the visibleNavItems bounce dropped you on Content Pipeline, which
+        // reads exactly like "the new landing tab didn't ship".
+        const savedView = sessionStorage.getItem("dreamme.viewAs");
         if (savedRole === "admin" && (savedView === "admin" || savedView === "user")) {
           setViewAs(savedView);
         } else {
           setViewAs(savedRole);
         }
+        // Clear the old localStorage key so a value stored by a previous build
+        // can't keep demoting this browser.
+        localStorage.removeItem("dreamme.viewAs");
       }
       // Deliberately NOT restoring the last-visited tab. Every launch lands on
       // Overview (the `current` initial state), because the whole point of that
@@ -113,7 +125,8 @@ export function App() {
 
   React.useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("dreamme.viewAs", viewAs);
+    // sessionStorage: the viewer preview lasts for this browser session only.
+    sessionStorage.setItem("dreamme.viewAs", viewAs);
   }, [viewAs, hydrated]);
 
   React.useEffect(() => {
