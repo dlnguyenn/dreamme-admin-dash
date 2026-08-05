@@ -20,7 +20,10 @@ import {
   actionLock,
   applyActionToContext,
   completedActions,
+  isStripeRetrying,
+  stripeStatusOf,
 } from "@/lib/support/action-effects";
+import { describeUser } from "@/lib/support/triage";
 import type { SupportActionRow, SupportThreadRow } from "@/lib/support/types";
 import {
   buildFeatureRequest,
@@ -441,6 +444,41 @@ describe("actionLock / completedActions", () => {
     expect(actionLock("stripe_refund", dead, []).disabled).toBe(false);
   });
 
+  it("keeps cancels OPEN for a past_due sub, even one snapshotted as inactive", () => {
+    // Maria, 2026-08-05: her stored thread context had isActive:false with
+    // lastEventType "stripe:past_due" — the sub was mid-retry and cancelling
+    // was the one action that would help, but the button said "already
+    // ended". Old snapshots carry the status only in lastEventType.
+    const pastDueOldSnapshot = {
+      ...liveSub,
+      isActive: false,
+      lastEventType: "stripe:past_due",
+    };
+    expect(actionLock("stripe_cancel_now", pastDueOldSnapshot, []).disabled).toBe(false);
+    expect(
+      actionLock("stripe_cancel_at_period_end", pastDueOldSnapshot, []).disabled,
+    ).toBe(false);
+
+    // fresh contexts carry the explicit field
+    const pastDueFresh = {
+      ...liveSub,
+      isActive: false,
+      stripeStatus: "past_due",
+    };
+    expect(actionLock("stripe_cancel_now", pastDueFresh, []).disabled).toBe(false);
+
+    // a truly canceled sub still locks
+    const canceled = {
+      ...liveSub,
+      isActive: false,
+      lastEventType: "stripe:canceled",
+      stripeStatus: "canceled",
+    };
+    expect(actionLock("stripe_cancel_now", canceled, []).reason).toBe(
+      "Subscription already ended",
+    );
+  });
+
   it("locks cancel-at-period-end when auto-renew is already off", () => {
     const lapsing = { ...liveSub, autoRenew: false };
     expect(actionLock("stripe_cancel_at_period_end", lapsing, []).reason).toBe(
@@ -492,6 +530,124 @@ describe("actionLock / completedActions", () => {
     ]);
     expect(done.get("stripe_refund")?.created_at).toBe("2026-07-31T12:00:00Z");
     expect(done.has("stripe_cancel_now")).toBe(false);
+  });
+});
+
+describe("stripeStatusOf / isStripeRetrying", () => {
+  const base: SubscriptionInfo = {
+    store: "STRIPE",
+    productId: null,
+    transactionId: "si_1",
+    originalTransactionId: "sub_1",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "stripe:past_due",
+    lastEventAt: "2026-08-05T00:00:00Z",
+    expiresAt: null,
+    cancelReason: null,
+    isActive: false,
+    totalPaidUsd: 0,
+    plan: "yearly",
+    startedAt: null,
+    autoRenew: true,
+    renewals: null,
+  };
+
+  it("prefers the explicit stripeStatus field", () => {
+    expect(stripeStatusOf({ ...base, stripeStatus: "canceled" })).toBe("canceled");
+  });
+
+  it("falls back to a stripe:<status> lastEventType (old stored snapshots)", () => {
+    expect(stripeStatusOf(base)).toBe("past_due");
+    expect(stripeStatusOf({ ...base, lastEventType: "CANCELLATION" })).toBeNull();
+  });
+
+  it("ignores non-Stripe stores and null subs", () => {
+    expect(stripeStatusOf({ ...base, store: "APP_STORE" })).toBeNull();
+    expect(stripeStatusOf(null)).toBeNull();
+    expect(isStripeRetrying(null)).toBe(false);
+  });
+
+  it("flags past_due and unpaid as retrying, nothing else", () => {
+    expect(isStripeRetrying(base)).toBe(true);
+    expect(isStripeRetrying({ ...base, stripeStatus: "unpaid" })).toBe(true);
+    expect(isStripeRetrying({ ...base, lastEventType: "stripe:active" })).toBe(false);
+    expect(isStripeRetrying({ ...base, lastEventType: "stripe:canceled" })).toBe(false);
+  });
+});
+
+describe("describeUser (money-safety guidance)", () => {
+  const pastDueSub: SubscriptionInfo = {
+    store: "STRIPE",
+    productId: null,
+    transactionId: "si_Uw5YMRlKuhVHS7",
+    originalTransactionId: "sub_1TwDNXJ6XuUawx9TxIqELJ0K",
+    periodType: "NORMAL",
+    isTrial: false,
+    lastEventType: "stripe:past_due",
+    lastEventAt: "2026-08-05T04:22:49.254Z",
+    expiresAt: "2027-07-30T03:32:59.000Z",
+    cancelReason: null,
+    isActive: true,
+    totalPaidUsd: 0,
+    plan: "yearly",
+    startedAt: "2026-07-23T03:32:59.000Z",
+    autoRenew: true,
+    renewals: null,
+    stripeStatus: "past_due",
+  };
+  const baseCtx: UserContext = {
+    appUserId: null,
+    email: "customer@example.com",
+    name: null,
+    journeyStage: null,
+    subscriptions: [pastDueSub],
+    totalSpentUsd: 0,
+    noAccount: true,
+    sandboxOnly: false,
+  };
+
+  it("never calls a past_due sub safe — Maria's exact context", () => {
+    // Snapshot from thread d5f5fa2b (2026-08-05): $0 collected, past_due,
+    // mid-retry. The drafts said "you're safe"; this text must not.
+    const text = describeUser({
+      ...baseCtx,
+      stripeFailedCharges: { count: 3, lastAt: "2026-08-04T09:00:00Z" },
+    });
+    expect(text).toContain("PAST DUE");
+    expect(text).toContain("STILL RETRYING");
+    expect(text).toContain("NEVER tell this customer they are safe");
+    expect(text).toContain("3 FAILED charge attempt(s)");
+    expect(text).not.toContain("cancelled/inactive");
+    expect(text).not.toContain("never successfully charged (failed payment)");
+  });
+
+  it("still reassures plainly for a fully canceled $0 sub", () => {
+    const text = describeUser({
+      ...baseCtx,
+      subscriptions: [
+        {
+          ...pastDueSub,
+          isActive: false,
+          autoRenew: false,
+          lastEventType: "stripe:canceled",
+          stripeStatus: "canceled",
+        },
+      ],
+    });
+    expect(text).toContain("CANCELLED (fully ended, will not bill again)");
+    expect(text).toContain("genuinely means their card was never successfully charged");
+    expect(text).not.toContain("NEVER tell this customer they are safe");
+  });
+
+  it("carries the past_due warning into matched-account contexts too", () => {
+    const text = describeUser({
+      ...baseCtx,
+      noAccount: false,
+      appUserId: "064474e9-a1a5-47e6-8fb8-73d8e2d332dc",
+    });
+    expect(text).toContain("PAST DUE");
+    expect(text).toContain("NEVER tell this customer they are safe");
   });
 });
 
@@ -824,6 +980,27 @@ describe("applyStripeStates", () => {
       [{ itemId: "si_1", status: "canceled", cancelAtPeriodEnd: false, currentPeriodEnd: null, endedAt: null }],
     );
     expect(out.isActive).toBe(true);
+  });
+
+  it("keeps a past_due sub ALIVE and marks its status (Maria)", () => {
+    // 2026-08-05: her trial converted, the card declined, Stripe was mid-
+    // retry — past_due must never read as "over".
+    const [out] = applyStripeStates(
+      [rcSub],
+      [
+        {
+          itemId: "si_1",
+          status: "past_due",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: 1785095047,
+          endedAt: null,
+        },
+      ],
+    );
+    expect(out.isActive).toBe(true);
+    expect(out.autoRenew).toBe(true);
+    expect(out.stripeStatus).toBe("past_due");
+    expect(out.lastEventType).toBe("stripe:past_due");
   });
 });
 

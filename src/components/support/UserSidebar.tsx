@@ -37,7 +37,11 @@ import {
   appleRefundTemplate,
   appleRelayStatus,
 } from "@/lib/support/apple-relay";
-import { actionLock, type ActionLock } from "@/lib/support/action-effects";
+import {
+  actionLock,
+  isStripeRetrying,
+  type ActionLock,
+} from "@/lib/support/action-effects";
 
 const APPLE_CANCEL_TEMPLATE = `Hi there! Thanks so much for reaching out.
 
@@ -603,8 +607,22 @@ function SuggestionRow({
         <div style={{ display: "flex", gap: 5, marginTop: 4, flexWrap: "wrap" }}>
           {sub?.plan && <Chip tone="neutral">{sub.plan}</Chip>}
           {sub && (
-            <Chip tone={sub.isActive ? "success" : "neutral"}>
-              {sub.isActive ? (sub.isTrial ? "trial" : "active") : "inactive"}
+            <Chip
+              tone={
+                isStripeRetrying(sub)
+                  ? "warning"
+                  : sub.isActive
+                    ? "success"
+                    : "neutral"
+              }
+            >
+              {isStripeRetrying(sub)
+                ? "past due · retrying"
+                : sub.isActive
+                  ? sub.isTrial
+                    ? "trial"
+                    : "active"
+                  : "inactive"}
             </Chip>
           )}
           {s.totalSpentUsd > 0 && (
@@ -824,8 +842,16 @@ function SubscriptionCard({
           ) : (
             <Chip tone="info">paid</Chip>
           )}
-          {sub.isActive ? <Chip tone="success">active</Chip> : <Chip>inactive</Chip>}
-          {willLapse && <Chip tone="warning">won&apos;t renew</Chip>}
+          {isStripeRetrying(sub) ? (
+            <Chip tone="warning">past due · card being retried</Chip>
+          ) : sub.isActive ? (
+            <Chip tone="success">active</Chip>
+          ) : (
+            <Chip>inactive</Chip>
+          )}
+          {willLapse && !isStripeRetrying(sub) && (
+            <Chip tone="warning">won&apos;t renew</Chip>
+          )}
         </span>
       }
     >
@@ -847,9 +873,30 @@ function SubscriptionCard({
           />
         )}
         <Row
-          label={sub.isActive ? (willLapse ? "Ends" : "Renews") : "Ended"}
+          label={
+            isStripeRetrying(sub)
+              ? "Period ends"
+              : sub.isActive
+                ? willLapse
+                  ? "Ends"
+                  : "Renews"
+                : "Ended"
+          }
           value={sub.expiresAt ? sub.expiresAt.slice(0, 10) : "—"}
         />
+        {isStripeRetrying(sub) && (
+          <div
+            style={{
+              color: "var(--warning-text, var(--ink-2))",
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            Payment failed and Stripe is still retrying their card — a retry
+            can succeed and charge them. Cancel to stop the retries; do not
+            tell them they&apos;re safe while this shows.
+          </div>
+        )}
         <Row label="Paid" value={`$${sub.totalPaidUsd.toFixed(2)}`} />
         {(sub.renewals ?? 0) > 0 && (
           <Row label="Renewals" value={String(sub.renewals)} />

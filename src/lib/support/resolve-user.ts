@@ -21,12 +21,12 @@ import {
 } from "@/lib/vendors/revenuecat";
 import {
   findCustomersByEmail,
+  getCustomerChargeSummary,
   getSubscription,
   listSubscriptionsForCustomer,
   planFromStripeRecurring,
   resolveSubscriptionFromItem,
   stripeConfigured,
-  sumPaidForCustomer,
 } from "@/lib/vendors/stripe";
 import type { Store, SubscriptionInfo, UserContext } from "./types";
 
@@ -260,7 +260,9 @@ export function applyStripeStates(
       // unambiguous when there's exactly one of each
       (stripeCount === 1 && states.length === 1 ? states[0] : undefined);
     if (!st) return s;
-    const givesAccess = ["trialing", "active", "past_due"].includes(st.status);
+    const givesAccess = ["trialing", "active", "past_due", "unpaid"].includes(
+      st.status,
+    );
     const endUnix = st.endedAt ?? st.currentPeriodEnd;
     return {
       ...s,
@@ -269,6 +271,7 @@ export function applyStripeStates(
       autoRenew: givesAccess ? !st.cancelAtPeriodEnd : false,
       expiresAt: endUnix ? new Date(endUnix * 1000).toISOString() : s.expiresAt,
       lastEventType: `stripe:${st.status}`,
+      stripeStatus: st.status,
     };
   });
 }
@@ -282,7 +285,11 @@ export function applyStripeStates(
 async function fetchStripeTruth(
   subs: SubscriptionInfo[],
   email: string | null,
-): Promise<{ paidUsd: number; states: StripeSubState[] } | null> {
+): Promise<{
+  paidUsd: number;
+  states: StripeSubState[];
+  failedCharges: { count: number; lastAt: string | null } | null;
+} | null> {
   if (!stripeConfigured()) return null;
   if (!subs.some((s) => s.store === "STRIPE")) return null;
   try {
@@ -322,8 +329,26 @@ async function fetchStripeTruth(
     }
     if (customers.size === 0) return null;
     let cents = 0;
-    for (const id of customers) cents += await sumPaidForCustomer(id);
-    return { paidUsd: cents / 100, states };
+    let failedCount = 0;
+    let lastFailedAt: number | null = null;
+    for (const id of customers) {
+      const summary = await getCustomerChargeSummary(id);
+      cents += summary.netCents;
+      failedCount += summary.failedCount;
+      if (summary.lastFailedAt && (!lastFailedAt || summary.lastFailedAt > lastFailedAt)) {
+        lastFailedAt = summary.lastFailedAt;
+      }
+    }
+    return {
+      paidUsd: cents / 100,
+      states,
+      failedCharges: failedCount
+        ? {
+            count: failedCount,
+            lastAt: lastFailedAt ? new Date(lastFailedAt * 1000).toISOString() : null,
+          }
+        : null,
+    };
   } catch {
     return null;
   }
@@ -366,10 +391,17 @@ export async function contextFromStripeCustomers(
   try {
     const subscriptions: SubscriptionInfo[] = [];
     let totalSpentUsd = 0;
+    let failedCount = 0;
+    let lastFailedAt: number | null = null;
     for (const customerId of customerIds) {
       const subs = await listSubscriptionsForCustomer(customerId);
       if (!subs.length) continue;
-      totalSpentUsd += (await sumPaidForCustomer(customerId)) / 100;
+      const charges = await getCustomerChargeSummary(customerId);
+      totalSpentUsd += charges.netCents / 100;
+      failedCount += charges.failedCount;
+      if (charges.lastFailedAt && (!lastFailedAt || charges.lastFailedAt > lastFailedAt)) {
+        lastFailedAt = charges.lastFailedAt;
+      }
       for (const s of subs) {
         subscriptions.push({
           store: "STRIPE" as Store,
@@ -384,7 +416,12 @@ export async function contextFromStripeCustomers(
             ? new Date(s.current_period_end * 1000).toISOString()
             : null,
           cancelReason: null,
-          isActive: s.status === "trialing" || s.status === "active",
+          // past_due/unpaid are NOT over: Stripe is still retrying the
+          // card. Treating them as inactive is what told a past_due
+          // customer "you're safe" and locked the cancel button.
+          isActive: ["trialing", "active", "past_due", "unpaid"].includes(
+            s.status,
+          ),
           totalPaidUsd: 0, // per-sub split unknown; customer total below
           plan: planFromStripeRecurring(s.items?.data?.[0]?.price?.recurring),
           startedAt: s.start_date
@@ -398,6 +435,7 @@ export async function contextFromStripeCustomers(
             : null,
           autoRenew: s.status === "canceled" ? false : !s.cancel_at_period_end,
           renewals: null,
+          stripeStatus: s.status,
         });
       }
     }
@@ -417,6 +455,14 @@ export async function contextFromStripeCustomers(
       noAccount: true,
       sandboxOnly: false,
       linkedStripeCustomerId: opts.linkedCustomerId ?? null,
+      stripeFailedCharges: failedCount
+        ? {
+            count: failedCount,
+            lastAt: lastFailedAt
+              ? new Date(lastFailedAt * 1000).toISOString()
+              : null,
+          }
+        : null,
     };
   } catch {
     return null;
@@ -500,6 +546,7 @@ export async function resolveUser(
     user.email ?? email,
   );
   let { subscriptions, totalSpentUsd } = derived;
+  let stripeFailedCharges: UserContext["stripeFailedCharges"] = null;
   if (stripeTruth !== null) {
     subscriptions = applyStripeStates(subscriptions, stripeTruth.states);
     ({ subscriptions, totalSpentUsd } = overrideStripeTotals(
@@ -507,6 +554,7 @@ export async function resolveUser(
       totalSpentUsd,
       stripeTruth.paidUsd,
     ));
+    stripeFailedCharges = stripeTruth.failedCharges;
   }
 
   // Matched app account but RC knows of no subscriptions at all: check
@@ -520,6 +568,7 @@ export async function resolveUser(
       if (viaStripe) {
         subscriptions = viaStripe.subscriptions;
         totalSpentUsd = viaStripe.totalSpentUsd;
+        stripeFailedCharges = viaStripe.stripeFailedCharges ?? null;
       }
     }
   }
@@ -535,5 +584,6 @@ export async function resolveUser(
     sandboxOnly: derived.sandboxOnly,
     accountCreatedAt: authInfo?.createdAt ?? null,
     lastSeenAt: authInfo?.lastSignInAt ?? null,
+    stripeFailedCharges,
   };
 }
