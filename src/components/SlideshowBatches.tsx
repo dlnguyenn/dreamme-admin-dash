@@ -29,297 +29,22 @@
 
 import * as React from "react";
 import { Icons } from "./Icons";
-import { Button, Chip } from "./ui";
-import { Sheet } from "./Sheet";
+import { Button } from "./ui";
+import { CategoryTag, ErrorBanner, SectionHeader } from "./porcelain";
 import {
-  CategoryTag,
-  ErrorBanner,
-  SectionHeader,
-  type Family,
-} from "./porcelain";
-import { overlayPill } from "./tileOverlay";
+  SlideshowTile,
+  SlideshowTileDetail,
+  tileGridStyle,
+} from "./SlideshowTile";
 import {
-  TIER_FAMILY,
-  fmtViews,
   formatBatchDate,
   problemState,
   stateSummary,
+  toTilePost,
   type Batch,
   type BatchPost,
 } from "@/lib/batchDisplay";
-import { PERSONAS, type PersonaId } from "@/lib/personas";
 import { useIsMobile } from "@/lib/useIsMobile";
-
-const isPersonaId = (v: string): v is PersonaId => v in PERSONAS;
-
-// ---- Tile --------------------------------------------------------------
-
-function BatchTile({
-  post,
-  batchDate,
-  onOpen,
-}: {
-  post: BatchPost;
-  batchDate: string;
-  onOpen: () => void;
-}) {
-  const [hover, setHover] = React.useState(false);
-  const persona = isPersonaId(post.persona) ? PERSONAS[post.persona] : null;
-  const problem = problemState(post, batchDate);
-  const label = persona?.name ?? post.persona;
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onFocus={() => setHover(true)}
-      onBlur={() => setHover(false)}
-      title={post.hook ? `${label} — ${post.hook}` : label}
-      aria-label={`${label}${post.hook ? `: ${post.hook}` : ""}`}
-      style={{
-        display: "block",
-        width: "100%",
-        padding: 0,
-        border: "none",
-        background: "none",
-        textAlign: "left",
-        cursor: "pointer",
-        font: "inherit",
-      }}
-    >
-      <div
-        style={{
-          position: "relative",
-          aspectRatio: "9 / 16",
-          borderRadius: 12,
-          overflow: "hidden",
-          background: "var(--surface-2)",
-          border: "1px solid var(--line)",
-          boxShadow: hover ? "var(--shadow-md)" : "var(--shadow-xs)",
-          transition: "box-shadow 180ms ease",
-        }}
-      >
-        {post.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={post.image_url}
-            alt={`Slide — ${label}`}
-            loading="lazy"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-              transform: hover ? "scale(1.03)" : "scale(1)",
-              transition: "transform 220ms ease",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "grid",
-              placeItems: "center",
-              color: "var(--ink-3)",
-              font: "400 11px var(--font-ui)",
-            }}
-          >
-            no render
-          </div>
-        )}
-
-        {/* Views: the one number this grid exists to show. */}
-        <span style={{ ...overlayPill, bottom: 8, left: 8 }}>
-          {fmtViews(post.views)}
-        </span>
-
-        {problem && (
-          <span
-            style={{
-              ...overlayPill,
-              top: 8,
-              right: 8,
-              background: "var(--danger)",
-              color: "var(--on-solid)",
-              backdropFilter: "none",
-              WebkitBackdropFilter: "none",
-            }}
-          >
-            {problem}
-          </span>
-        )}
-      </div>
-    </button>
-  );
-}
-
-// ---- Detail sheet ------------------------------------------------------
-
-function PostDetail({ post, onClose }: { post: BatchPost; onClose: () => void }) {
-  const persona = isPersonaId(post.persona) ? PERSONAS[post.persona] : null;
-  const tierFamily = post.tier ? TIER_FAMILY[post.tier] : undefined;
-
-  return (
-    <Sheet
-      open
-      onClose={onClose}
-      desktopMaxWidth={560}
-      ariaLabel={`${persona?.name ?? post.persona} slide`}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              background: persona?.soft ?? "var(--surface-2)",
-              color: "var(--ink)",
-              font: "700 10.5px var(--font-ui)",
-              padding: "3px 8px",
-              borderRadius: 99,
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: 99,
-                background: persona?.color ?? "var(--ink-3)",
-              }}
-            />
-            {persona?.name ?? post.persona}
-          </span>
-          {post.tier && tierFamily && (
-            <CategoryTag family={tierFamily}>{post.tier}</CategoryTag>
-          )}
-          <span
-            style={{
-              marginLeft: "auto",
-              font: "700 13px var(--font-ui)",
-              fontVariantNumeric: "tabular-nums",
-              color: "var(--ink)",
-            }}
-          >
-            {fmtViews(post.views)}
-            <span style={{ font: "400 11.5px var(--font-ui)", color: "var(--ink-4)" }}>
-              {" "}
-              views
-            </span>
-          </span>
-        </div>
-
-        {post.image_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={post.image_url}
-            alt={`Slide — ${persona?.name ?? post.persona}`}
-            style={{
-              width: "100%",
-              maxHeight: "46vh",
-              objectFit: "contain",
-              borderRadius: 10,
-              background: "var(--surface-2)",
-              display: "block",
-            }}
-          />
-        )}
-
-        {post.hook && (
-          <div style={{ font: "600 15px/1.35 var(--font-ui)", color: "var(--ink)" }}>
-            {post.hook}
-          </div>
-        )}
-        {post.second_line && (
-          <div
-            style={{
-              font: "400 12.5px/1.4 var(--font-ui)",
-              color: "var(--ink-3)",
-              marginTop: -6,
-            }}
-          >
-            {post.second_line}
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {post.engine && (
-            <Chip tone="neutral" title={post.engine}>
-              {post.engine.length > 44 ? `${post.engine.slice(0, 43)}…` : post.engine}
-            </Chip>
-          )}
-          {post.sound && <Chip tone="neutral">♪ {post.sound}</Chip>}
-          {typeof post.caption_chars === "number" && (
-            <Chip tone="neutral">{post.caption_chars.toLocaleString()} chars</Chip>
-          )}
-          {post.post_status && <Chip tone="neutral">{post.post_status}</Chip>}
-        </div>
-
-        {post.cta && (
-          <div style={{ font: "400 12.5px/1.4 var(--font-ui)", color: "var(--ink-2)" }}>
-            {post.cta}
-          </div>
-        )}
-
-        {post.caption && (
-          <div
-            style={{
-              font: "400 12px/1.6 var(--font-ui)",
-              color: "var(--ink-2)",
-              whiteSpace: "pre-wrap",
-              background: "var(--surface-2)",
-              border: "1px solid var(--line)",
-              borderRadius: 9,
-              padding: 10,
-              maxHeight: 260,
-              overflowY: "auto",
-            }}
-          >
-            {post.caption}
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          {post.review_url && (
-            <a
-              href={post.review_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                font: "600 12.5px var(--font-ui)",
-                color: "var(--link)",
-                textDecoration: "none",
-              }}
-            >
-              Review ↗
-            </a>
-          )}
-          {/* public_post_url was fetched but never rendered anywhere before —
-              the link to the actual live post was the one thing you couldn't
-              reach from this screen. */}
-          {post.public_post_url && (
-            <a
-              href={post.public_post_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                font: "600 12.5px var(--font-ui)",
-                color: "var(--link)",
-                textDecoration: "none",
-              }}
-            >
-              Live post ↗
-            </a>
-          )}
-        </div>
-      </div>
-    </Sheet>
-  );
-}
 
 // ---- Section -----------------------------------------------------------
 
@@ -545,20 +270,15 @@ export function SlideshowBatches() {
 
           <div
             data-testid="batch-tiles"
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(auto-fill, minmax(190px, 1fr))",
-              gap: isMobile ? 10 : 14,
-              alignItems: "start",
-            }}
+            style={tileGridStyle(isMobile)}
           >
             {batch.posts.map((p) => (
-              <BatchTile
+              <SlideshowTile
                 key={p.id}
-                post={p}
-                batchDate={batch.batch_date}
+                post={toTilePost(p)}
+                // Date-aware: STUCK and NO REACH only apply once the batch date
+                // has passed, which the tile's own state->label map can't know.
+                problem={problemState(p, batch.batch_date)}
                 onOpen={() => setOpenPost(p)}
               />
             ))}
@@ -567,7 +287,10 @@ export function SlideshowBatches() {
       )}
 
       {openPost && (
-        <PostDetail post={openPost} onClose={() => setOpenPost(null)} />
+        <SlideshowTileDetail
+          post={toTilePost(openPost)}
+          onClose={() => setOpenPost(null)}
+        />
       )}
     </>
   );

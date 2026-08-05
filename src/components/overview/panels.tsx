@@ -17,6 +17,12 @@ import type {
 } from "@/lib/overview";
 import { Card, SectionHeader, StatusPill, fam } from "../porcelain";
 import {
+  SlideshowTile,
+  SlideshowTileDetail,
+  tileGridStyle,
+} from "../SlideshowTile";
+import type { TilePost } from "@/lib/batchDisplay";
+import {
   EmptyState,
   GoToLink,
   fmtCompact,
@@ -37,6 +43,7 @@ export function TodayPanel({
   onOpen: () => void;
 }) {
   const isMobile = useIsMobile();
+  const [openPost, setOpenPost] = React.useState<TilePost | null>(null);
 
   return (
     <>
@@ -84,6 +91,7 @@ export function TodayPanel({
                 const draft = n("draft");
                 const failed = n("failed");
                 const unknown = n("unknown");
+                const missing = n("missing");
                 const total = today.posts.length;
                 return (
                   <>
@@ -95,6 +103,13 @@ export function TodayPanel({
                     {queued > 0 && (
                       <StatusPill kind="attention">
                         {queued}/{total} QUEUED
+                      </StatusPill>
+                    )}
+                    {/* The answer to "what still needs queueing" — never
+                        drafted, or drafted then reverted. Both need a person. */}
+                    {missing > 0 && (
+                      <StatusPill kind="danger">
+                        {missing} NOT QUEUED
                       </StatusPill>
                     )}
                     {draft > 0 && (
@@ -137,107 +152,22 @@ export function TodayPanel({
               )}
             </div>
 
-            <div style={{ display: "grid", gap: 8 }}>
-              {today.posts.map((p) => {
-                const persona = isPersonaId(p.persona) ? PERSONAS[p.persona] : null;
-                return (
-                  <div
-                    key={p.persona}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "9px 11px",
-                      borderRadius: 10,
-                      background: "var(--surface-2)",
-                      minWidth: 0,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 999,
-                        background: persona?.soft ?? "var(--neutral-soft)",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 12,
-                        flex: "none",
-                      }}
-                    >
-                      {persona?.avatar ?? "•"}
-                    </span>
-                    <span
-                      style={{
-                        font: "650 12.5px var(--font-ui)",
-                        color: "var(--ink)",
-                        width: 66,
-                        flex: "none",
-                      }}
-                    >
-                      {persona?.name ?? p.persona}
-                    </span>
-                    <span
-                      style={{
-                        font: "400 12.5px var(--font-ui)",
-                        color: "var(--ink-2)",
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={p.hook ?? undefined}
-                    >
-                      {p.hook ?? "—"}
-                    </span>
-                    {p.tier && !isMobile && (
-                      <span
-                        style={{
-                          font: "650 10px var(--font-ui)",
-                          letterSpacing: "0.04em",
-                          color: "var(--ink-4)",
-                          flex: "none",
-                        }}
-                      >
-                        {p.tier}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: 999,
-                        flex: "none",
-                        background:
-                          p.state === "posted"
-                            ? "var(--success)"
-                            : p.state === "queued"
-                              ? "var(--attention)"
-                              : p.state === "failed" || p.state === "draft"
-                                ? "var(--danger)"
-                                : "var(--neutral)",
-                      }}
-                      title={
-                        p.state === "posted"
-                          ? `posted${p.postedAt ? ` ${relTime(p.postedAt)}` : ""}`
-                          : p.state === "queued"
-                            ? "queued at Doublespeed, not out yet"
-                            : p.state === "draft"
-                              ? "reverted to draft at Doublespeed — will NOT post"
-                              : p.state === "failed"
-                                ? "failed at Doublespeed"
-                                : "state not verified yet"
-                      }
-                    />
-                  </div>
-                );
-              })}
+            <div data-testid="today-tiles" style={tileGridStyle(isMobile)}>
+              {today.posts.map((p) => (
+                <SlideshowTile
+                  key={p.persona}
+                  post={p}
+                  onOpen={() => setOpenPost(p)}
+                />
+              ))}
             </div>
           </>
         )}
       </Card>
+
+      {openPost && (
+        <SlideshowTileDetail post={openPost} onClose={() => setOpenPost(null)} />
+      )}
     </>
   );
 }

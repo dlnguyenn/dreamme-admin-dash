@@ -43,6 +43,52 @@ export interface Batch {
   posts: BatchPost[];
 }
 
+/**
+ * The minimum a slide tile needs to render. Lives here rather than beside the
+ * component so both the Our Slideshows row shape (snake_case, straight from
+ * PostgREST) and the Overview payload (camelCase, assembled server-side) can be
+ * mapped onto one thing the tile understands.
+ */
+export interface TilePost {
+  persona: string;
+  hook: string | null;
+  tier?: string | null;
+  engine?: string | null;
+  sound?: string | null;
+  cta?: string | null;
+  secondLine?: string | null;
+  caption?: string | null;
+  captionChars?: number | null;
+  reviewUrl: string | null;
+  postUrl: string | null;
+  imageUrl: string | null;
+  views: number | null;
+  /** Live Doublespeed state. "missing" = no post exists for this persona. */
+  state: string;
+  postedAt?: string | null;
+}
+
+/** Map an Our Slideshows row onto the shared tile shape. */
+export function toTilePost(p: BatchPost): TilePost {
+  return {
+    persona: p.persona,
+    hook: p.hook,
+    tier: p.tier,
+    engine: p.engine,
+    sound: p.sound,
+    cta: p.cta,
+    secondLine: p.second_line,
+    caption: p.caption,
+    captionChars: p.caption_chars,
+    reviewUrl: p.review_url,
+    postUrl: p.public_post_url,
+    imageUrl: p.image_url,
+    views: p.views,
+    state: p.post_status ?? "unknown",
+    postedAt: p.posted_at,
+  };
+}
+
 export const TIER_FAMILY: Record<string, Family> = {
   SHORT: "info",
   MED: "success",

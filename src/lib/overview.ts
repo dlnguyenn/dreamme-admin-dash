@@ -10,6 +10,7 @@
  */
 import { SUPABASE_URL } from "@/lib/supabase";
 import { syncBatchPostState } from "@/lib/batchState";
+import type { TilePost } from "@/lib/batchDisplay";
 import {
   dateWindow,
   easternDate,
@@ -140,22 +141,11 @@ export interface TodaySection {
   status: string | null;
   experiment: string | null;
   isToday: boolean;
-  posts: {
-    persona: string;
-    hook: string | null;
-    tier: string | null;
-    engine: string | null;
-    reviewUrl: string | null;
-    postUrl: string | null;
-    /**
-     * "unknown" is a real answer: it means this row has not been verified
-     * against Doublespeed yet, and it must NOT be collapsed into "queued".
-     * Treating a write-once post id as current state is the bug this replaced,
-     * which made a long-published batch read as 9/9 QUEUED forever.
-     */
-    state: BatchPostState;
-    postedAt: string | null;
-  }[];
+  posts: TilePost[];
+  /** Personas expected today, from the recent-batch roster. */
+  expected: number;
+  /** Never drafted, or drafted then reverted — both need someone to act. */
+  needsQueueing: number;
 }
 
 export interface TopPost {
@@ -462,8 +452,14 @@ interface BatchPostRow {
   batch_key: string;
   persona: string;
   hook: string | null;
+  second_line: string | null;
   tier: string | null;
   engine: string | null;
+  sound: string | null;
+  cta: string | null;
+  caption: string | null;
+  caption_chars: number | null;
+  image_url: string | null;
   review_url: string | null;
   doublespeed_post_id: string | null;
   post_status: string | null;
@@ -506,9 +502,16 @@ function toBatchPostState(row: BatchPostRow): BatchPostState {
  * exactly the signal worth surfacing, so we return it either way and let the
  * UI say whether it's today's.
  */
+/** How many recent batches define the expected daily persona roster. */
+const ROSTER_LOOKBACK = 7;
+
 async function fetchToday(): Promise<TodaySection> {
+  // Pull a few batches, not one: the older ones define the roster we expect
+  // today to contain, which is the only way to say which personas are still
+  // missing rather than just counting what happens to be there.
   const batches = await sbGet<BatchRow[]>(
-    `slideshow_batches?select=batch_key,batch_date,status,experiment&order=batch_date.desc,batch_no.desc&limit=1`,
+    `slideshow_batches?select=batch_key,batch_date,status,experiment` +
+      `&order=batch_date.desc,batch_no.desc&limit=${ROSTER_LOOKBACK + 1}`,
   );
   const batch = batches[0];
   if (!batch) {
@@ -519,6 +522,8 @@ async function fetchToday(): Promise<TodaySection> {
       experiment: null,
       isToday: false,
       posts: [],
+      expected: 0,
+      needsQueueing: 0,
     };
   }
 
@@ -528,9 +533,73 @@ async function fetchToday(): Promise<TodaySection> {
   await syncBatchPostState({ batchKey: batch.batch_key });
 
   const posts = await sbGet<BatchPostRow[]>(
-    `slideshow_batch_posts?select=batch_key,persona,hook,tier,engine,review_url,doublespeed_post_id,post_status,posted_at,public_post_url,sort_order` +
+    `slideshow_batch_posts?select=batch_key,persona,hook,second_line,tier,engine,sound,cta,caption,caption_chars,image_url,review_url,doublespeed_post_id,post_status,posted_at,public_post_url,sort_order` +
       `&batch_key=eq.${encodeURIComponent(batch.batch_key)}&order=sort_order.asc&limit=50`,
   );
+
+  // The expected roster, derived from previous batches rather than hardcoded,
+  // so retiring or adding a persona needs no code change. Falls back to
+  // today's own line-up when there is no history (the very first batch).
+  const priorKeys = batches.slice(1).map((b) => b.batch_key);
+  let roster: string[] = [];
+  if (priorKeys.length > 0) {
+    const list = priorKeys.map((k) => `"${k.replace(/"/g, "")}"`).join(",");
+    const rows = await soft<{ persona: string }[]>(
+      `slideshow_batch_posts?select=persona&batch_key=in.(${encodeURIComponent(list)})&limit=1000`,
+      [],
+    );
+    roster = [...new Set(rows.map((r) => r.persona))];
+  }
+  if (roster.length === 0) roster = [...new Set(posts.map((p) => p.persona))];
+
+  const views = await fetchBatchViews(posts);
+
+  const present = posts.map((p) => ({
+    persona: p.persona,
+    hook: p.hook,
+    secondLine: p.second_line,
+    tier: p.tier,
+    engine: p.engine,
+    sound: p.sound,
+    cta: p.cta,
+    caption: p.caption,
+    captionChars: p.caption_chars,
+    imageUrl: p.image_url,
+    views: p.doublespeed_post_id
+      ? (views.get(p.doublespeed_post_id) ?? null)
+      : null,
+    reviewUrl: p.review_url,
+    postUrl: p.public_post_url,
+    state: toBatchPostState(p),
+    postedAt: p.posted_at,
+  }));
+
+  // A persona on the roster with no post at all. Appended as an explicit
+  // "missing" slot rather than left out: a grid of eight tiles reads as a
+  // complete grid of eight, and the whole question here is what is absent.
+  const have = new Set(posts.map((p) => p.persona));
+  const missing = roster
+    .filter((p) => !have.has(p))
+    .sort()
+    .map((persona) => ({
+      persona,
+      hook: null,
+      secondLine: null,
+      tier: null,
+      engine: null,
+      sound: null,
+      cta: null,
+      caption: null,
+      captionChars: null,
+      imageUrl: null,
+      views: null,
+      reviewUrl: null,
+      postUrl: null,
+      state: "missing" as const,
+      postedAt: null,
+    }));
+
+  const all = [...present, ...missing];
 
   return {
     batchKey: batch.batch_key,
@@ -541,17 +610,32 @@ async function fetchToday(): Promise<TodaySection> {
     // NEXT day's batch_date. Treating that as "nothing queued today" would
     // report a healthy pipeline as a miss.
     isToday: batch.batch_date >= isoDate(new Date()),
-    posts: posts.map((p) => ({
-      persona: p.persona,
-      hook: p.hook,
-      tier: p.tier,
-      engine: p.engine,
-      reviewUrl: p.review_url,
-      postUrl: p.public_post_url,
-      state: toBatchPostState(p),
-      postedAt: p.posted_at,
-    })),
+    posts: all,
+    expected: Math.max(roster.length, all.length),
+    // Still to be queued = never drafted, plus drafted-then-reverted. Both
+    // need someone to act; neither is going out on its own.
+    needsQueueing: all.filter((p) => p.state === "missing" || p.state === "draft")
+      .length,
   };
+}
+
+/** Lifetime views for a set of batch posts, keyed by doublespeed_post_id. */
+async function fetchBatchViews(
+  posts: { doublespeed_post_id: string | null }[],
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const ids = [
+    ...new Set(posts.map((p) => p.doublespeed_post_id).filter(Boolean)),
+  ] as string[];
+  if (ids.length === 0) return out;
+  const list = ids.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+  const rows = await soft<{ source_post_id: string; views: number | null }[]>(
+    `social_posts?select=source_post_id,views&source=eq.doublespeed` +
+      `&source_post_id=in.(${encodeURIComponent(list)})&limit=200`,
+    [],
+  );
+  for (const r of rows) out.set(r.source_post_id, r.views);
+  return out;
 }
 
 interface TikTokPostRow {
