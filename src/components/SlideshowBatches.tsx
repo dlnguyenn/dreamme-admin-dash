@@ -100,10 +100,24 @@ function stateSummary(
   // maya sat unpublished for 30 hours with the dashboard showing nothing wrong.
   const stale = batchDate < isoToday();
 
+  // A post can reach "posted" and still never produce a public URL, which
+  // means it went nowhere. It is the most common silent failure in this
+  // pipeline and the one the old view was least able to show, because
+  // "posted" reads like success. Only judge it once the batch date has
+  // passed: the URL lands a little after publish, so today's batch would
+  // otherwise flap through a false alarm every morning.
+  const noReach = posts.filter(
+    (p) =>
+      (p.post_status === "posted" || p.post_status === "succeeded") &&
+      !p.public_post_url,
+  ).length;
+
   if (failed > 0) return { label: `${failed} FAILED`, family: "danger" };
   if (draft > 0) return { label: `${draft} NOT POSTED`, family: "danger" };
   if (queued > 0 && stale)
     return { label: `${queued} STUCK IN QUEUE`, family: "danger" };
+  if (noReach > 0 && stale)
+    return { label: `${noReach} NO REACH`, family: "danger" };
   if (posted === total) return { label: "POSTED", family: "success" };
   if (queued === total) return { label: "QUEUED", family: "attention" };
   if (posted > 0 || queued > 0)
