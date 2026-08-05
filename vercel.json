@@ -15,6 +15,7 @@
     { "path": "/api/cron/refresh-audiences", "schedule": "0 8 * * 1" },
     { "path": "/api/cron/marketing-alerts", "schedule": "45 7 * * *" },
     { "path": "/api/cron/cull-variants", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/sync-post-views", "schedule": "45 8 * * *" },
     { "path": "/api/cron/sync-clipper-views", "schedule": "0 9 * * *" },
     { "path": "/api/cron/support-poll", "schedule": "0 10 * * *" }
   ]
