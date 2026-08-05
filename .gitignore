@@ -44,3 +44,9 @@ supabase/.temp
 
 # Compositor scratch / video outputs (not for git)
 tmp/
+
+# vercel
+.vercel
+
+# Account-merge rollback snapshots (contains user data)
+_merge-backups/
