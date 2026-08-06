@@ -182,14 +182,41 @@ export async function getCursor(id: string): Promise<SupportCursorRow | null> {
   return rows[0] ?? null;
 }
 
+/**
+ * PostgREST rejects a whole upsert when the payload names a column the table
+ * doesn't have (PGRST204) — which is exactly what happens when a deploy lands
+ * before its migration. That once froze the Gmail cursor for a day
+ * (2026-08-06: alerted_at shipped in code while the db-migrate run died in a
+ * GitHub outage). Cursor advance is the invariant ingestion cannot live
+ * without, so on that specific error we drop the unknown column and retry —
+ * losing optional metadata, never the cursor.
+ */
+const UNKNOWN_COLUMN = /Could not find the '([^']+)' column/;
+
 export async function saveCursor(
   cursor: Omit<SupportCursorRow, "updated_at">,
 ): Promise<void> {
-  await spPost(
-    "support_cursors",
-    [{ ...cursor, updated_at: new Date().toISOString() }],
-    { onConflict: "id", resolution: "merge" },
-  );
+  const row: Record<string, unknown> = {
+    ...cursor,
+    updated_at: new Date().toISOString(),
+  };
+  // One strip per unknown column, bounded so a weird error can't loop forever.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await spPost("support_cursors", [row], {
+        onConflict: "id",
+        resolution: "merge",
+      });
+      return;
+    } catch (e) {
+      const missing =
+        e instanceof Error ? UNKNOWN_COLUMN.exec(e.message)?.[1] : null;
+      if (!missing || !(missing in row) || missing === "id" || attempt >= 3) {
+        throw e;
+      }
+      delete row[missing];
+    }
+  }
 }
 
 export async function logAction(
