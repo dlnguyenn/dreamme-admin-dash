@@ -104,6 +104,19 @@ export class HistoryExpiredError extends Error {
   }
 }
 
+/**
+ * A message id from the history no longer resolves — deleted or trashed
+ * between the history record being written and us reading it. Permanent, so
+ * callers must skip it rather than retry: a message that will never be
+ * fetchable would otherwise wedge the cursor forever.
+ */
+export class MessageGoneError extends Error {
+  constructor(id: string) {
+    super(`Gmail message ${id} no longer exists`);
+    this.name = "MessageGoneError";
+  }
+}
+
 async function gmailFetch<T>(
   path: string,
   opts?: { method?: "GET" | "POST"; body?: unknown },
@@ -229,11 +242,29 @@ export async function listAddedSince(
   return { ids: [...new Set(ids)], historyId: latest };
 }
 
-/** Raw RFC822 bytes, so support/rfc822.ts can parse it like an IMAP message. */
-export async function getMessageRaw(id: string): Promise<Buffer> {
-  const res = await gmailFetch<{ raw?: string }>(`/messages/${encodeURIComponent(id)}?format=raw`);
+export interface GmailRawMessage {
+  /** RFC822 bytes, so support/rfc822.ts parses it exactly like IMAP source */
+  raw: Buffer;
+  /** SENT / INBOX / user label ids — history.list cannot be trusted to filter */
+  labelIds: string[];
+}
+
+export async function getMessage(id: string): Promise<GmailRawMessage> {
+  let res: { raw?: string; labelIds?: string[] };
+  try {
+    res = await gmailFetch<{ raw?: string; labelIds?: string[] }>(
+      `/messages/${encodeURIComponent(id)}?format=raw`,
+    );
+  } catch (e) {
+    // A 404 here is a message that was deleted after its history record was
+    // written. Distinguish it so the caller can skip rather than retry.
+    if (e instanceof Error && /^Gmail 404:/.test(e.message)) {
+      throw new MessageGoneError(id);
+    }
+    throw e;
+  }
   if (!res.raw) throw new Error(`Gmail message ${id} returned no raw body`);
-  return Buffer.from(res.raw, "base64url");
+  return { raw: Buffer.from(res.raw, "base64url"), labelIds: res.labelIds ?? [] };
 }
 
 // ---------------------------------------------------------------------------

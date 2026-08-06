@@ -16,7 +16,8 @@
  */
 import {
   HistoryExpiredError,
-  getMessageRaw,
+  MessageGoneError,
+  getMessage,
   labelIdByName,
   listAddedSince,
   listRecentMessageIds,
@@ -45,6 +46,10 @@ export interface GmailFetchResult {
   truncated: boolean;
   /** true when the cursor aged out (or was absent) and we listed instead */
   usedFallback: boolean;
+  /** ids that no longer exist (deleted since their history record) */
+  gone: number;
+  /** ids dropped for being SENT mail or outside the support label */
+  filtered: number;
 }
 
 /**
@@ -94,12 +99,40 @@ export async function fetchNewGmailMessages(
 
   const truncated = ids.length > MAX_PER_POLL;
   const messages: ParsedInbound[] = [];
+  let gone = 0;
+  let filtered = 0;
+
   for (const id of ids.slice(0, MAX_PER_POLL)) {
-    const raw = await getMessageRaw(id);
-    messages.push(await parseRfc822(raw, { gmailId: id }));
+    let msg;
+    try {
+      msg = await getMessage(id);
+    } catch (e) {
+      // Deleted between the history record and now. Permanent, so skip it —
+      // rethrowing would abort the leg, block the cursor, and make every
+      // later poll retry the same doomed id forever.
+      if (e instanceof MessageGoneError) {
+        gone++;
+        continue;
+      }
+      throw e;
+    }
+
+    // history.list?labelId= filters history RECORDS, not the messages inside
+    // them, so a record touching the support label can carry unrelated
+    // messages. Filter on the message's own labels instead.
+    if (msg.labelIds.includes("SENT")) {
+      filtered++; // Dan's own reply — the sent leg owns these
+      continue;
+    }
+    if (labelId && !msg.labelIds.includes(labelId)) {
+      filtered++;
+      continue;
+    }
+
+    messages.push(await parseRfc822(msg.raw, { gmailId: id }));
   }
 
   // Oldest first, so a thread's messages insert in conversation order.
   messages.sort((a, b) => a.date.getTime() - b.date.getTime());
-  return { messages, historyId, truncated, usedFallback };
+  return { messages, historyId, truncated, usedFallback, gone, filtered };
 }

@@ -133,9 +133,19 @@ async function ingestEmail(report: IngestReport): Promise<void> {
  */
 async function ingestEmailViaGmail(report: IngestReport): Promise<void> {
   const cursorRow = await getCursor(GMAIL_CURSOR_ID);
-  const { messages, historyId, truncated, usedFallback } =
+  const { messages, historyId, truncated, usedFallback, gone, filtered } =
     await fetchNewGmailMessages(cursorRow?.history_id ?? null);
   report.emailsFetched = messages.length;
+  if (gone) {
+    report.legErrors.push(
+      `email: ${gone} message(s) deleted before we read them — skipped`,
+    );
+  }
+  if (filtered) {
+    report.legErrors.push(
+      `email: ${filtered} message(s) skipped (sent mail or outside the support label)`,
+    );
+  }
 
   let failed = false;
   for (const msg of messages) {

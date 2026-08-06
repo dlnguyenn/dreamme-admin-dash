@@ -51,9 +51,10 @@ async function main() {
   }
 
   console.log("\n  Previewing what the next poll would ingest (cold start, 7-day look-back)…");
-  const { messages, historyId, truncated, usedFallback } = await fetchNewGmailMessages(null);
+  const { messages, historyId, truncated, usedFallback, gone, filtered } = await fetchNewGmailMessages(null);
   console.log(
-    `  ${messages.length} message(s)${truncated ? " (capped)" : ""}, cursor would become ${historyId}${usedFallback ? " [via list fallback]" : ""}\n`,
+    `  ${messages.length} ingestable, ${gone} deleted, ${filtered} filtered out (sent / unlabelled)` +
+      `${truncated ? " (capped)" : ""}; cursor would become ${historyId}${usedFallback ? " [via list fallback]" : ""}\n`,
   );
   for (const m of messages.slice(0, 15)) {
     console.log(

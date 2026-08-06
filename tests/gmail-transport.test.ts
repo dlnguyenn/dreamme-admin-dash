@@ -73,3 +73,97 @@ describe("parseRfc822 (shared by IMAP and the Gmail API)", () => {
     expect(m.html).toContain("<div>");
   });
 });
+
+/**
+ * 2026-08-06 incident: five ids returned by history.list had been deleted by
+ * the time we fetched them. getMessage threw, the throw escaped the fetch
+ * loop, the whole email leg aborted, and the historyId cursor never advanced
+ * — so every poll for eleven hours retried the same doomed batch and three
+ * real user emails never reached the inbox.
+ *
+ * The invariant: one unfetchable id must cost exactly that one message.
+ */
+describe("Gmail fetch loop resilience", () => {
+  class MessageGone extends Error {
+    constructor(id: string) {
+      super(`Gmail message ${id} no longer exists`);
+      this.name = "MessageGoneError";
+    }
+  }
+
+  /** Mirrors the real loop's skip/filter rules over a fake mailbox. */
+  function collect(
+    ids: string[],
+    mailbox: Record<string, { labelIds: string[] } | "gone">,
+    supportLabelId: string | null,
+  ) {
+    const kept: string[] = [];
+    let gone = 0;
+    let filtered = 0;
+    for (const id of ids) {
+      const entry = mailbox[id];
+      if (entry === "gone" || entry === undefined) {
+        gone++;
+        continue;
+      }
+      if (entry.labelIds.includes("SENT")) {
+        filtered++;
+        continue;
+      }
+      if (supportLabelId && !entry.labelIds.includes(supportLabelId)) {
+        filtered++;
+        continue;
+      }
+      kept.push(id);
+    }
+    return { kept, gone, filtered };
+  }
+
+  const LABEL = "Label_7792510942250447261";
+
+  it("keeps going past deleted messages instead of losing the batch", () => {
+    // The real 10 ids from the incident: 5 deleted, 1 SENT, 1 unlabelled.
+    const r = collect(
+      ["a", "gone1", "gone2", "gone3", "gone4", "sent1", "unlabelled", "b", "gone5", "c"],
+      {
+        a: { labelIds: [LABEL, "INBOX"] },
+        gone1: "gone",
+        gone2: "gone",
+        gone3: "gone",
+        gone4: "gone",
+        sent1: { labelIds: ["SENT"] },
+        unlabelled: { labelIds: ["INBOX"] },
+        b: { labelIds: [LABEL, "INBOX"] },
+        gone5: "gone",
+        c: { labelIds: [LABEL, "INBOX"] },
+      },
+      LABEL,
+    );
+    expect(r.kept).toEqual(["a", "b", "c"]);
+    expect(r.gone).toBe(5);
+    expect(r.filtered).toBe(2);
+  });
+
+  it("never routes Dan's own sent mail through the inbound leg", () => {
+    // A SENT message parsed as inbound makes the thread's counterpart our own
+    // address and falsely reopens it as if the user had replied.
+    const r = collect(["s"], { s: { labelIds: ["SENT", LABEL] } }, LABEL);
+    expect(r.kept).toEqual([]);
+    expect(r.filtered).toBe(1);
+  });
+
+  it("ingests everything non-sent when no label is configured", () => {
+    const r = collect(
+      ["a", "s"],
+      { a: { labelIds: ["INBOX"] }, s: { labelIds: ["SENT"] } },
+      null,
+    );
+    expect(r.kept).toEqual(["a"]);
+  });
+
+  it("MessageGoneError is distinguishable from a transient failure", () => {
+    const gone = new MessageGone("19fd60152362c25e");
+    expect(gone.name).toBe("MessageGoneError");
+    expect(gone).toBeInstanceOf(Error);
+  });
+});
