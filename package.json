@@ -22,6 +22,8 @@
     "push-variants": "tsx scripts/push-creative-variants.ts",
     "trello:lists": "tsx scripts/trello-lists.ts",
     "merge-accounts": "tsx scripts/merge-user-accounts.ts",
+    "gmail-auth": "tsx scripts/gmail-auth.ts",
+    "gmail-check": "tsx scripts/gmail-check.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

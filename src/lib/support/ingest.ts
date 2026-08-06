@@ -18,6 +18,7 @@ import {
   patchThread,
 } from "./db";
 import { fetchNewMessages, imapConfigured, type ParsedInbound } from "./imap";
+import { fetchNewGmailMessages, gmailConfigured } from "./gmail-ingest";
 import {
   consumerDbConfigured,
   fetchFeedbackSince,
@@ -32,7 +33,8 @@ import type {
   SupportThreadRow,
 } from "./types";
 
-const EMAIL_CURSOR_ID = "gmail-inbox";
+const EMAIL_CURSOR_ID = "gmail-inbox";       // IMAP transport (uid cursor)
+const GMAIL_CURSOR_ID = "gmail-api-inbox";   // Gmail API transport (historyId)
 const SENT_CURSOR_ID = "gmail-sent";
 const FEEDBACK_CURSOR_ID = "consumer-feedback";
 /** First feedback run only looks back this far (older rows are stale). */
@@ -114,7 +116,63 @@ function inboundThreadPatch(sentAtIso: string): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 // Leg 1 — email
 
+/**
+ * Prefer the Gmail API when it's configured, else the legacy IMAP path.
+ * Both produce identical rows (see support/rfc822.ts), so this is a
+ * transport swap and nothing downstream needs to know which ran.
+ */
 async function ingestEmail(report: IngestReport): Promise<void> {
+  if (gmailConfigured()) return ingestEmailViaGmail(report);
+  return ingestEmailViaImap(report);
+}
+
+/**
+ * Gmail API leg. The historyId cursor only advances when every message in
+ * the batch inserted — same rule as IMAP, so a failure is retried next run
+ * rather than silently skipped.
+ */
+async function ingestEmailViaGmail(report: IngestReport): Promise<void> {
+  const cursorRow = await getCursor(GMAIL_CURSOR_ID);
+  const { messages, historyId, truncated, usedFallback } =
+    await fetchNewGmailMessages(cursorRow?.history_id ?? null);
+  report.emailsFetched = messages.length;
+
+  let failed = false;
+  for (const msg of messages) {
+    try {
+      const inserted = await insertEmailMessage(msg);
+      if (inserted) report.emailsInserted++;
+    } catch (e) {
+      failed = true;
+      report.legErrors.push(
+        `email ${msg.gmailId ?? "?"}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  if (!failed) {
+    await saveCursor({
+      id: GMAIL_CURSOR_ID,
+      uidvalidity: null,
+      last_uid: null,
+      history_id: historyId,
+      last_seen_at: new Date().toISOString(),
+    });
+  }
+  if (usedFallback && cursorRow?.history_id) {
+    // Worth surfacing: it means the poller was down long enough for Gmail to
+    // drop the history, so the window between then and now was covered by a
+    // 7-day list rather than an exact diff.
+    report.legErrors.push(
+      "email: Gmail history cursor expired — re-listed the last 7 days",
+    );
+  }
+  if (truncated) {
+    report.legErrors.push("email: poll cap hit — more mail on next run");
+  }
+}
+
+async function ingestEmailViaImap(report: IngestReport): Promise<void> {
   if (!imapConfigured()) {
     report.legErrors.push("email: DREAMME_SMTP_PASS not set — skipped");
     return;

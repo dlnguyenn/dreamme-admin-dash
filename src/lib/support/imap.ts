@@ -9,9 +9,17 @@
  * and the unique index on support_messages.message_id absorbs re-reads.
  */
 import { ImapFlow } from "imapflow";
-import { simpleParser, type AddressObject } from "mailparser";
-import { htmlToPlainText } from "./email-text";
-import type { AttachmentInfo } from "./types";
+import { parseRfc822, type ParsedInbound } from "./rfc822";
+
+// Parsing and sender recovery are shared with the Gmail-API transport, so a
+// message produces the same row whichever way it arrived. Re-exported here
+// because callers (and tests) have always imported them from this module.
+export {
+  isOwnAlias,
+  resolveCounterpart,
+  parseRfc822,
+  type ParsedInbound,
+} from "./rfc822";
 
 const IMAP_HOST = "imap.gmail.com";
 const IMAP_USER = process.env.SUPPORT_IMAP_USER ?? "dan@dreamme.life";
@@ -27,89 +35,6 @@ export function imapConfigured(): boolean {
 export interface ImapCursor {
   uidvalidity: number | null;
   lastUid: number | null;
-}
-
-export interface ParsedInbound {
-  uid: number;
-  messageId: string | null;
-  inReplyTo: string | null;
-  references: string[];
-  /** EFFECTIVE sender — real user resolved through Group/notifier rewrites */
-  fromEmail: string | null;
-  fromName: string | null;
-  /** literal From: header address, before the rewrite fallback */
-  rawFromEmail: string | null;
-  toEmail: string | null;
-  subject: string | null;
-  text: string | null;
-  html: string | null;
-  attachments: AttachmentInfo[];
-  date: Date;
-}
-
-/** Our own addresses — a From: carrying one of these is a rewrite, not a user. */
-const OWN_ALIASES = new Set([
-  "help@dreamme.life",
-  "feedback@dreamme.life",
-  "dan@dreamme.life",
-]);
-
-export function isOwnAlias(email: string | null | undefined): boolean {
-  return !!email && OWN_ALIASES.has(email.toLowerCase());
-}
-
-/**
- * help@/feedback@ are Google Groups: for external senders Groups rewrites
- * From: to `'Jane Doe' via Dreamme Help <help@dreamme.life>` (DMARC) and
- * keeps the real address in Reply-To / X-Original-Sender. The in-app
- * feedback notifier does the same (From: feedback@, Reply-To: the user).
- * Without this fallback the thread's counterpart becomes our own alias —
- * no account match, and a reply would be addressed to ourselves.
- * Pure — unit-tested.
- */
-export function resolveCounterpart(h: {
-  fromEmail: string | null;
-  fromName: string | null;
-  replyToEmail: string | null;
-  replyToName: string | null;
-  xOriginalSender: string | null;
-}): { email: string | null; name: string | null } {
-  if (!isOwnAlias(h.fromEmail)) {
-    return { email: h.fromEmail, name: h.fromName };
-  }
-  const real =
-    (!isOwnAlias(h.replyToEmail) && h.replyToEmail) ||
-    (!isOwnAlias(h.xOriginalSender) && h.xOriginalSender) ||
-    null;
-  if (!real) return { email: h.fromEmail, name: h.fromName };
-  // Prefer the Reply-To display name; else strip the "'X' via Dreamme Help"
-  // wrapper from the rewritten From name.
-  let name = h.replyToName || null;
-  if (!name && h.fromName) {
-    const m = h.fromName.match(/^'?(.*?)'?\s+via\s+/i);
-    name = m ? m[1] : h.fromName;
-  }
-  return { email: real.toLowerCase(), name };
-}
-
-function firstAddress(
-  addr: AddressObject | AddressObject[] | undefined,
-): { email: string | null; name: string | null } {
-  const obj = Array.isArray(addr) ? addr[0] : addr;
-  const first = obj?.value?.[0];
-  return {
-    email: first?.address?.toLowerCase() ?? null,
-    name: first?.name || null,
-  };
-}
-
-function allAddresses(addr: AddressObject | AddressObject[] | undefined): string {
-  const objs = Array.isArray(addr) ? addr : addr ? [addr] : [];
-  return objs
-    .flatMap((o) => o.value ?? [])
-    .map((v) => v.address?.toLowerCase() ?? "")
-    .filter(Boolean)
-    .join(", ");
 }
 
 export async function fetchNewMessages(
@@ -165,49 +90,7 @@ export async function fetchNewMessages(
         break;
       }
       if (!msg.source) continue;
-      const parsed = await simpleParser(msg.source);
-      const from = firstAddress(parsed.from);
-      const replyTo = firstAddress(parsed.replyTo);
-      const xOriginalRaw = parsed.headers.get("x-original-sender");
-      const counterpart = resolveCounterpart({
-        fromEmail: from.email,
-        fromName: from.name,
-        replyToEmail: replyTo.email,
-        replyToName: replyTo.name,
-        xOriginalSender:
-          typeof xOriginalRaw === "string"
-            ? xOriginalRaw.trim().toLowerCase()
-            : null,
-      });
-      const refs = Array.isArray(parsed.references)
-        ? parsed.references
-        : parsed.references
-          ? [parsed.references]
-          : [];
-      messages.push({
-        uid: msg.uid,
-        messageId: parsed.messageId ?? null,
-        inReplyTo: parsed.inReplyTo ?? null,
-        references: refs,
-        fromEmail: counterpart.email,
-        fromName: counterpart.name,
-        rawFromEmail: from.email,
-        toEmail: allAddresses(parsed.to) || null,
-        subject: parsed.subject ?? null,
-        // Apple Mail replies to HTML mail are often HTML-only — derive a
-        // text body so triage and the transcript never see "(no body)".
-        text:
-          parsed.text?.trim() ||
-          htmlToPlainText(typeof parsed.html === "string" ? parsed.html : null) ||
-          null,
-        html: typeof parsed.html === "string" ? parsed.html : null,
-        attachments: (parsed.attachments ?? []).map((a) => ({
-          filename: a.filename,
-          contentType: a.contentType,
-          size: a.size,
-        })),
-        date: parsed.date ?? new Date(),
-      });
+      messages.push(await parseRfc822(msg.source, { uid: msg.uid }));
       if (msg.uid > maxUid) maxUid = msg.uid;
     }
 

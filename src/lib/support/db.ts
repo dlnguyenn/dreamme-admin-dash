@@ -168,6 +168,8 @@ export interface SupportCursorRow {
   uidvalidity: number | null;
   last_uid: number | null;
   last_seen_at: string | null;
+  /** Gmail API historyId — text because it's an unsigned 64-bit value. */
+  history_id?: string | null;
   updated_at: string;
 }
 
