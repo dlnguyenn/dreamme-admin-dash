@@ -26,6 +26,8 @@ export async function fetchThreads(
 ): Promise<{
   threads: SupportThreadRow[];
   unreadCount: number;
+  /** set when ingestion has stalled — see lib/support/health.ts */
+  health?: string | null;
 }> {
   const params = new URLSearchParams();
   if (q?.trim()) {
@@ -180,6 +182,7 @@ export async function pollNow(): Promise<{
     threadsTriaged: number;
     triageErrors: string[];
     legErrors: string[];
+    healthAlert?: string | null;
   };
 }> {
   return json(await fetch(`/api/support/poll`, { method: "POST" }));

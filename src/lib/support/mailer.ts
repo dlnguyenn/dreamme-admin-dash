@@ -70,6 +70,30 @@ export async function sendSupportReply(
   };
 }
 
+/**
+ * Operational alert to Dan himself — not a customer reply, so no Reply-To
+ * rewrite to help@ and no threading headers. Used when support ingestion
+ * looks broken, where the whole point is that nothing else would surface it.
+ */
+export async function sendOperationalAlert(params: {
+  subject: string;
+  bodyText: string;
+}): Promise<void> {
+  if (!mailerConfigured()) throw new Error("DREAMME_SMTP_PASS not set");
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: { name: "DreamMe Dashboard", address: FROM_EMAIL },
+    to: SMTP_USER,
+    subject: `[dash] ${params.subject}`,
+    text: params.bodyText,
+  });
+}
+
 /** Prefix a subject with Re: unless it already has one (case-insensitive). */
 export function replySubject(original: string | null): string {
   const base = (original ?? "").trim() || "your message to DreamMe";

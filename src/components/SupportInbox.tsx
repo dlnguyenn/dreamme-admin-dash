@@ -70,6 +70,10 @@ export function SupportInbox({
   // Search by name/email — overrides the status filter while non-empty.
   const [search, setSearch] = React.useState("");
   const searching = search.trim().length > 0;
+  // Set when the ingest cursor has stopped advancing. A stalled inbox and a
+  // quiet one look identical, so this has to be stated on screen rather than
+  // inferred from an empty list.
+  const [health, setHealth] = React.useState<string | null>(null);
 
   // ---- deep links ---------------------------------------------------------
   // A thread is addressable as ?tab=support&thread=<id>, which is what the
@@ -101,8 +105,9 @@ export function SupportInbox({
     async (f: Filter = filter, q: string = search) => {
       try {
         setError(null);
-        const { threads, unreadCount } = await fetchThreads(f, q);
+        const { threads, unreadCount, health } = await fetchThreads(f, q);
         setThreads(threads);
+        setHealth(health ?? null);
         onUnreadChange?.(unreadCount);
         if (f === "open" && !q.trim()) {
           const c: Partial<Record<Filter, number>> = { open: threads.length };
@@ -136,7 +141,9 @@ export function SupportInbox({
     try {
       const { report } = await pollNow();
       toast(
-        `Polled: ${report.emailsInserted} email, ${report.feedbackInserted} feedback, ${report.threadsTriaged} triaged`,
+        report.healthAlert
+          ? `Polled, but ingestion looks stalled: ${report.healthAlert}`
+          : `Polled: ${report.emailsInserted} email, ${report.feedbackInserted} feedback, ${report.threadsTriaged} triaged`,
       );
       await load();
     } catch (e) {
@@ -168,6 +175,46 @@ export function SupportInbox({
           </Button>
         }
       />
+
+      {health && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            border: "1px solid var(--danger)",
+            background: "var(--danger-soft)",
+            color: "var(--danger-text)",
+            borderRadius: 12,
+            padding: "12px 14px",
+            marginBottom: 12,
+            font: "500 13px var(--font-ui)",
+          }}
+        >
+          <span aria-hidden style={{ flex: "none", lineHeight: 1.4 }}>⚠</span>
+          <span>
+            {health}{" "}
+            <button
+              type="button"
+              onClick={handlePoll}
+              disabled={polling}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                font: "600 13px var(--font-ui)",
+                color: "inherit",
+                textDecoration: "underline",
+                cursor: polling ? "default" : "pointer",
+              }}
+            >
+              {polling ? "Polling…" : "Run a poll now"}
+            </button>{" "}
+            and check the result for leg errors.
+          </span>
+        </div>
+      )}
 
       {/* Search by name or email — spans every status, incl. closed/ignored */}
       <div style={{ position: "relative", maxWidth: isMobile ? "100%" : 340, marginBottom: 12 }}>

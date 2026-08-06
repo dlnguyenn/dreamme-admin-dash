@@ -19,6 +19,7 @@ import {
 } from "./db";
 import { fetchNewMessages, imapConfigured, type ParsedInbound } from "./imap";
 import { fetchNewGmailMessages, gmailConfigured } from "./gmail-ingest";
+import { checkIngestHealth } from "./health";
 import {
   consumerDbConfigured,
   fetchFeedbackSince,
@@ -56,6 +57,8 @@ export interface IngestReport {
   namesIndexed: number;
   triageErrors: string[];
   legErrors: string[];
+  /** set when ingestion looks stalled rather than the mailbox being quiet */
+  healthAlert?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +170,9 @@ async function ingestEmailViaGmail(report: IngestReport): Promise<void> {
       last_uid: null,
       history_id: historyId,
       last_seen_at: new Date().toISOString(),
+      // Advancing clears any stuck-cursor warning, so a recovery followed by
+      // a fresh stall alerts again instead of being suppressed as a repeat.
+      alerted_at: null,
     });
   }
   if (usedFallback && cursorRow?.history_id) {
@@ -647,5 +653,9 @@ export async function runIngest(): Promise<IngestReport> {
       `triage leg failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
+  // Last, and after the legs have had their chance to advance the cursor: a
+  // quiet inbox and a broken one look identical from the outside, so check
+  // whether mail has actually been moving rather than whether this run errored.
+  report.healthAlert = await checkIngestHealth();
   return report;
 }

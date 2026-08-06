@@ -12,6 +12,7 @@
  * status is explicitly requested.
  */
 import { NextResponse } from "next/server";
+import { readIngestHealth } from "@/lib/support/health";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { spGet, supportDbConfigured } from "@/lib/support/db";
 import type { SupportThreadRow } from "@/lib/support/types";
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
       const threads = await spGet<SupportThreadRow[]>(
         `support_threads?or=(counterpart_email.ilike.${pat},counterpart_name.ilike.${pat},subject.ilike.${pat})&order=last_message_at.desc&limit=100`,
       );
-      return NextResponse.json({ ok: true, threads, unreadCount });
+      return NextResponse.json({ ok: true, threads, unreadCount, health: await readIngestHealth() });
     }
 
     const filter =
@@ -77,7 +78,14 @@ export async function GET(req: Request) {
             (t) => !t.snoozed_until || new Date(t.snoozed_until).getTime() <= now,
           );
 
-    return NextResponse.json({ ok: true, threads: visible, unreadCount });
+    return NextResponse.json({
+      ok: true,
+      threads: visible,
+      unreadCount,
+      // Surfaced passively: the 2026-08-06 stall was invisible precisely
+      // because nothing on screen distinguished "quiet" from "broken".
+      health: await readIngestHealth(),
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
