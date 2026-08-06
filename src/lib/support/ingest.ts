@@ -15,10 +15,17 @@ import {
   saveCursor,
   spGet,
   spPost,
+  spPatch,
   patchThread,
 } from "./db";
 import { fetchNewMessages, imapConfigured, type ParsedInbound } from "./imap";
 import { fetchNewGmailMessages, gmailConfigured } from "./gmail-ingest";
+import {
+  labelIdByName,
+  pushTopic,
+  supportLabel,
+  watchMailbox,
+} from "@/lib/vendors/gmail";
 import { checkIngestHealth } from "./health";
 import {
   consumerDbConfigured,
@@ -42,6 +49,15 @@ const FEEDBACK_CURSOR_ID = "consumer-feedback";
 const FEEDBACK_BOOTSTRAP_DAYS = 14;
 /** Max threads triaged per run (each is an Anthropic call). */
 const MAX_TRIAGE_PER_RUN = 10;
+/** Gmail push watch registration; last_seen_at holds the watch expiration. */
+const WATCH_CURSOR_ID = "gmail-watch";
+/** Run-serialization lock; updated_at holds when the run started. */
+const LOCK_CURSOR_ID = "ingest-lock";
+/**
+ * A lock older than this is a crashed run, not a running one — matches the
+ * routes' maxDuration so a live run can never be stolen from.
+ */
+const LOCK_TTL_MS = 5 * 60_000;
 
 export interface IngestReport {
   emailsFetched: number;
@@ -595,9 +611,82 @@ async function triageNewThreads(report: IngestReport): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Run serialization
+//
+// Pub/Sub push made concurrent runs routine (every inbound message is a
+// delivery), and two triage legs racing the same 'new' thread would each
+// draft it. All entry points — cron, manual Poll now, push — funnel through
+// this lock; a push delivery that loses returns 429 so Pub/Sub redelivers
+// after the winner finishes.
 
-export async function runIngest(): Promise<IngestReport> {
-  const report: IngestReport = {
+async function acquireIngestLock(): Promise<boolean> {
+  // Ensure the row exists (released state = epoch), then claim it with a
+  // conditional PATCH. Postgres serializes the two updates on the row lock,
+  // so exactly one concurrent caller sees a matched row.
+  await spPost(
+    "support_cursors",
+    [
+      {
+        id: LOCK_CURSOR_ID,
+        uidvalidity: null,
+        last_uid: null,
+        last_seen_at: null,
+        updated_at: new Date(0).toISOString(),
+      },
+    ],
+    { onConflict: "id", resolution: "ignore" },
+  );
+  const cutoff = new Date(Date.now() - LOCK_TTL_MS).toISOString();
+  const rows = await spPatch<{ id: string }>(
+    `support_cursors?id=eq.${LOCK_CURSOR_ID}&updated_at=lt.${encodeURIComponent(cutoff)}`,
+    { updated_at: new Date().toISOString() },
+  );
+  return rows.length > 0;
+}
+
+async function releaseIngestLock(): Promise<void> {
+  await spPatch(`support_cursors?id=eq.${LOCK_CURSOR_ID}`, {
+    updated_at: new Date(0).toISOString(),
+  }).catch(() => {}); // a stuck lock self-expires via LOCK_TTL_MS
+}
+
+// ---------------------------------------------------------------------------
+// Gmail push watch
+//
+// Gmail expires a watch after ~7 days; whoever lets it lapse silently
+// downgrades "seconds" back to "10 minutes" with no error anywhere. So the
+// cron run renews it whenever less than a day remains — the 10-minute tick
+// doubles as the renewal heartbeat, and the expiration lives in
+// support_cursors where the ops queries already look.
+
+async function renewGmailWatch(report: IngestReport): Promise<void> {
+  if (!gmailConfigured()) return;
+  const row = await getCursor(WATCH_CURSOR_ID);
+  const expiresAt = row?.last_seen_at
+    ? new Date(row.last_seen_at).getTime()
+    : 0;
+  if (expiresAt - Date.now() > 24 * 3600_000) return; // still fresh
+  const labelName = supportLabel();
+  const labelId = labelName ? await labelIdByName(labelName) : null;
+  const res = await watchMailbox({
+    topicName: pushTopic(),
+    labelIds: labelId ? [labelId] : ["INBOX"],
+  });
+  await saveCursor({
+    id: WATCH_CURSOR_ID,
+    uidvalidity: null,
+    last_uid: null,
+    last_seen_at: new Date(Number(res.expiration)).toISOString(),
+  });
+  report.legErrors.push(
+    `watch: renewed Gmail push watch through ${new Date(Number(res.expiration)).toISOString()}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function emptyReport(): IngestReport {
+  return {
     emailsFetched: 0,
     emailsInserted: 0,
     sentFetched: 0,
@@ -610,7 +699,70 @@ export async function runIngest(): Promise<IngestReport> {
     triageErrors: [],
     legErrors: [],
   };
+}
 
+/**
+ * Push-triggered run: email leg + triage only. The slow or push-irrelevant
+ * legs (IMAP sent matching, in-app feedback, Stripe name index, health)
+ * stay on the 10-minute cron — a push delivery is a doorbell for new
+ * inbound mail, nothing else.
+ *
+ * Two-phase on purpose: the route must know synchronously whether the lock
+ * was won (a loss becomes 429 so Pub/Sub redelivers), but must NOT wait for
+ * the run itself (triage can outlive Pub/Sub's 60s ack window). So this
+ * returns null when the lock is busy, else a closure the route hands to
+ * waitUntil — which then owns releasing the lock.
+ */
+export async function beginGmailPushIngest(): Promise<
+  (() => Promise<IngestReport>) | null
+> {
+  if (!(await acquireIngestLock())) return null;
+  return async () => {
+    const report = emptyReport();
+    try {
+      try {
+        await ingestEmail(report);
+      } catch (e) {
+        report.legErrors.push(
+          `email leg failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+      try {
+        await triageNewThreads(report);
+      } catch (e) {
+        report.legErrors.push(
+          `triage leg failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    } finally {
+      await releaseIngestLock();
+    }
+    return report;
+  };
+}
+
+export async function runIngest(): Promise<IngestReport> {
+  const report = emptyReport();
+  if (!(await acquireIngestLock())) {
+    report.legErrors.push(
+      "another ingest run is already in progress — skipped this one",
+    );
+    return report;
+  }
+
+  try {
+    await runIngestLegs(report);
+  } finally {
+    await releaseIngestLock();
+  }
+  // Last, and after the legs have had their chance to advance the cursor: a
+  // quiet inbox and a broken one look identical from the outside, so check
+  // whether mail has actually been moving rather than whether this run errored.
+  report.healthAlert = await checkIngestHealth();
+  return report;
+}
+
+async function runIngestLegs(report: IngestReport): Promise<void> {
   try {
     await ingestEmail(report);
   } catch (e) {
@@ -653,9 +805,13 @@ export async function runIngest(): Promise<IngestReport> {
       `triage leg failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
-  // Last, and after the legs have had their chance to advance the cursor: a
-  // quiet inbox and a broken one look identical from the outside, so check
-  // whether mail has actually been moving rather than whether this run errored.
-  report.healthAlert = await checkIngestHealth();
-  return report;
+  // Keep the Pub/Sub watch alive — see renewGmailWatch for why this rides
+  // the cron rather than trusting anyone to remember a weekly chore.
+  try {
+    await renewGmailWatch(report);
+  } catch (e) {
+    report.legErrors.push(
+      `watch renewal failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }

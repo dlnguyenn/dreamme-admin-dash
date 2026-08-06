@@ -268,8 +268,35 @@ export async function getMessage(id: string): Promise<GmailRawMessage> {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 — Pub/Sub push. Registering a watch is harmless without a
-// subscriber, so these ship now and stay unused until the topic exists.
+// Phase 2 — Pub/Sub push.
+//
+// GCP side (set up 2026-08-06): topic gmail-support-push in project
+// dreamme-479917, publish granted to gmail-api-push@system.gserviceaccount.com,
+// push subscription gmail-support-push-sub → /api/support/gmail-push with
+// authenticated push (OIDC) as gmail-push-invoker. None of these identifiers
+// are secrets — authentication is Google's signature on the delivery token —
+// so they live here as defaults with env overrides for a future rename.
+
+export function pushTopic(): string {
+  return (
+    process.env.GMAIL_PUSH_TOPIC ??
+    "projects/dreamme-479917/topics/gmail-support-push"
+  );
+}
+
+export function pushServiceAccount(): string {
+  return (
+    process.env.GMAIL_PUSH_SA ??
+    "gmail-push-invoker@dreamme-479917.iam.gserviceaccount.com"
+  );
+}
+
+export function pushAudience(): string {
+  return (
+    process.env.GMAIL_PUSH_AUDIENCE ??
+    "https://dreamme-admin-dash.vercel.app/api/support/gmail-push"
+  );
+}
 
 export interface WatchResponse {
   historyId: string;
