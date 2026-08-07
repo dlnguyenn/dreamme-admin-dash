@@ -17,6 +17,7 @@ import {
   dsPosts,
 } from "@/lib/viewsources/doublespeed";
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
+import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
   dateWindow,
   easternDate,
@@ -92,6 +93,14 @@ export interface NorthStar {
   date: string | null;
   trialStartsYesterday: number | null;
   trialStartsToday: number | null;
+  /**
+   * Unique users who began onboarding today (Mixpanel `onboarding_started`,
+   * Eastern day). null when Mixpanel isn't configured or the query failed —
+   * the trial count still renders without it.
+   */
+  onboardingStartsToday: number | null;
+  /** trialStartsToday / onboardingStartsToday, as a percentage. */
+  trialStartRatePct: number | null;
   /** Sum over the last 7 COMPLETE days — today is excluded. */
   last7d: number | null;
   avg7d: number | null;
@@ -249,7 +258,28 @@ async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
   );
 }
 
-export function buildNorthStar(rows: TrialStartsRow[] | null, now = new Date()): NorthStar {
+/**
+ * Today's onboarding starts from Mixpanel — the denominator RevenueCat can't
+ * provide. Returns null rather than throwing when Mixpanel isn't configured,
+ * so a missing credential degrades the chip instead of filling errors[] on
+ * every page load.
+ */
+async function fetchOnboardingStartsToday(): Promise<number | null> {
+  if (!mixpanelConfigured()) return null;
+  const today = easternDate();
+  const byDate = await dailyUniques("onboarding_started", today, today);
+  return byDate.get(today) ?? 0;
+}
+
+export function buildNorthStar(
+  rows: TrialStartsRow[] | null,
+  now = new Date(),
+  /**
+   * Today's Mixpanel onboarding starts. Optional and last so every existing
+   * caller keeps working; null simply means the chip shows no ratio.
+   */
+  onboardingStartsToday: number | null = null,
+): NorthStar {
   // Must be Eastern: the view groups by America/New_York, so asking for the UTC
   // date would read the wrong bucket for the last 4-5 hours of every day.
   const today = easternDate(now);
@@ -260,6 +290,8 @@ export function buildNorthStar(rows: TrialStartsRow[] | null, now = new Date()):
       date: null,
       trialStartsYesterday: null,
       trialStartsToday: null,
+      onboardingStartsToday,
+      trialStartRatePct: null,
       last7d: null,
       avg7d: null,
       deltaPct: null,
@@ -284,11 +316,19 @@ export function buildNorthStar(rows: TrialStartsRow[] | null, now = new Date()):
     prior7.length > 0 ? prior7.reduce((a, b) => a + b.n, 0) / prior7.length : null;
 
   const last7 = complete.slice(-7);
+  const trialsToday = byDate.get(today) ?? 0;
 
   return {
     date: value != null ? yesterday : (complete[complete.length - 1]?.date ?? null),
     trialStartsYesterday: value,
-    trialStartsToday: byDate.get(today) ?? 0,
+    trialStartsToday: trialsToday,
+    onboardingStartsToday,
+    // Guard the zero denominator: early in the Eastern morning both numbers
+    // can be 0, and 0/0 rendering as a percentage looks like a dead funnel.
+    trialStartRatePct:
+      onboardingStartsToday != null && onboardingStartsToday > 0
+        ? Math.round((trialsToday / onboardingStartsToday) * 1000) / 10
+        : null,
     last7d: last7.length > 0 ? last7.reduce((a, b) => a + b.n, 0) : null,
     avg7d: avg7d == null ? null : Math.round(avg7d * 10) / 10,
     deltaPct:
@@ -898,10 +938,21 @@ async function section<T>(
 export async function buildOverview(): Promise<OverviewPayload> {
   const errors: string[] = [];
 
-  const [rc, trialStarts, views, support, today, queue, topPosts, paid, ops] =
-    await Promise.all([
+  const [
+    rc,
+    trialStarts,
+    onboardingToday,
+    views,
+    support,
+    today,
+    queue,
+    topPosts,
+    paid,
+    ops,
+  ] = await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
       section("trial-starts", errors, fetchTrialStarts),
+      section("mixpanel-onboarding", errors, fetchOnboardingStartsToday),
       section("views", errors, fetchViews),
       section("support", errors, fetchSupport),
       section("today", errors, fetchToday),
@@ -913,7 +964,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
 
   return {
     generatedAt: new Date().toISOString(),
-    northStar: buildNorthStar(trialStarts),
+    northStar: buildNorthStar(trialStarts, new Date(), onboardingToday),
     revenue: rc ? buildRevenue(rc) : null,
     views,
     support,

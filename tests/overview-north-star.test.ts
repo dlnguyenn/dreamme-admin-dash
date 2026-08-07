@@ -88,4 +88,50 @@ describe("buildNorthStar", () => {
       stale: true,
     });
   });
+
+  /**
+   * Trial start rate = today's trials over today's Mixpanel onboarding starts.
+   * Both sides must be the same Eastern day; the ratio is only meaningful
+   * because the Mixpanel project timezone matches the view's bucketing.
+   */
+  describe("trial start rate", () => {
+    it("divides today's trials by today's onboarding starts", () => {
+      const ns = buildNorthStar(
+        series(["2026-08-04", 81], ["2026-08-05", 40]),
+        NOW,
+        320,
+      );
+      expect(ns.onboardingStartsToday).toBe(320);
+      expect(ns.trialStartRatePct).toBe(12.5);
+    });
+
+    it("rounds to one decimal", () => {
+      const ns = buildNorthStar(series(["2026-08-05", 41]), NOW, 313);
+      expect(ns.trialStartRatePct).toBe(13.1); // 13.099... → 13.1
+    });
+
+    it("omits the rate when Mixpanel is unavailable", () => {
+      const ns = buildNorthStar(series(["2026-08-05", 40]), NOW, null);
+      expect(ns.onboardingStartsToday).toBe(null);
+      expect(ns.trialStartRatePct).toBe(null);
+      expect(ns.trialStartsToday).toBe(40); // the chip still shows trials
+    });
+
+    /**
+     * Just after Eastern midnight both numbers are 0. Rendering 0/0 as a
+     * percentage would show "0% of 0 starts" — a dead funnel that isn't one.
+     */
+    it("omits the rate rather than dividing by zero", () => {
+      const ns = buildNorthStar(series(["2026-08-04", 81]), NOW, 0);
+      expect(ns.trialStartsToday).toBe(0);
+      expect(ns.onboardingStartsToday).toBe(0);
+      expect(ns.trialStartRatePct).toBe(null);
+    });
+
+    it("carries the onboarding count even when trial data is missing", () => {
+      const ns = buildNorthStar(null, NOW, 320);
+      expect(ns.onboardingStartsToday).toBe(320);
+      expect(ns.trialStartRatePct).toBe(null);
+    });
+  });
 });

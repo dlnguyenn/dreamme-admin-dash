@@ -195,11 +195,23 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               minColWidth={isMobile ? 130 : 150}
               stats={[
                 {
-                  label: "Trials today",
+                  // The day basis lives in the label, not the note: days are
+                  // Eastern rather than UTC (a UTC day would roll over at 8pm
+                  // and look like a reset), and the note now has to carry the
+                  // onboarding ratio instead. Mixpanel's project timezone is
+                  // Eastern too, which is what makes that ratio valid.
+                  label: "Trials today · ET",
                   value: ns?.trialStartsToday != null ? fmtNum(ns.trialStartsToday) : "—",
-                  // Days are Eastern, not UTC — say so, because a UTC day would
-                  // roll this over at 8pm and look like a reset.
-                  note: "live · ET day",
+                  // StatStrip notes are nowrap + ellipsis in a ~124px cell
+                  // (measured, and it is 124px on desktop too — the strip is
+                  // four columns inside a narrow panel). "onboarding starts"
+                  // needs 202px and "starts · ET" breaks the first time
+                  // onboarding hits four digits, so this is the longest form
+                  // that survives a spike day: 115px at 100.0% of 1,013.
+                  note:
+                    ns?.trialStartRatePct != null && ns.onboardingStartsToday != null
+                      ? `${ns.trialStartRatePct}% of ${fmtNum(ns.onboardingStartsToday)} starts`
+                      : "live",
                 },
                 { label: "MRR", value: fmtMoney(rev?.mrr) },
                 {
