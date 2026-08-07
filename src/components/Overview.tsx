@@ -18,6 +18,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import type { OverviewPayload } from "@/lib/overview";
 import { Card, ErrorBanner, HeroCard, StatStrip } from "./porcelain";
 import { ViewsPanel } from "./overview/ViewsPanel";
+import { AttributionPanel } from "./overview/AttributionPanel";
 import {
   OpsPanel,
   PaidPanel,
@@ -223,6 +224,8 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               ]}
             />
           </div>
+
+          <AttributionPanel attribution={data?.attribution ?? null} />
 
           <ViewsPanel views={data?.views ?? null} />
 

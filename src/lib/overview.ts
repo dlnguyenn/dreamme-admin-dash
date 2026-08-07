@@ -19,6 +19,11 @@ import {
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
+  consumerDbConfigured,
+  fetchReferralSourcesSince,
+  type ReferralSourceRow,
+} from "@/lib/support/consumer-db";
+import {
   dateWindow,
   easternDate,
   easternDateOffset,
@@ -114,6 +119,30 @@ export interface RevenueSnapshot {
   date: string | null;
   mrr: number | null;
   activeSubscriptions: number | null;
+}
+
+export interface AttributionRow {
+  /** raw referral_source value, e.g. "tiktok" */
+  source: string;
+  today: number;
+  prior7dTotal: number;
+  /** prior7dTotal / 7, one decimal — comparable to a COMPLETE day */
+  avgPerDay: number;
+  /** share of today's answered signups */
+  todaySharePct: number | null;
+  /** share of the prior 7 days' answered signups */
+  priorSharePct: number | null;
+}
+
+export interface AttributionSection {
+  rows: AttributionRow[];
+  /** answered signups only — the share denominators */
+  todayTotal: number;
+  prior7dTotal: number;
+  /** users who skipped the question, today */
+  unansweredToday: number;
+  /** answered / all signups today, as a percentage */
+  coveragePct: number | null;
 }
 
 export interface ViewsSection {
@@ -212,6 +241,8 @@ export interface OverviewPayload {
   topPosts: TopPost[] | null;
   paid: PaidSection | null;
   ops: OpsCheck[] | null;
+  /** Self-reported "how did you hear about us?" mix; null when unavailable. */
+  attribution: AttributionSection | null;
   errors: string[];
 }
 
@@ -256,6 +287,116 @@ async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
   return sbGet<TrialStartsRow[]>(
     `rc_trial_starts_daily?select=date,trial_starts&date=gte.${since}&order=date.asc&limit=${WINDOW_DAYS + 1}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Source attribution — self-reported "how did you hear about us?"
+
+/**
+ * Today's mix by referral source against the prior 7 complete days.
+ *
+ * Pure so the day-bucketing and share math are testable without a network.
+ *
+ * Compares SHARE, not counts. Today is a partial day: at 3pm Eastern every
+ * raw count sits well below a full-day average, so a count-vs-count read
+ * makes every source look like it is collapsing, every afternoon — the same
+ * false alarm migration 0060 was written to kill on the trials tile. Share of
+ * mix is unaffected by how much of the day has elapsed. Counts are still
+ * carried for volume, they just aren't what the comparison is built on.
+ */
+export function buildAttribution(
+  rows: ReferralSourceRow[] | null,
+  now = new Date(),
+): AttributionSection {
+  const empty: AttributionSection = {
+    rows: [],
+    todayTotal: 0,
+    prior7dTotal: 0,
+    unansweredToday: 0,
+    coveragePct: null,
+  };
+  if (!rows) return empty;
+
+  const today = easternDate(now);
+  const windowStart = easternDateOffset(7, now); // 7 complete days before today
+
+  const todayBy = new Map<string, number>();
+  const priorBy = new Map<string, number>();
+  let todayTotal = 0;
+  let prior7dTotal = 0;
+  let unansweredToday = 0;
+  let todayAll = 0;
+
+  for (const r of rows) {
+    // Bucket on the Eastern calendar day, like every other daily number here.
+    const day = easternDate(new Date(r.joined_at));
+    const isToday = day === today;
+    // Strictly before today and no earlier than the window start.
+    const isPrior = day >= windowStart && day < today;
+    if (!isToday && !isPrior) continue;
+
+    const source = r.referral_source?.trim().toLowerCase() || "";
+    if (isToday) todayAll++;
+    if (!source) {
+      // Skipped the question: counted for coverage, excluded from shares so
+      // it can't dilute them into meaninglessness.
+      if (isToday) unansweredToday++;
+      continue;
+    }
+    if (isToday) {
+      todayBy.set(source, (todayBy.get(source) ?? 0) + 1);
+      todayTotal++;
+    } else {
+      priorBy.set(source, (priorBy.get(source) ?? 0) + 1);
+      prior7dTotal++;
+    }
+  }
+
+  const pct = (n: number, total: number) =>
+    total > 0 ? Math.round((n / total) * 1000) / 10 : null;
+
+  // Union of both windows — a source can be brand new today (youtube, seen
+  // 2026-08-07 with 1 today and 0 before) or have dried up entirely.
+  const sources = [...new Set([...todayBy.keys(), ...priorBy.keys()])];
+
+  const out = sources.map((source) => {
+    const todayN = todayBy.get(source) ?? 0;
+    const priorN = priorBy.get(source) ?? 0;
+    return {
+      source,
+      today: todayN,
+      prior7dTotal: priorN,
+      avgPerDay: Math.round((priorN / 7) * 10) / 10,
+      todaySharePct: pct(todayN, todayTotal),
+      priorSharePct: pct(priorN, prior7dTotal),
+    };
+  });
+
+  // Today's volume first — that's what the panel is being scanned for. Ties
+  // break on the baseline so the order is stable across refreshes.
+  out.sort((a, b) => b.today - a.today || b.prior7dTotal - a.prior7dTotal);
+
+  return {
+    rows: out,
+    todayTotal,
+    prior7dTotal,
+    unansweredToday,
+    coveragePct: pct(todayTotal, todayAll),
+  };
+}
+
+/** 8-day window: today plus the 7 complete days it is compared against. */
+async function fetchAttribution(): Promise<AttributionSection> {
+  if (!consumerDbConfigured()) {
+    throw new Error("Consumer Supabase env missing");
+  }
+  // Fetch from UTC midnight one day EARLIER than needed and let
+  // buildAttribution do the exact Eastern-day filtering. Deriving a precise
+  // Eastern boundary here would mean hardcoding an offset that is wrong for
+  // half the year (EDT -04:00 vs EST -05:00); over-fetching ~250 rows is the
+  // cheaper way to be right in both.
+  const since = `${easternDateOffset(8)}T00:00:00Z`;
+  return buildAttribution(await fetchReferralSourcesSince(since));
 }
 
 /**
@@ -949,6 +1090,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     topPosts,
     paid,
     ops,
+    attribution,
   ] = await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
       section("trial-starts", errors, fetchTrialStarts),
@@ -960,6 +1102,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("top-posts", errors, fetchTopPosts),
       section("paid", errors, fetchPaid),
       section("ops", errors, fetchOps),
+      section("attribution", errors, fetchAttribution),
     ]);
 
   return {
@@ -973,6 +1116,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     topPosts,
     paid,
     ops,
+    attribution,
     errors,
   };
 }

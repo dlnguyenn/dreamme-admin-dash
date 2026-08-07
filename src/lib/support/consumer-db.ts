@@ -78,6 +78,42 @@ export async function getUserById(id: string): Promise<ConsumerUserRow | null> {
   return rows[0] ?? null;
 }
 
+export interface ReferralSourceRow {
+  joined_at: string;
+  /** null when the user skipped the "how did you hear about us?" step. */
+  referral_source: string | null;
+}
+
+/** PostgREST's default ceiling; a page shorter than this means we're done. */
+const PAGE_SIZE = 1000;
+/** Bound the walk — a bad window must not be able to page forever. */
+const MAX_PAGES = 5;
+
+/**
+ * Signup rows since `sinceIso`, for the Overview's source-attribution panel.
+ *
+ * Pages explicitly: the 8-day window is ~1,960 rows (measured 2026-08-07),
+ * and PostgREST silently truncates at 1,000. A silent truncation here would
+ * not error — it would just quietly drop the oldest days out of the baseline
+ * and make every share look wrong, which is far worse than a hard failure.
+ */
+export async function fetchReferralSourcesSince(
+  sinceIso: string,
+): Promise<ReferralSourceRow[]> {
+  const out: ReferralSourceRow[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * PAGE_SIZE;
+    const rows = await cGet<ReferralSourceRow[]>(
+      `users?select=joined_at,referral_source` +
+        `&joined_at=gte.${encodeURIComponent(sinceIso)}` +
+        `&order=joined_at.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+    );
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) return out;
+  }
+  return out;
+}
+
 export interface ConsumerAuthInfo {
   createdAt: string | null;
   lastSignInAt: string | null;

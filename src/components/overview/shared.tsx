@@ -33,6 +33,45 @@ export const SOURCE_LABEL: Record<string, string> = {
 export const sourceColor = (s: string) => SOURCE_COLOR[s] ?? "var(--ink-4)";
 export const sourceLabel = (s: string) => SOURCE_LABEL[s] ?? s;
 
+/**
+ * Self-reported referral sources (users.referral_source) — a DIFFERENT axis
+ * from the publishing sources above, so it gets its own maps rather than
+ * overloading them.
+ *
+ * The option list belongs to the app's onboarding, not to us: `youtube`
+ * appeared on 2026-08-07 with no change here. Both lookups therefore degrade
+ * gracefully instead of assuming a fixed set. Colour is a secondary cue only —
+ * every row is labelled in text.
+ */
+export const REFERRAL_COLOR: Record<string, string> = {
+  tiktok: "var(--cat-1)",
+  facebook: "var(--cat-3)",
+  instagram: "var(--cat-4)",
+  app_store: "var(--cat-2)",
+  google: "var(--cat-5)",
+  youtube: "var(--cat-7)",
+  friend_family: "var(--cat-6)",
+  other: "var(--cat-8)",
+};
+
+export const REFERRAL_LABEL: Record<string, string> = {
+  tiktok: "TikTok",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  app_store: "App Store",
+  google: "Google",
+  youtube: "YouTube",
+  friend_family: "Friend / family",
+  other: "Other",
+};
+
+export const referralColor = (s: string) => REFERRAL_COLOR[s] ?? "var(--ink-4)";
+
+/** Unknown values are humanized: `some_new_source` → "Some new source". */
+export const referralLabel = (s: string) =>
+  REFERRAL_LABEL[s] ??
+  s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
 // ---- Formatters ---------------------------------------------------------
 
 export function fmtCompact(n: number | null | undefined): string {
