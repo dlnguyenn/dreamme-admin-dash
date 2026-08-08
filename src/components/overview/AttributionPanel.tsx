@@ -206,9 +206,16 @@ export function AttributionPanel({
   const days = series?.days ?? [];
   const todayIso = days.length ? days[days.length - 1] : null;
   const selectedDay = todayIso ? days[days.length - 1 - offset] : null;
-  const viewing =
-    (selectedDay && series?.byDay[selectedDay]) || (offset === 0 ? attribution : null);
   const isToday = offset === 0;
+
+  // Today comes from the POLLED payload, not the series. The series is
+  // fetched once per mount and cached, so preferring its "today" entry would
+  // freeze the live day at page-load time while the rest of the page kept
+  // refreshing every 120s — stale in the one place that actually moves.
+  // Past days are complete and never change, so the series owns those.
+  const viewing = isToday
+    ? (attribution ?? (selectedDay ? (series?.byDay[selectedDay] ?? null) : null))
+    : (selectedDay ? (series?.byDay[selectedDay] ?? null) : null);
 
   if (!viewing) {
     return (
