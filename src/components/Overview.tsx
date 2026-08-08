@@ -19,6 +19,7 @@ import type { OverviewPayload } from "@/lib/overview";
 import { Card, ErrorBanner, HeroCard, StatStrip } from "./porcelain";
 import { ViewsPanel } from "./overview/ViewsPanel";
 import { AttributionPanel } from "./overview/AttributionPanel";
+import { MorningPanel } from "./overview/MorningPanel";
 import {
   OpsPanel,
   PaidPanel,
@@ -224,6 +225,9 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               ]}
             />
           </div>
+
+          {/* Did the machines run — the morning glance, above the analysis. */}
+          <MorningPanel morning={data?.morning ?? null} />
 
           <AttributionPanel attribution={data?.attribution ?? null} />
 

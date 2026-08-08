@@ -9,7 +9,13 @@
  * Per-file PostgREST helper, same convention as clippers.ts and support/db.ts.
  */
 import { SUPABASE_URL } from "@/lib/supabase";
-import { syncBatchPostState } from "@/lib/batchState";
+import { syncBatchPostState, syncMorningPostState } from "@/lib/batchState";
+import {
+  EXPECTED_MORNING,
+  buildMorningSection,
+  type MorningPostRow,
+  type MorningSection,
+} from "@/lib/morningPosts";
 import type { TilePost } from "@/lib/batchDisplay";
 import {
   doublespeedConfigured,
@@ -269,6 +275,8 @@ export interface OverviewPayload {
   views: ViewsSection | null;
   support: SupportSection | null;
   today: TodaySection | null;
+  /** This morning's routine posts on the FB/IG sets; null on section failure. */
+  morning: MorningSection | null;
   /** Fleet-wide queue coverage; null when the Doublespeed key isn't set. */
   queue: QueueCoverage | null;
   topPosts: TopPost[] | null;
@@ -921,6 +929,26 @@ async function fetchViews(): Promise<ViewsSection> {
   };
 }
 
+/**
+ * This morning's routine posts. Rows exist once the routines' publish step
+ * (claude/scripts/publish-morning-posts.py) has run, so an empty read before
+ * ~6am ET is a normal state — buildMorningSection renders it as a full grid
+ * of "missing" tiles, which before the routines have run is simply true.
+ * soft(): the table postdates deploys that may still be serving (0064).
+ */
+async function fetchMorning(): Promise<MorningSection> {
+  const today = easternDate();
+  await syncMorningPostState({ batchDate: today });
+  const rows = await soft<MorningPostRow[]>(
+    `morning_posts?select=batch_date,routine,set_key,platform,username,` +
+      `doublespeed_post_id,post_kind,caption,sound,thumb_url,video_url,` +
+      `created_status,post_status,posted_at,public_post_url` +
+      `&batch_date=eq.${today}&order=set_key.asc,platform.asc&limit=100`,
+    [],
+  );
+  return buildMorningSection(rows, EXPECTED_MORNING, today);
+}
+
 interface SupportThreadLite {
   id: string;
   subject: string | null;
@@ -1318,6 +1346,13 @@ const OPS_CHECKS: {
     expectHours: 30,
   },
   {
+    key: "morning",
+    label: "Morning posts published",
+    path: "morning_posts?select=created_at&order=created_at.desc&limit=1",
+    field: "created_at",
+    expectHours: 30,
+  },
+  {
     key: "views",
     label: "Post view sync",
     path: "social_post_views?select=date&order=date.desc&limit=1",
@@ -1414,6 +1449,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     views,
     support,
     today,
+    morning,
     queue,
     topPosts,
     paid,
@@ -1426,6 +1462,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("views", errors, fetchViews),
       section("support", errors, fetchSupport),
       section("today", errors, fetchToday),
+      section("morning", errors, fetchMorning),
       section("queue", errors, fetchQueueCoverage),
       section("top-posts", errors, fetchTopPosts),
       section("paid", errors, fetchPaid),
@@ -1440,6 +1477,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     views,
     support,
     today,
+    morning,
     queue: queue ?? null,
     topPosts,
     paid,

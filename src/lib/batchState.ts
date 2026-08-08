@@ -234,3 +234,94 @@ export async function syncBatchPostState(opts?: {
     };
   }
 }
+
+/**
+ * Same refresh for morning_posts (the daily routine posts on the FB/IG sets).
+ *
+ * Differences from the batch sync are all scale, not shape: the rows are hours
+ * old, so the API lookback is days not weeks, and the read is scoped to one
+ * batch_date. The draft caveat is sharper here — these rows are CREATED as
+ * drafts and the REST API reports drafts as "scheduled", so the synced status
+ * is only meaningful for terminal transitions (posted / failed). Interpreting
+ * it stays in morningPosts.toMorningState(); this function records verbatim.
+ */
+export async function syncMorningPostState(opts: {
+  batchDate: string;
+  maxAgeMs?: number;
+  lookbackDays?: number;
+}): Promise<{ ok: boolean; updated: number; skipped: boolean; error?: string }> {
+  if (!batchStateConfigured()) {
+    return { ok: false, updated: 0, skipped: true, error: "not configured" };
+  }
+  const maxAgeMs = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const lookbackDays = opts.lookbackDays ?? 2;
+
+  try {
+    const rowsRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/morning_posts` +
+        `?select=id,doublespeed_post_id,post_status,posted_at,public_post_url,state_synced_at` +
+        `&batch_date=eq.${encodeURIComponent(opts.batchDate)}` +
+        `&doublespeed_post_id=not.is.null` +
+        `&order=state_synced_at.asc.nullsfirst&limit=100`,
+      { headers: sbHeaders(), cache: "no-store" },
+    );
+    if (!rowsRes.ok) {
+      throw new Error(`rows read ${rowsRes.status}: ${await rowsRes.text()}`);
+    }
+    const rows = (await rowsRes.json()) as StateRow[];
+    if (rows.length === 0) return { ok: true, updated: 0, skipped: true };
+
+    const oldest = rows[0].state_synced_at;
+    if (oldest && Date.now() - Date.parse(oldest) < maxAgeMs) {
+      return { ok: true, updated: 0, skipped: true };
+    }
+
+    const since = new Date(Date.now() - lookbackDays * 86_400_000);
+    const remote = new Map<string, BatchPostState>();
+    await collect("all", since, remote);
+
+    const now = new Date().toISOString();
+    let updated = 0;
+
+    for (const row of rows) {
+      const id = row.doublespeed_post_id;
+      if (!id) continue;
+      const next = remote.get(id);
+      if (!next) continue;
+
+      const changed =
+        next.post_status !== row.post_status ||
+        next.posted_at !== row.posted_at ||
+        next.public_post_url !== row.public_post_url;
+
+      const patch: Record<string, unknown> = { state_synced_at: now };
+      if (changed) {
+        patch.post_status = next.post_status;
+        patch.posted_at = next.posted_at;
+        patch.public_post_url = next.public_post_url;
+      }
+
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/morning_posts?id=eq.${row.id}`,
+        {
+          method: "PATCH",
+          headers: sbHeaders({ Prefer: "return=minimal" }),
+          body: JSON.stringify(patch),
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`patch ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      }
+      if (changed) updated++;
+    }
+
+    return { ok: true, updated, skipped: false };
+  } catch (e) {
+    return {
+      ok: false,
+      updated: 0,
+      skipped: false,
+      error: (e as Error).message,
+    };
+  }
+}
