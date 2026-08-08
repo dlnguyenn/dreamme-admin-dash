@@ -226,12 +226,12 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
             />
           </div>
 
-          {/* Did the machines run — the morning glance, above the analysis. */}
-          <MorningPanel morning={data?.morning ?? null} />
-
           <AttributionPanel attribution={data?.attribution ?? null} />
 
           <ViewsPanel views={data?.views ?? null} />
+
+          {/* Did the machines run — sits under the reach numbers it feeds. */}
+          <MorningPanel morning={data?.morning ?? null} />
 
           <div
             style={{

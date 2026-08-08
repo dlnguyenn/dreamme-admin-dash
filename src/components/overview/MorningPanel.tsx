@@ -1,16 +1,16 @@
 "use client";
 
 /**
- * "This morning's posts" — the daily routine output on the FB/IG account
- * sets, as tiles. The glance this exists for: every expected set x platform
- * pair has a tile, healthy tiles are bare, anything needing Dan is flagged,
- * and a routine that didn't run shows as dashed NOT CREATED gaps.
+ * "This morning's posts" — the daily routines' output as an Instagram-style
+ * tile grid, one tile per SET (not per platform: the FB and IG posts are the
+ * same creative). The glance this exists for: every expected set has a tile,
+ * healthy tiles are bare, anything needing Dan carries a red flag, and a
+ * routine that didn't run shows as a dashed gap.
  *
- * Deliberately its own tile component rather than reusing SlideshowTile:
- * that one is persona/views-bound (views pill, persona registry) and forcing
- * TilePost here would render a meaningless "—" views badge on every card.
- * The visual language (9:16 card, overlay pills, dashed missing slot) is
- * copied so the two grids read as one system.
+ * Deliberately its own tile component rather than reusing SlideshowTile: that
+ * one is persona/views-bound (views pill, persona registry) and 9:16, and
+ * forcing TilePost here would render a meaningless "—" views badge on every
+ * card.
  */
 
 import * as React from "react";
@@ -24,7 +24,6 @@ import { Card, SectionHeader, StatusPill } from "../porcelain";
 import { Sheet } from "../Sheet";
 import { Chip } from "../ui";
 import { overlayPill } from "../tileOverlay";
-import { tileGridStyle } from "../SlideshowTile";
 import { EmptyState } from "./shared";
 
 const PLATFORM_SHORT: Record<string, string> = {
@@ -32,44 +31,84 @@ const PLATFORM_SHORT: Record<string, string> = {
   instagram: "IG",
 };
 
-function MissingMorningTile({ tile }: { tile: MorningTileData }) {
+/** Past this many sets, one row would make the tiles too small to read. */
+const MAX_ONE_ROW = 9;
+
+/**
+ * IG profile grid: uniform 4:5 cells, tight gaps, no per-row labels. Local
+ * rather than a change to the shared tileGridStyle — the persona grids on this
+ * same page depend on that being 9:16 at 190px, and the two grids are showing
+ * different things.
+ *
+ * Desktop columns track the tile COUNT rather than a minmax width, so the whole
+ * roster lands on exactly one row and stays flush to both edges. auto-fill with
+ * a fixed min put 6 across and orphaned the 7th on a second row, which defeats
+ * the point of a one-glance strip.
+ */
+function morningGridStyle(isMobile: boolean, count: number): React.CSSProperties {
+  const cols = Math.min(Math.max(count, 1), MAX_ONE_ROW);
+  return {
+    display: "grid",
+    gridTemplateColumns: isMobile
+      ? "repeat(3, minmax(0, 1fr))"
+      : `repeat(${cols}, minmax(0, 1fr))`,
+    gap: isMobile ? 2 : 3,
+    alignItems: "start",
+  };
+}
+
+/** Shared by the real and the missing tile so the grid stays uniform. */
+const cellStyle: React.CSSProperties = {
+  position: "relative",
+  aspectRatio: "4 / 5",
+  borderRadius: 4,
+  overflow: "hidden",
+};
+
+function TileLabel({ tile }: { tile: MorningTileData }) {
   return (
     <div
-      title={`${tile.setLabel} ${PLATFORM_SHORT[tile.platform]} — not created this morning`}
+      title={tile.routine}
       style={{
-        position: "relative",
-        aspectRatio: "9 / 16",
-        borderRadius: 12,
-        border: "1px dashed var(--warning)",
-        background: "var(--warning-soft)",
-        display: "grid",
-        placeItems: "center",
-        gap: 4,
-        padding: 8,
-        textAlign: "center",
+        font: "500 11px var(--font-ui)",
+        color: "var(--ink-4)",
+        marginTop: 5,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
       }}
     >
-      <div>
+      {tile.setLabel}
+    </div>
+  );
+}
+
+function MissingMorningTile({ tile }: { tile: MorningTileData }) {
+  return (
+    <div>
+      <div
+        title={`${tile.setLabel} — nothing created this morning`}
+        style={{
+          ...cellStyle,
+          border: "1px dashed var(--warning)",
+          background: "var(--warning-soft)",
+          display: "grid",
+          placeItems: "center",
+          padding: 6,
+          textAlign: "center",
+        }}
+      >
         <div
           style={{
-            font: "700 11px var(--font-ui)",
-            color: "var(--warning-text)",
-            marginBottom: 3,
-          }}
-        >
-          {tile.setLabel} {PLATFORM_SHORT[tile.platform]}
-        </div>
-        <div
-          style={{
-            font: "600 9.5px var(--font-ui)",
+            font: "600 9px var(--font-ui)",
             letterSpacing: "0.04em",
             color: "var(--warning-text)",
-            opacity: 0.85,
           }}
         >
           NOT CREATED
         </div>
       </div>
+      <TileLabel tile={tile} />
     </div>
   );
 }
@@ -82,98 +121,105 @@ function MorningTileCard({
   onOpen: () => void;
 }) {
   const [hover, setHover] = React.useState(false);
-  if (tile.state === "missing") return <MissingMorningTile tile={tile} />;
+  if (tile.coverage === "none") return <MissingMorningTile tile={tile} />;
 
-  const flag = morningTileProblem(tile.state);
-  const label = `${tile.setLabel} ${PLATFORM_SHORT[tile.platform]}`;
+  const flag = morningTileProblem(tile.state, tile.coverage);
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onFocus={() => setHover(true)}
-      onBlur={() => setHover(false)}
-      title={tile.caption ? `${label} — ${tile.caption}` : label}
-      aria-label={label}
-      style={{
-        display: "block",
-        width: "100%",
-        padding: 0,
-        border: "none",
-        background: "none",
-        textAlign: "left",
-        cursor: "pointer",
-        font: "inherit",
-      }}
-    >
-      <div
+    <div>
+      <button
+        type="button"
+        onClick={onOpen}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onFocus={() => setHover(true)}
+        onBlur={() => setHover(false)}
+        title={tile.caption ? `${tile.setLabel} — ${tile.caption}` : tile.setLabel}
+        aria-label={tile.setLabel}
         style={{
-          position: "relative",
-          aspectRatio: "9 / 16",
-          borderRadius: 12,
-          overflow: "hidden",
-          background: "var(--surface-2)",
-          border: "1px solid var(--line)",
-          boxShadow: hover ? "var(--shadow-md)" : "var(--shadow-xs)",
-          transition: "box-shadow 180ms ease",
+          display: "block",
+          width: "100%",
+          padding: 0,
+          border: "none",
+          background: "none",
+          textAlign: "left",
+          cursor: "pointer",
+          font: "inherit",
         }}
       >
-        {tile.thumbUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={tile.thumbUrl}
-            alt={`Post — ${label}`}
-            loading="lazy"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-              transform: hover ? "scale(1.03)" : "scale(1)",
-              transition: "transform 220ms ease",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "grid",
-              placeItems: "center",
-              color: "var(--ink-3)",
-              font: "400 11px var(--font-ui)",
-            }}
-          >
-            no thumbnail
-          </div>
-        )}
+        <div
+          style={{
+            ...cellStyle,
+            background: "var(--surface-2)",
+            border: "1px solid var(--line)",
+            boxShadow: hover ? "var(--shadow-md)" : "none",
+            transition: "box-shadow 180ms ease",
+          }}
+        >
+          {tile.thumbUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={tile.thumbUrl}
+              alt={tile.setLabel}
+              loading="lazy"
+              decoding="async"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                // TOP-anchored, not centred. Both formats put their
+                // identifying content near the top of a 9:16 frame — deck
+                // cover hooks sit at the top edge (see SlideshowTile.tsx),
+                // and a wall-of-text still shows her face plus the opening
+                // lines. A centred crop would decapitate the decks.
+                objectPosition: "top",
+                display: "block",
+                transform: hover ? "scale(1.03)" : "scale(1)",
+                transition: "transform 220ms ease",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "grid",
+                placeItems: "center",
+                color: "var(--ink-3)",
+                font: "400 10px var(--font-ui)",
+              }}
+            >
+              no thumbnail
+            </div>
+          )}
 
-        {/* Platform is the one fact the persona grid never needed and this
-            grid cannot live without — the same set posts to both surfaces. */}
-        <span style={{ ...overlayPill, top: 8, left: 8 }}>
-          {PLATFORM_SHORT[tile.platform]}
-        </span>
+          {/* Only shown when a set did NOT make both surfaces — otherwise the
+              artwork stays bare, which is what makes the grid read clean. */}
+          {tile.coverage !== "both" && (
+            <span style={{ ...overlayPill, bottom: 6, left: 6 }}>
+              {PLATFORM_SHORT[tile.coverage] ?? tile.coverage}
+            </span>
+          )}
 
-        {flag && (
-          <span
-            style={{
-              ...overlayPill,
-              top: 8,
-              right: 8,
-              background: "var(--danger)",
-              color: "var(--on-solid)",
-              backdropFilter: "none",
-              WebkitBackdropFilter: "none",
-            }}
-          >
-            {flag}
-          </span>
-        )}
-      </div>
-    </button>
+          {flag && (
+            <span
+              style={{
+                ...overlayPill,
+                top: 6,
+                right: 6,
+                background: "var(--danger)",
+                color: "var(--on-solid)",
+                backdropFilter: "none",
+                WebkitBackdropFilter: "none",
+              }}
+            >
+              {flag}
+            </span>
+          )}
+        </div>
+      </button>
+      <TileLabel tile={tile} />
+    </div>
   );
 }
 
@@ -184,29 +230,28 @@ function MorningTileDetail({
   tile: MorningTileData;
   onClose: () => void;
 }) {
+  // Same creative on every surface, so the first entry that has a render is
+  // the one to play.
+  const video = tile.platforms.find((p) => p.videoUrl)?.videoUrl ?? null;
+
   return (
-    <Sheet
-      open
-      onClose={onClose}
-      desktopMaxWidth={560}
-      ariaLabel={`${tile.setLabel} ${PLATFORM_SHORT[tile.platform]} post`}
-    >
+    <Sheet open onClose={onClose} desktopMaxWidth={560} ariaLabel={`${tile.setLabel} post`}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Chip tone="neutral">{tile.setLabel}</Chip>
-          <Chip tone="neutral">{PLATFORM_SHORT[tile.platform]}</Chip>
-          {tile.username && <Chip tone="neutral">@{tile.username}</Chip>}
-          <Chip tone="neutral">{tile.state}</Chip>
+          <Chip tone="neutral">{tile.routine}</Chip>
+          <Chip tone="neutral">{tile.postKind}</Chip>
+          <Chip tone={tile.state === "posted" ? "success" : "neutral"}>{tile.state}</Chip>
         </div>
 
-        {tile.postKind === "video" && tile.videoUrl ? (
-          // The one video element in the dash, Sheet-only by design — the
-          // grid stays images so 14 tiles never buffer 14 videos.
+        {tile.postKind === "video" && video ? (
+          // The one video element in the dash, Sheet-only by design — the grid
+          // stays images so 7 tiles never buffer 7 videos.
           <video
             controls
             preload="none"
             playsInline
-            src={tile.videoUrl}
+            src={video}
             poster={tile.thumbUrl ?? undefined}
             style={{
               width: "100%",
@@ -220,10 +265,12 @@ function MorningTileDetail({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={tile.thumbUrl}
-            alt={`Post — ${tile.setLabel}`}
+            alt={tile.setLabel}
             style={{
               width: "100%",
               maxHeight: "46vh",
+              // Uncropped here — the grid's 4:5 crop is for density, but the
+              // detail view should show what actually went out.
               objectFit: "contain",
               borderRadius: 10,
               background: "var(--surface-2)",
@@ -232,9 +279,54 @@ function MorningTileDetail({
           />
         ) : null}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {tile.sound && <Chip tone="neutral">♪ {tile.sound}</Chip>}
-          <Chip tone="neutral">{tile.postKind}</Chip>
+        {/* One row per platform: this is where the collapsed tile gives back
+            its per-surface detail, including each platform's own sound. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {tile.platforms.map((p) => (
+            <div
+              key={p.platform}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+                font: "400 12px var(--font-ui)",
+                color: "var(--ink-2)",
+                background: "var(--surface-2)",
+                border: "1px solid var(--line)",
+                borderRadius: 9,
+                padding: "7px 10px",
+              }}
+            >
+              <span style={{ font: "700 11px var(--font-ui)", color: "var(--ink)" }}>
+                {PLATFORM_SHORT[p.platform] ?? p.platform}
+              </span>
+              {p.username && <span style={{ color: "var(--ink-4)" }}>@{p.username}</span>}
+              <Chip tone={p.state === "posted" ? "success" : "neutral"}>{p.state}</Chip>
+              {p.sound && <span style={{ color: "var(--ink-4)" }}>♪ {p.sound}</span>}
+              {p.publicPostUrl && (
+                <a
+                  href={p.publicPostUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    marginLeft: "auto",
+                    font: "600 12px var(--font-ui)",
+                    color: "var(--link)",
+                    textDecoration: "none",
+                  }}
+                >
+                  Live post ↗
+                </a>
+              )}
+            </div>
+          ))}
+          {tile.coverage !== "both" && (
+            <div style={{ font: "600 11.5px var(--font-ui)", color: "var(--danger)" }}>
+              Only went to {PLATFORM_SHORT[tile.coverage] ?? tile.coverage} — the other
+              surface has no post for this set today.
+            </div>
+          )}
         </div>
 
         {tile.caption && (
@@ -254,21 +346,6 @@ function MorningTileDetail({
             {tile.caption}
           </div>
         )}
-
-        {tile.publicPostUrl && (
-          <a
-            href={tile.publicPostUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              font: "600 12.5px var(--font-ui)",
-              color: "var(--link)",
-              textDecoration: "none",
-            }}
-          >
-            Live post ↗
-          </a>
-        )}
       </div>
     </Sheet>
   );
@@ -278,7 +355,8 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
   const isMobile = useIsMobile();
   const [openTile, setOpenTile] = React.useState<MorningTileData | null>(null);
 
-  const attention = (morning?.missing ?? 0) + (morning?.failed ?? 0) > 0;
+  const attention =
+    (morning?.missing ?? 0) + (morning?.failed ?? 0) + (morning?.partial ?? 0) > 0;
 
   return (
     <div>
@@ -287,7 +365,9 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
         icon="Sun"
         title="This morning's posts"
         meta={
-          morning ? `${morning.created}/${morning.expected} created · ${morning.date}` : undefined
+          morning
+            ? `${morning.created}/${morning.expected} sets · ${morning.date}`
+            : undefined
         }
       />
       <Card pad={isMobile ? "14px 14px" : "18px 20px"}>
@@ -295,10 +375,9 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
           <EmptyState title="Morning posts unavailable">
             The section failed to load — see the error banner.
           </EmptyState>
-        ) : morning.created === 0 && morning.missing === morning.expected ? (
+        ) : morning.created === 0 ? (
           <EmptyState title="Nothing published yet this morning">
-            Tiles appear once the routines run{" "}
-            <code>publish-morning-posts.py</code>.
+            Tiles appear once the routines run <code>publish-morning-posts.py</code>.
           </EmptyState>
         ) : (
           <>
@@ -324,6 +403,9 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
               {morning.drafts > 0 && (
                 <StatusPill kind="attention">{morning.drafts} DRAFT</StatusPill>
               )}
+              {morning.partial > 0 && (
+                <StatusPill kind="danger">{morning.partial} PARTIAL</StatusPill>
+              )}
               {morning.missing > 0 && (
                 <StatusPill kind="danger">{morning.missing} MISSING</StatusPill>
               )}
@@ -333,44 +415,15 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
             </div>
 
             <div
-              data-testid="morning-groups"
-              style={{ display: "flex", flexDirection: "column", gap: 16 }}
+              data-testid="morning-tiles"
+              style={morningGridStyle(isMobile, morning.tiles.length)}
             >
-              {morning.groups.map((g) => (
-                <div key={g.setKey}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span style={{ font: "700 12.5px var(--font-ui)", color: "var(--ink)" }}>
-                      {g.label}
-                    </span>
-                    <span style={{ font: "400 11px var(--font-ui)", color: "var(--ink-4)" }}>
-                      {g.routine}
-                    </span>
-                  </div>
-                  <div
-                    data-testid={`morning-tiles-${g.setKey}`}
-                    style={{
-                      ...tileGridStyle(isMobile),
-                      gridTemplateColumns: isMobile
-                        ? "repeat(2, minmax(0, 1fr))"
-                        : "repeat(auto-fill, minmax(140px, 1fr))",
-                    }}
-                  >
-                    {g.tiles.map((t) => (
-                      <MorningTileCard
-                        key={`${t.setKey}-${t.platform}`}
-                        tile={t}
-                        onOpen={() => setOpenTile(t)}
-                      />
-                    ))}
-                  </div>
-                </div>
+              {morning.tiles.map((t) => (
+                <MorningTileCard
+                  key={t.setKey}
+                  tile={t}
+                  onOpen={() => setOpenTile(t)}
+                />
               ))}
             </div>
           </>
