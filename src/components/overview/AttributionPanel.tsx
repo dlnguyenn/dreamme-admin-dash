@@ -309,7 +309,7 @@ export function AttributionPanel({
                       display: "grid",
                       gridTemplateColumns: isMobile
                         ? "1fr auto"
-                        : "150px 58px 1fr 72px 132px",
+                        : "144px 52px 96px 1fr 72px 126px",
                       alignItems: "center",
                       gap: isMobile ? 6 : 12,
                       rowGap: 4,
@@ -354,6 +354,37 @@ export function AttributionPanel({
                       }}
                     >
                       {fmtNum(r.today)}
+                    </span>
+
+                    {/* Trials from THIS day's signups — the quality signal
+                        the signup count alone can't give. On 2026-08-05
+                        Facebook sent 55 signups for 6 trials (10.9%) while
+                        TikTok sent 74 for 21 (28.4%). */}
+                    <span
+                      style={{
+                        gridColumn: isMobile ? "1 / -1" : undefined,
+                        display: "inline-flex",
+                        alignItems: "baseline",
+                        gap: 5,
+                        font: "500 12.5px var(--font-ui)",
+                        fontVariantNumeric: "tabular-nums",
+                        color: "var(--ink-2)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isMobile && (
+                        <span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
+                          trials
+                        </span>
+                      )}
+                      {/* fmtNum renders null as "—", which is what a failed
+                          trial lookup must look like — never a confident 0. */}
+                      {fmtNum(r.trials)}
+                      {r.trialRatePct != null && (
+                        <span style={{ color: "var(--ink-4)", fontSize: 11 }}>
+                          {fmtPct(r.trialRatePct, 0)}
+                        </span>
+                      )}
                     </span>
 
                     {/* Share bar: the day filled, its baseline as a tick. */}
@@ -434,18 +465,58 @@ export function AttributionPanel({
                 marginTop: 14,
                 paddingTop: 12,
                 borderTop: "1px solid var(--line)",
-                font: "400 11.5px var(--font-ui)",
-                color: "var(--ink-4)",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "baseline",
+                gap: isMobile ? 10 : 18,
               }}
             >
-              {fmtNum(viewing.todayTotal)} answered {isToday ? "today" : "that day"} ·{" "}
-              {fmtNum(viewing.prior7dTotal)} over the prior 7 days
-              {viewing.unansweredToday > 0 && (
-                <> · {fmtNum(viewing.unansweredToday)} skipped the question</>
-              )}
-              {viewing.coveragePct != null && (
-                <> · {fmtPct(viewing.coveragePct, 0)} coverage</>
-              )}
+              {/* The headline the rows roll up to. Cohort-based, so it counts
+                  trials from everyone who signed up that day — including the
+                  ~1% who skipped the source question — and it will NOT match
+                  the "Trials today" tile, which counts trial EVENTS on the
+                  date across every cohort. Different question on purpose. */}
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 7,
+                  font: "400 11.5px var(--font-ui)",
+                  color: "var(--ink-4)",
+                }}
+              >
+                <span style={{ font: "650 15px var(--font-ui)", color: "var(--ink)" }}>
+                  {fmtNum(viewing.trialsTotal)}
+                </span>
+                {viewing.trialsTotal == null
+                  ? "trials — lookup unavailable"
+                  : `trials from ${isToday ? "today's" : "that day's"} signups`}
+                {viewing.trialRatePct != null && (
+                  <span style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+                    {fmtPct(viewing.trialRatePct, 1)}
+                  </span>
+                )}
+              </span>
+
+              <span
+                style={{
+                  font: "400 11.5px var(--font-ui)",
+                  color: "var(--ink-4)",
+                }}
+              >
+                {fmtNum(viewing.todayTotal)} answered ·{" "}
+                {fmtNum(viewing.prior7dTotal)} over the prior 7 days
+                {viewing.unansweredToday > 0 && (
+                  <> · {fmtNum(viewing.unansweredToday)} skipped</>
+                )}
+                {viewing.coveragePct != null && (
+                  <> · {fmtPct(viewing.coveragePct, 0)} coverage</>
+                )}
+                {/* Cohorts keep converting for ~2 days, so the newest ones
+                    read low until they mature. Say so rather than letting a
+                    fresh day look like a collapse in quality. */}
+                {offset <= 1 && <> · still maturing</>}
+              </span>
             </div>
           </>
         )}

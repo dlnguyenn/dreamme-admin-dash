@@ -19,6 +19,11 @@ import {
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
+  PAGE_SIZE,
+  countFromContentRange,
+  fetchAllPages,
+} from "@/lib/pagedFetch";
+import {
   consumerDbConfigured,
   fetchReferralSourcesSince,
   type ReferralSourceRow,
@@ -134,6 +139,14 @@ export interface AttributionRow {
   todaySharePct: number | null;
   /** share of the prior 7 days' answered signups */
   priorSharePct: number | null;
+  /**
+   * Of this day's signups from this source, how many started a trial.
+   * null means the trial query failed — NOT that nobody converted. Rendering
+   * a failed lookup as 0 would be indistinguishable from a real zero.
+   */
+  trials: number | null;
+  /** trials / signups for this source on this day */
+  trialRatePct: number | null;
 }
 
 export interface AttributionSection {
@@ -145,6 +158,10 @@ export interface AttributionSection {
   unansweredToday: number;
   /** answered / all signups today, as a percentage */
   coveragePct: number | null;
+  /** trials from this day's whole cohort; null when the query failed */
+  trialsTotal: number | null;
+  /** trialsTotal / all signups that day */
+  trialRatePct: number | null;
 }
 
 export interface ViewsSection {
@@ -306,12 +323,43 @@ async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
  * mix is unaffected by how much of the day has elapsed. Counts are still
  * carried for volume, they just aren't what the comparison is built on.
  */
+/**
+ * A trial start, keyed by the user who started it.
+ *
+ * Definition lifted verbatim from the rc_trial_starts_daily view so the panel
+ * and the Trials tile can never drift apart on what a trial IS:
+ *   type = 'INITIAL_PURCHASE' AND period_type = 'TRIAL' AND environment <> 'SANDBOX'
+ *
+ * Deliberately NOT the consumer `subscriptions` table, which looks like the
+ * obvious source and is wrong twice over: original_purchased_at is populated
+ * on barely 40% of rows, and period_type holds CURRENT state, so a trial that
+ * converted now reads NORMAL and would silently vanish from the count.
+ */
+export interface TrialStartRow {
+  app_user_id: string;
+  event_at: string;
+}
+
 interface DayBucket {
   bySource: Map<string, number>;
   /** signups that answered the question — the share denominator */
   answered: number;
   /** every signup that day, answered or not */
   total: number;
+  /** of that day's signups, those who went on to start a trial */
+  trialsBySource: Map<string, number>;
+  trials: number;
+}
+
+export interface DayBuckets {
+  byDay: Map<string, DayBucket>;
+  /**
+   * false when the trial query failed — rendered as "—", never as 0. This
+   * belongs to the bucketing run, not to a bucket: a day with no signups has
+   * no bucket at all, and would otherwise lose the distinction between "no
+   * trials" and "couldn't ask".
+   */
+  trialsKnown: boolean;
 }
 
 const pct = (n: number, total: number) =>
@@ -331,22 +379,42 @@ function dayOffset(day: string, n: number): string {
  */
 export function bucketByEasternDay(
   rows: ReferralSourceRow[],
-): Map<string, DayBucket> {
+  trials: TrialStartRow[] | null = null,
+): DayBuckets {
+  // Trials are attributed to the user's SIGNUP day, not the day the trial
+  // fired: the panel row is "74 TikTok signups on Aug 5", so the number beside
+  // it must answer "…of whom N started a trial". About 10% start on a later
+  // day (99 of 976 over 30 days), which is why the cohort is the right unit
+  // and why recent days keep maturing for a couple of days.
+  const trialsKnown = trials != null;
+  const trialUsers = new Set((trials ?? []).map((t) => t.app_user_id));
+
   const buckets = new Map<string, DayBucket>();
   for (const r of rows) {
     const day = easternDate(new Date(r.joined_at));
     let b = buckets.get(day);
     if (!b) {
-      b = { bySource: new Map(), answered: 0, total: 0 };
+      b = {
+        bySource: new Map(),
+        answered: 0,
+        total: 0,
+        trialsBySource: new Map(),
+        trials: 0,
+      };
       buckets.set(day, b);
     }
     b.total++;
+    const startedTrial = trialUsers.has(r.id);
+    if (startedTrial) b.trials++;
     const source = r.referral_source?.trim().toLowerCase() || "";
     if (!source) continue; // skipped: counts for coverage, not for shares
     b.bySource.set(source, (b.bySource.get(source) ?? 0) + 1);
     b.answered++;
+    if (startedTrial) {
+      b.trialsBySource.set(source, (b.trialsBySource.get(source) ?? 0) + 1);
+    }
   }
-  return buckets;
+  return { byDay: buckets, trialsKnown };
 }
 
 /**
@@ -357,14 +425,14 @@ export function bucketByEasternDay(
  * baseline and mute exactly the move being looked for.
  */
 export function attributionForDay(
-  buckets: Map<string, DayBucket>,
+  buckets: DayBuckets,
   day: string,
 ): AttributionSection {
-  const target = buckets.get(day);
+  const target = buckets.byDay.get(day);
   const priorBy = new Map<string, number>();
   let prior7dTotal = 0;
   for (let i = 1; i <= 7; i++) {
-    const b = buckets.get(dayOffset(day, i));
+    const b = buckets.byDay.get(dayOffset(day, i));
     if (!b) continue;
     for (const [source, n] of b.bySource) {
       priorBy.set(source, (priorBy.get(source) ?? 0) + n);
@@ -374,6 +442,7 @@ export function attributionForDay(
 
   const todayBy = target?.bySource ?? new Map<string, number>();
   const todayTotal = target?.answered ?? 0;
+  const trialsKnown = buckets.trialsKnown;
 
   // Union of both windows — a source can be brand new on the day (youtube,
   // seen 2026-08-07 with 1 and 0 before) or have dried up entirely.
@@ -381,6 +450,7 @@ export function attributionForDay(
   const out = sources.map((source) => {
     const todayN = todayBy.get(source) ?? 0;
     const priorN = priorBy.get(source) ?? 0;
+    const trials = trialsKnown ? (target?.trialsBySource.get(source) ?? 0) : null;
     return {
       source,
       today: todayN,
@@ -388,6 +458,8 @@ export function attributionForDay(
       avgPerDay: Math.round((priorN / 7) * 10) / 10,
       todaySharePct: pct(todayN, todayTotal),
       priorSharePct: pct(priorN, prior7dTotal),
+      trials,
+      trialRatePct: trials == null ? null : pct(trials, todayN),
     };
   });
 
@@ -401,12 +473,17 @@ export function attributionForDay(
     prior7dTotal,
     unansweredToday: (target?.total ?? 0) - todayTotal,
     coveragePct: pct(todayTotal, target?.total ?? 0),
+    // Cohort-wide, so it includes signups who skipped the source question —
+    // otherwise the headline rate would silently exclude ~1% of the funnel.
+    trialsTotal: trialsKnown ? (target?.trials ?? 0) : null,
+    trialRatePct: trialsKnown ? pct(target?.trials ?? 0, target?.total ?? 0) : null,
   };
 }
 
 export function buildAttribution(
   rows: ReferralSourceRow[] | null,
   now = new Date(),
+  trials: TrialStartRow[] | null = null,
 ): AttributionSection {
   if (!rows) {
     return {
@@ -415,9 +492,11 @@ export function buildAttribution(
       prior7dTotal: 0,
       unansweredToday: 0,
       coveragePct: null,
+      trialsTotal: null,
+      trialRatePct: null,
     };
   }
-  return attributionForDay(bucketByEasternDay(rows), easternDate(now));
+  return attributionForDay(bucketByEasternDay(rows, trials), easternDate(now));
 }
 
 export interface AttributionSeries {
@@ -440,9 +519,10 @@ export function buildAttributionSeries(
   rows: ReferralSourceRow[] | null,
   now = new Date(),
   days = HISTORY_DAYS,
+  trials: TrialStartRow[] | null = null,
 ): AttributionSeries {
   if (!rows) return { days: [], byDay: {}, shareHistory: {} };
-  const buckets = bucketByEasternDay(rows);
+  const buckets = bucketByEasternDay(rows, trials);
   const today = easternDate(now);
 
   const dayList: string[] = [];
@@ -462,13 +542,53 @@ export function buildAttributionSeries(
   const shareHistory: Record<string, (number | null)[]> = {};
   for (const source of sources) {
     shareHistory[source] = dayList.map((day) => {
-      const b = buckets.get(day);
+      const b = buckets.byDay.get(day);
       if (!b || b.answered === 0) return null;
       return pct(b.bySource.get(source) ?? 0, b.answered);
     });
   }
 
   return { days: dayList, byDay, shareHistory };
+}
+
+/**
+ * Trial starts since `sinceIso`, from the INTERNAL project's rc_events.
+ *
+ * The window deliberately has no upper bound: a user who signed up on the
+ * oldest day in the attribution window may have started their trial
+ * yesterday, and the cohort would lose them if the trial query stopped where
+ * the signup query does.
+ *
+ * Returns [] rather than throwing when the query fails, so trials degrade to
+ * zero on a panel that still shows signups and shares. Callers that need to
+ * distinguish "no trials" from "couldn't ask" should check the errors array.
+ */
+async function fetchTrialStartUsers(sinceIso: string): Promise<TrialStartRow[]> {
+  const filter =
+    `rc_events?select=app_user_id,event_at` +
+    `&type=eq.INITIAL_PURCHASE&period_type=eq.TRIAL` +
+    `&or=(environment.is.null,environment.neq.SANDBOX)` +
+    `&event_at=gte.${encodeURIComponent(sinceIso)}`;
+  return fetchAllPages<TrialStartRow>({
+    count: async () => {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${filter}`, {
+        method: "HEAD",
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${SERVICE_ROLE}`,
+          Prefer: "count=exact",
+          Range: "0-0",
+        },
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      return countFromContentRange(res.headers.get("content-range"));
+    },
+    page: (offset) =>
+      sbGet<TrialStartRow[]>(
+        `${filter}&order=event_at.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+      ),
+  });
 }
 
 /** 8-day window: today plus the 7 complete days it is compared against. */
@@ -482,7 +602,14 @@ async function fetchAttribution(): Promise<AttributionSection> {
   // year (EDT -04:00 vs EST -05:00); over-fetching ~250 rows is the cheaper
   // way to be right in both.
   const since = `${easternDateOffset(8)}T00:00:00Z`;
-  return buildAttribution(await fetchReferralSourcesSince(since));
+  const [rows, trials] = await Promise.all([
+    fetchReferralSourcesSince(since),
+    // Trials must not take signups down with them — a failure here shows as
+    // zero trials on a panel whose mix data is still correct.
+    // null, not [] — a failed lookup must render as "—", never as zero trials.
+    fetchTrialStartUsers(since).catch(() => null),
+  ]);
+  return buildAttribution(rows, new Date(), trials);
 }
 
 /**
@@ -497,7 +624,12 @@ export async function fetchAttributionSeries(): Promise<AttributionSeries> {
     throw new Error("Consumer Supabase env missing");
   }
   const since = `${easternDateOffset(HISTORY_DAYS + 8)}T00:00:00Z`;
-  return buildAttributionSeries(await fetchReferralSourcesSince(since));
+  const [rows, trials] = await Promise.all([
+    fetchReferralSourcesSince(since),
+    // null, not [] — a failed lookup must render as "—", never as zero trials.
+    fetchTrialStartUsers(since).catch(() => null),
+  ]);
+  return buildAttributionSeries(rows, new Date(), HISTORY_DAYS, trials);
 }
 
 /**

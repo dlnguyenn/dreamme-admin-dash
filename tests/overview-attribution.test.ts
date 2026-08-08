@@ -11,14 +11,25 @@ import { buildAttribution, buildAttributionSeries } from "@/lib/overview";
  */
 const NOW = new Date("2026-08-07T18:00:00Z"); // 2pm ET → today = 08-07
 
+/** Unique per row, so trial joins can target one specific signup. */
+let seq = 0;
+const nextId = () => `u${++seq}`;
+
 /** Eastern noon on `day`, i.e. unambiguously inside that Eastern date. */
-const at = (day: string, source: string | null) => ({
+const at = (day: string, source: string | null, id = nextId()) => ({
+  id,
   joined_at: `${day}T16:00:00Z`,
   referral_source: source,
 });
 
 const many = (day: string, source: string | null, n: number) =>
   Array.from({ length: n }, () => at(day, source));
+
+/** A trial start for `id`, fired on `day` (the day is irrelevant to cohorting). */
+const trial = (id: string, day = "2026-08-07") => ({
+  app_user_id: id,
+  event_at: `${day}T18:00:00Z`,
+});
 
 describe("buildAttribution", () => {
   beforeEach(() => {
@@ -219,5 +230,102 @@ describe("buildAttributionSeries", () => {
       byDay: {},
       shareHistory: {},
     });
+  });
+});
+
+/**
+ * Trials joined onto the SIGNUP-day cohort — "of the 74 TikTok signups on
+ * Aug 5, how many started a trial", not "how many trials fired on Aug 5".
+ * The trial event's own date is deliberately irrelevant: ~10% start on a
+ * later day and must still count for the day the user signed up.
+ */
+describe("trial join", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("counts trials per source and rates them against that source's signups", () => {
+    const tk = [at("2026-08-07", "tiktok"), at("2026-08-07", "tiktok")];
+    const fb = [at("2026-08-07", "facebook"), at("2026-08-07", "facebook")];
+    const a = buildAttribution([...tk, ...fb], NOW, [trial(tk[0].id)]);
+    const tiktok = a.rows.find((r) => r.source === "tiktok")!;
+    const facebook = a.rows.find((r) => r.source === "facebook")!;
+    expect(tiktok.trials).toBe(1);
+    expect(tiktok.trialRatePct).toBe(50);
+    expect(facebook.trials).toBe(0);
+    expect(facebook.trialRatePct).toBe(0);
+  });
+
+  it("credits the signup day even when the trial fires days later", () => {
+    const u = at("2026-08-04", "tiktok");
+    const s = buildAttributionSeries([u], NOW, 30, [trial(u.id, "2026-08-07")]);
+    expect(s.byDay["2026-08-04"].trialsTotal).toBe(1);
+    // Not the day the event fired.
+    expect(s.byDay["2026-08-07"].trialsTotal).toBe(0);
+  });
+
+  it("ignores a trial that resolves to no signup in the window", () => {
+    // ~2% of trial events don't map to a consumer user (orphaned/web-checkout
+    // accounts). They must not inflate any source's count.
+    const u = at("2026-08-07", "tiktok");
+    const a = buildAttribution([u], NOW, [trial(u.id), trial("ghost-user")]);
+    expect(a.rows[0].trials).toBe(1);
+    expect(a.trialsTotal).toBe(1);
+  });
+
+  it("counts a trial from a signup who skipped the source question", () => {
+    // Excluded from per-source rows (no source), but part of the cohort — so
+    // the headline rate must not silently drop them.
+    const anon = at("2026-08-07", null);
+    const a = buildAttribution(
+      [anon, at("2026-08-07", "tiktok")],
+      NOW,
+      [trial(anon.id)],
+    );
+    expect(a.rows.find((r) => r.source === "tiktok")!.trials).toBe(0);
+    expect(a.trialsTotal).toBe(1);
+    expect(a.trialRatePct).toBe(50); // 1 trial / 2 signups
+  });
+
+  it("rates the day against every signup, answered or not", () => {
+    const rows = [
+      at("2026-08-07", "tiktok"),
+      at("2026-08-07", "tiktok"),
+      at("2026-08-07", null),
+      at("2026-08-07", null),
+    ];
+    const a = buildAttribution(rows, NOW, [trial(rows[0].id)]);
+    expect(a.trialRatePct).toBe(25);
+  });
+
+  it("reports no trials rather than dividing by zero on an empty day", () => {
+    const a = buildAttribution([], NOW, [trial("someone")]);
+    expect(a.trialsTotal).toBe(0);
+    expect(a.trialRatePct).toBe(null);
+  });
+
+  /**
+   * A failed trial lookup must be visibly unknown. Rendering it as 0 would be
+   * indistinguishable from "nobody converted" — a confident wrong number is
+   * worse than an obvious gap.
+   */
+  it("reports unknown, not zero, when the trial query is unavailable", () => {
+    const a = buildAttribution([at("2026-08-07", "tiktok")], NOW, null);
+    expect(a.rows[0].trials).toBe(null);
+    expect(a.rows[0].trialRatePct).toBe(null);
+    expect(a.trialsTotal).toBe(null);
+    expect(a.trialRatePct).toBe(null);
+    // Signups and shares are unaffected — the panel still works.
+    expect(a.rows[0].today).toBe(1);
+    expect(a.rows[0].todaySharePct).toBe(100);
+  });
+
+  it("reports a real zero as zero when the query succeeded", () => {
+    const a = buildAttribution([at("2026-08-07", "tiktok")], NOW, []);
+    expect(a.rows[0].trials).toBe(0);
+    expect(a.trialsTotal).toBe(0);
+    expect(a.trialRatePct).toBe(0);
   });
 });
