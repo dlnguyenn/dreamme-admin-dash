@@ -90,6 +90,8 @@ const num = (v: unknown): number | null => {
 };
 
 const WINDOW_DAYS = 30;
+/** Days the attribution stepper can walk back through. */
+export const HISTORY_DAYS = 30;
 
 // ---------------------------------------------------------------------------
 // Payload
@@ -304,61 +306,78 @@ async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
  * mix is unaffected by how much of the day has elapsed. Counts are still
  * carried for volume, they just aren't what the comparison is built on.
  */
-export function buildAttribution(
-  rows: ReferralSourceRow[] | null,
-  now = new Date(),
-): AttributionSection {
-  const empty: AttributionSection = {
-    rows: [],
-    todayTotal: 0,
-    prior7dTotal: 0,
-    unansweredToday: 0,
-    coveragePct: null,
-  };
-  if (!rows) return empty;
+interface DayBucket {
+  bySource: Map<string, number>;
+  /** signups that answered the question — the share denominator */
+  answered: number;
+  /** every signup that day, answered or not */
+  total: number;
+}
 
-  const today = easternDate(now);
-  const windowStart = easternDateOffset(7, now); // 7 complete days before today
+const pct = (n: number, total: number) =>
+  total > 0 ? Math.round((n / total) * 1000) / 10 : null;
 
-  const todayBy = new Map<string, number>();
-  const priorBy = new Map<string, number>();
-  let todayTotal = 0;
-  let prior7dTotal = 0;
-  let unansweredToday = 0;
-  let todayAll = 0;
+/** ISO day `n` days before `day` (both Eastern calendar days). */
+function dayOffset(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
 
+/**
+ * One pass over the raw rows, bucketed by Eastern calendar day. Every view
+ * (today, a stepped-back day, the 30-day series) is derived from this, so the
+ * day-boundary rule lives in exactly one place.
+ */
+export function bucketByEasternDay(
+  rows: ReferralSourceRow[],
+): Map<string, DayBucket> {
+  const buckets = new Map<string, DayBucket>();
   for (const r of rows) {
-    // Bucket on the Eastern calendar day, like every other daily number here.
     const day = easternDate(new Date(r.joined_at));
-    const isToday = day === today;
-    // Strictly before today and no earlier than the window start.
-    const isPrior = day >= windowStart && day < today;
-    if (!isToday && !isPrior) continue;
-
+    let b = buckets.get(day);
+    if (!b) {
+      b = { bySource: new Map(), answered: 0, total: 0 };
+      buckets.set(day, b);
+    }
+    b.total++;
     const source = r.referral_source?.trim().toLowerCase() || "";
-    if (isToday) todayAll++;
-    if (!source) {
-      // Skipped the question: counted for coverage, excluded from shares so
-      // it can't dilute them into meaninglessness.
-      if (isToday) unansweredToday++;
-      continue;
+    if (!source) continue; // skipped: counts for coverage, not for shares
+    b.bySource.set(source, (b.bySource.get(source) ?? 0) + 1);
+    b.answered++;
+  }
+  return buckets;
+}
+
+/**
+ * One day's mix against the 7 days IMMEDIATELY BEFORE IT.
+ *
+ * The baseline is anchored to `day`, never to today: comparing Aug 1 against
+ * a trailing week that contains Aug 1 would fold the day into its own
+ * baseline and mute exactly the move being looked for.
+ */
+export function attributionForDay(
+  buckets: Map<string, DayBucket>,
+  day: string,
+): AttributionSection {
+  const target = buckets.get(day);
+  const priorBy = new Map<string, number>();
+  let prior7dTotal = 0;
+  for (let i = 1; i <= 7; i++) {
+    const b = buckets.get(dayOffset(day, i));
+    if (!b) continue;
+    for (const [source, n] of b.bySource) {
+      priorBy.set(source, (priorBy.get(source) ?? 0) + n);
     }
-    if (isToday) {
-      todayBy.set(source, (todayBy.get(source) ?? 0) + 1);
-      todayTotal++;
-    } else {
-      priorBy.set(source, (priorBy.get(source) ?? 0) + 1);
-      prior7dTotal++;
-    }
+    prior7dTotal += b.answered;
   }
 
-  const pct = (n: number, total: number) =>
-    total > 0 ? Math.round((n / total) * 1000) / 10 : null;
+  const todayBy = target?.bySource ?? new Map<string, number>();
+  const todayTotal = target?.answered ?? 0;
 
-  // Union of both windows — a source can be brand new today (youtube, seen
-  // 2026-08-07 with 1 today and 0 before) or have dried up entirely.
+  // Union of both windows — a source can be brand new on the day (youtube,
+  // seen 2026-08-07 with 1 and 0 before) or have dried up entirely.
   const sources = [...new Set([...todayBy.keys(), ...priorBy.keys()])];
-
   const out = sources.map((source) => {
     const todayN = todayBy.get(source) ?? 0;
     const priorN = priorBy.get(source) ?? 0;
@@ -372,17 +391,84 @@ export function buildAttribution(
     };
   });
 
-  // Today's volume first — that's what the panel is being scanned for. Ties
-  // break on the baseline so the order is stable across refreshes.
+  // Volume first — that's what the panel is scanned for. Ties break on the
+  // baseline so the order is stable across refreshes.
   out.sort((a, b) => b.today - a.today || b.prior7dTotal - a.prior7dTotal);
 
   return {
     rows: out,
     todayTotal,
     prior7dTotal,
-    unansweredToday,
-    coveragePct: pct(todayTotal, todayAll),
+    unansweredToday: (target?.total ?? 0) - todayTotal,
+    coveragePct: pct(todayTotal, target?.total ?? 0),
   };
+}
+
+export function buildAttribution(
+  rows: ReferralSourceRow[] | null,
+  now = new Date(),
+): AttributionSection {
+  if (!rows) {
+    return {
+      rows: [],
+      todayTotal: 0,
+      prior7dTotal: 0,
+      unansweredToday: 0,
+      coveragePct: null,
+    };
+  }
+  return attributionForDay(bucketByEasternDay(rows), easternDate(now));
+}
+
+export interface AttributionSeries {
+  /** Eastern days, oldest first, newest (today) last. */
+  days: string[];
+  byDay: Record<string, AttributionSection>;
+  /**
+   * Share % per source per day, index-aligned to `days`. null on a day with
+   * no answered signups — a gap, not a zero, so the sparkline doesn't draw a
+   * cliff to the floor for a day we simply have nothing for.
+   */
+  shareHistory: Record<string, (number | null)[]>;
+}
+
+/**
+ * The last `days` Eastern days, each with its own anchored baseline, plus the
+ * per-source share history the sparklines draw.
+ */
+export function buildAttributionSeries(
+  rows: ReferralSourceRow[] | null,
+  now = new Date(),
+  days = HISTORY_DAYS,
+): AttributionSeries {
+  if (!rows) return { days: [], byDay: {}, shareHistory: {} };
+  const buckets = bucketByEasternDay(rows);
+  const today = easternDate(now);
+
+  const dayList: string[] = [];
+  for (let i = days - 1; i >= 0; i--) dayList.push(dayOffset(today, i));
+
+  const byDay: Record<string, AttributionSection> = {};
+  for (const day of dayList) byDay[day] = attributionForDay(buckets, day);
+
+  // Every source seen anywhere in the window gets a full-length series, so
+  // rows line up across days and a source that vanishes reads as a decline
+  // rather than disappearing from the chart.
+  const sources = new Set<string>();
+  for (const day of dayList) {
+    for (const r of byDay[day].rows) if (r.today > 0) sources.add(r.source);
+  }
+
+  const shareHistory: Record<string, (number | null)[]> = {};
+  for (const source of sources) {
+    shareHistory[source] = dayList.map((day) => {
+      const b = buckets.get(day);
+      if (!b || b.answered === 0) return null;
+      return pct(b.bySource.get(source) ?? 0, b.answered);
+    });
+  }
+
+  return { days: dayList, byDay, shareHistory };
 }
 
 /** 8-day window: today plus the 7 complete days it is compared against. */
@@ -390,13 +476,28 @@ async function fetchAttribution(): Promise<AttributionSection> {
   if (!consumerDbConfigured()) {
     throw new Error("Consumer Supabase env missing");
   }
-  // Fetch from UTC midnight one day EARLIER than needed and let
-  // buildAttribution do the exact Eastern-day filtering. Deriving a precise
-  // Eastern boundary here would mean hardcoding an offset that is wrong for
-  // half the year (EDT -04:00 vs EST -05:00); over-fetching ~250 rows is the
-  // cheaper way to be right in both.
+  // Fetch from UTC midnight one day EARLIER than needed and let the pure
+  // builder do the exact Eastern-day filtering. Deriving a precise Eastern
+  // boundary here would mean hardcoding an offset that is wrong for half the
+  // year (EDT -04:00 vs EST -05:00); over-fetching ~250 rows is the cheaper
+  // way to be right in both.
   const since = `${easternDateOffset(8)}T00:00:00Z`;
   return buildAttribution(await fetchReferralSourcesSince(since));
+}
+
+/**
+ * The full history for the panel's day stepper.
+ *
+ * Fetches HISTORY_DAYS + 7 + 1 days: the OLDEST day shown still needs the 7
+ * days before it for its own baseline, so a 30-day fetch would leave the far
+ * end of the window comparing against a silently truncated week.
+ */
+export async function fetchAttributionSeries(): Promise<AttributionSeries> {
+  if (!consumerDbConfigured()) {
+    throw new Error("Consumer Supabase env missing");
+  }
+  const since = `${easternDateOffset(HISTORY_DAYS + 8)}T00:00:00Z`;
+  return buildAttributionSeries(await fetchReferralSourcesSince(since));
 }
 
 /**

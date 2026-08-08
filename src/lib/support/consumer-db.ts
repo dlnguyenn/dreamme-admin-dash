@@ -87,26 +87,74 @@ export interface ReferralSourceRow {
 /** PostgREST's default ceiling; a page shorter than this means we're done. */
 const PAGE_SIZE = 1000;
 /** Bound the walk — a bad window must not be able to page forever. */
-const MAX_PAGES = 5;
+const MAX_PAGES = 20;
+
+function referralPath(sinceIso: string, offset: number): string {
+  return (
+    `users?select=joined_at,referral_source` +
+    `&joined_at=gte.${encodeURIComponent(sinceIso)}` +
+    `&order=joined_at.asc&limit=${PAGE_SIZE}&offset=${offset}`
+  );
+}
+
+/**
+ * Exact row count for the window, without transferring rows. Used to fan the
+ * pages out concurrently instead of discovering the end one serial request at
+ * a time — the 38-day window behind the history view is ~11,000 rows, which
+ * is 11 sequential round trips otherwise.
+ *
+ * Returns null when the count header is missing, which the caller treats as
+ * "fall back to sequential paging" rather than as an error.
+ */
+export async function countReferralSourcesSince(
+  sinceIso: string,
+): Promise<number | null> {
+  if (!consumerDbConfigured()) throw new Error("Consumer Supabase env missing");
+  const res = await fetch(
+    `${CONSUMER_URL}/rest/v1/users?select=id` +
+      `&joined_at=gte.${encodeURIComponent(sinceIso)}`,
+    {
+      method: "HEAD",
+      headers: { ...headers(), Prefer: "count=exact", Range: "0-0" },
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) return null;
+  const total = Number(res.headers.get("content-range")?.split("/")[1]);
+  return Number.isFinite(total) ? total : null;
+}
 
 /**
  * Signup rows since `sinceIso`, for the Overview's source-attribution panel.
  *
- * Pages explicitly: the 8-day window is ~1,960 rows (measured 2026-08-07),
- * and PostgREST silently truncates at 1,000. A silent truncation here would
- * not error — it would just quietly drop the oldest days out of the baseline
- * and make every share look wrong, which is far worse than a hard failure.
+ * Pages explicitly: PostgREST silently truncates at 1,000 rows. A silent
+ * truncation here would not error — it would quietly drop the oldest days out
+ * of the baseline and make every share wrong, which is far worse than a hard
+ * failure.
+ *
+ * Counts first so the pages can be requested concurrently; if the count is
+ * unavailable it walks sequentially instead, which is slower but still
+ * correct.
  */
 export async function fetchReferralSourcesSince(
   sinceIso: string,
 ): Promise<ReferralSourceRow[]> {
+  const total = await countReferralSourcesSince(sinceIso).catch(() => null);
+
+  if (total != null) {
+    const pages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+    const batches = await Promise.all(
+      Array.from({ length: pages }, (_, i) =>
+        cGet<ReferralSourceRow[]>(referralPath(sinceIso, i * PAGE_SIZE)),
+      ),
+    );
+    return batches.flat();
+  }
+
   const out: ReferralSourceRow[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const offset = page * PAGE_SIZE;
     const rows = await cGet<ReferralSourceRow[]>(
-      `users?select=joined_at,referral_source` +
-        `&joined_at=gte.${encodeURIComponent(sinceIso)}` +
-        `&order=joined_at.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+      referralPath(sinceIso, page * PAGE_SIZE),
     );
     out.push(...rows);
     if (rows.length < PAGE_SIZE) return out;

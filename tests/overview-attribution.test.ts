@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildAttribution } from "@/lib/overview";
+import { buildAttribution, buildAttributionSeries } from "@/lib/overview";
 
 /**
  * Source attribution: today's self-reported mix vs the prior 7 complete days.
@@ -131,6 +131,93 @@ describe("buildAttribution", () => {
       rows: [],
       todayTotal: 0,
       coveragePct: null,
+    });
+  });
+});
+
+/**
+ * The 30-day stepper. The load-bearing rule: each day's baseline is the 7 days
+ * immediately before THAT day, never a trailing week anchored to today — which
+ * would fold a day into its own baseline and mute the move being looked for.
+ */
+describe("buildAttributionSeries", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("returns the requested number of days, oldest first, today last", () => {
+    const s = buildAttributionSeries(many("2026-08-07", "tiktok", 1), NOW, 30);
+    expect(s.days).toHaveLength(30);
+    expect(s.days[29]).toBe("2026-08-07");
+    expect(s.days[0]).toBe("2026-07-09");
+  });
+
+  it("anchors each day's baseline to the 7 days before IT", () => {
+    const s = buildAttributionSeries(
+      [
+        ...many("2026-08-05", "tiktok", 10), // the day under test
+        ...many("2026-08-04", "tiktok", 3), // inside its baseline
+        ...many("2026-07-29", "tiktok", 4), // inside its baseline (7 back)
+        ...many("2026-07-28", "tiktok", 99), // 8 back — must be excluded
+        ...many("2026-08-06", "tiktok", 50), // AFTER it — must be excluded
+      ],
+      NOW,
+      30,
+    );
+    const day = s.byDay["2026-08-05"];
+    expect(day.todayTotal).toBe(10);
+    expect(day.prior7dTotal).toBe(7); // 3 + 4, not 106
+  });
+
+  it("aligns shareHistory to days and leaves gaps as null", () => {
+    const s = buildAttributionSeries(
+      [...many("2026-08-07", "tiktok", 2), ...many("2026-08-05", "tiktok", 4)],
+      NOW,
+      30,
+    );
+    const hist = s.shareHistory["tiktok"];
+    expect(hist).toHaveLength(s.days.length);
+    expect(hist[s.days.indexOf("2026-08-07")]).toBe(100);
+    expect(hist[s.days.indexOf("2026-08-05")]).toBe(100);
+    // A day with no signups is a gap, not a zero — otherwise the sparkline
+    // draws a cliff to the floor for a day we simply have no data for.
+    expect(hist[s.days.indexOf("2026-08-06")]).toBe(null);
+  });
+
+  it("gives a source a full-length history even when it appears once", () => {
+    const s = buildAttributionSeries(
+      [
+        ...many("2026-08-07", "youtube", 1),
+        ...many("2026-08-07", "tiktok", 9),
+        ...many("2026-08-06", "tiktok", 10),
+      ],
+      NOW,
+      30,
+    );
+    expect(s.shareHistory["youtube"]).toHaveLength(s.days.length);
+    // Present on 08-06 as a real zero (that day HAD signups, just not this one).
+    expect(s.shareHistory["youtube"][s.days.indexOf("2026-08-06")]).toBe(0);
+    expect(s.shareHistory["youtube"][s.days.indexOf("2026-08-07")]).toBe(10);
+  });
+
+  it("agrees with buildAttribution for today", () => {
+    const rows = [
+      ...many("2026-08-07", "tiktok", 25),
+      ...many("2026-08-07", "facebook", 75),
+      ...many("2026-08-06", "tiktok", 70),
+      ...many("2026-08-06", "facebook", 30),
+    ];
+    const s = buildAttributionSeries(rows, NOW, 30);
+    expect(s.byDay["2026-08-07"]).toEqual(buildAttribution(rows, NOW));
+  });
+
+  it("degrades to empty when the source is unavailable", () => {
+    expect(buildAttributionSeries(null, NOW, 30)).toEqual({
+      days: [],
+      byDay: {},
+      shareHistory: {},
     });
   });
 });
