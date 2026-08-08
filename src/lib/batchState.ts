@@ -236,14 +236,64 @@ export async function syncBatchPostState(opts?: {
 }
 
 /**
+ * True live state for one post, derived from which status FILTERS return it.
+ *
+ * The `status` field on a post object is useless for this: a draft and a
+ * queued post both report `status: "scheduled"`. But the filters partition
+ * cleanly — measured 2026-08-08 over a 2-day window: all=128, scheduled=18,
+ * posted=68, scheduled ∩ posted = 0, and the 42 in `all` alone were exactly
+ * the posts the MCP surface reports as drafts.
+ *
+ * So membership, not the field, is the discriminator:
+ *   in posted            -> posted
+ *   else in scheduled    -> scheduled (genuinely queued, will publish itself)
+ *   else in all          -> draft     (sitting there; needs a person)
+ *   in none              -> null      (outside the window; caller leaves it alone)
+ *
+ * This supersedes the note on syncBatchPostState above, which concluded drafts
+ * were invisible to this API. They are invisible to the *field*, not to the
+ * *filters* — that pass was never run.
+ */
+async function collectDerived(
+  since: Date,
+): Promise<Map<string, BatchPostState>> {
+  const [all, scheduled, posted] = await Promise.all([
+    (async () => {
+      const m = new Map<string, BatchPostState>();
+      await collect("all", since, m);
+      return m;
+    })(),
+    (async () => {
+      const m = new Map<string, BatchPostState>();
+      await collect("scheduled", since, m);
+      return m;
+    })(),
+    (async () => {
+      const m = new Map<string, BatchPostState>();
+      await collect("posted", since, m);
+      return m;
+    })(),
+  ]);
+
+  const out = new Map<string, BatchPostState>();
+  for (const [id, v] of all) {
+    const derived = posted.has(id)
+      ? "posted"
+      : scheduled.has(id)
+        ? "scheduled"
+        : "draft";
+    out.set(id, { ...v, post_status: derived });
+  }
+  return out;
+}
+
+/**
  * Same refresh for morning_posts (the daily routine posts on the FB/IG sets).
  *
- * Differences from the batch sync are all scale, not shape: the rows are hours
- * old, so the API lookback is days not weeks, and the read is scoped to one
- * batch_date. The draft caveat is sharper here — these rows are CREATED as
- * drafts and the REST API reports drafts as "scheduled", so the synced status
- * is only meaningful for terminal transitions (posted / failed). Interpreting
- * it stays in morningPosts.toMorningState(); this function records verbatim.
+ * Unlike syncBatchPostState this stores the DERIVED state above, so
+ * post_status is the real live answer to "is this drafted or queued?" — and
+ * it keeps up when Dan promotes a draft in the Doublespeed UI, which the
+ * routine-recorded created_status never could.
  */
 export async function syncMorningPostState(opts: {
   batchDate: string;
@@ -277,8 +327,7 @@ export async function syncMorningPostState(opts: {
     }
 
     const since = new Date(Date.now() - lookbackDays * 86_400_000);
-    const remote = new Map<string, BatchPostState>();
-    await collect("all", since, remote);
+    const remote = await collectDerived(since);
 
     const now = new Date().toISOString();
     let updated = 0;

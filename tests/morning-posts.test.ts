@@ -7,8 +7,10 @@
 import { describe, expect, it } from "vitest";
 import {
   EXPECTED_MORNING,
+  STATUS_LABEL,
   buildMorningSection,
-  morningTileProblem,
+  coverageFlag,
+  tileAction,
   toMorningState,
   worstState,
   type MorningPostRow,
@@ -57,14 +59,16 @@ describe("toMorningState", () => {
     expect(toMorningState(row({ post_status: "error" }))).toBe("failed");
   });
 
-  it("never infers draft-vs-scheduled from a synced 'scheduled'", () => {
-    // REST reports drafts as "scheduled"; the routine said draft, so draft it is.
+  it("trusts the DERIVED synced state over created_status", () => {
+    // post_status is now worked out from which Doublespeed filter returns the
+    // post, so it beats the routine's creation-time record — that is what
+    // makes promoting a draft in the Doublespeed UI show up here.
     expect(
       toMorningState(row({ post_status: "scheduled", created_status: "draft" })),
-    ).toBe("draft");
-    expect(
-      toMorningState(row({ post_status: "scheduled", created_status: "scheduled" })),
     ).toBe("scheduled");
+    expect(
+      toMorningState(row({ post_status: "draft", created_status: "scheduled" })),
+    ).toBe("draft");
   });
 
   it("falls back to created_status when never synced", () => {
@@ -107,21 +111,36 @@ describe("worstState", () => {
   });
 });
 
-describe("morningTileProblem", () => {
-  it("flags states needing attention; draft and posted stay bare", () => {
-    expect(morningTileProblem("failed")).toBe("FAILED");
-    expect(morningTileProblem("missing")).toBe("NOT CREATED");
-    expect(morningTileProblem("unknown")).toBe("UNKNOWN");
-    expect(morningTileProblem("draft")).toBeNull();
-    expect(morningTileProblem("scheduled")).toBeNull();
-    expect(morningTileProblem("posted")).toBeNull();
+describe("status labels and action", () => {
+  it("every state has a human label, so no tile is ever unlabelled", () => {
+    for (const s of ["posted", "scheduled", "draft", "failed", "missing", "unknown"] as const) {
+      expect(STATUS_LABEL[s]).toBeTruthy();
+    }
+    // The distinction Dan asked for has to be visible in the words themselves.
+    expect(STATUS_LABEL.draft).toBe("DRAFT");
+    expect(STATUS_LABEL.scheduled).toBe("QUEUED");
   });
 
-  it("flags a one-surface set even when that surface is healthy", () => {
-    expect(morningTileProblem("posted", "facebook")).toBe("FB ONLY");
-    expect(morningTileProblem("draft", "instagram")).toBe("IG ONLY");
-    // A hard problem still wins the label.
-    expect(morningTileProblem("failed", "instagram")).toBe("FAILED");
+  it("only queued and posted resolve themselves; everything else needs a person", () => {
+    expect(tileAction("scheduled", "both")).toBeNull();
+    expect(tileAction("posted", "both")).toBeNull();
+    expect(tileAction("draft", "both")).toMatch(/promote/i);
+    expect(tileAction("missing", "both")).toBeTruthy();
+    expect(tileAction("failed", "both")).toBeTruthy();
+    expect(tileAction("unknown", "both")).toBeTruthy();
+  });
+
+  it("a one-surface set needs action even when that surface is healthy", () => {
+    expect(tileAction("posted", "facebook")).toMatch(/Instagram/i);
+    expect(tileAction("scheduled", "instagram")).toMatch(/Facebook/i);
+    // A hard problem still wins the message.
+    expect(tileAction("failed", "instagram")).toMatch(/failed/i);
+  });
+
+  it("coverageFlag marks partials only", () => {
+    expect(coverageFlag("facebook")).toBe("FB ONLY");
+    expect(coverageFlag("instagram")).toBe("IG ONLY");
+    expect(coverageFlag("both")).toBeNull();
   });
 });
 
@@ -246,6 +265,7 @@ describe("pills agree with tiles", () => {
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
     const n = (st: string) => s.tiles.filter((t) => t.state === st).length;
     expect(s.posted).toBe(n("posted"));
+    expect(s.queued).toBe(n("scheduled"));
     expect(s.failed).toBe(n("failed"));
     expect(s.drafts).toBe(n("draft"));
     expect(s.missing).toBe(n("missing"));
@@ -254,5 +274,21 @@ describe("pills agree with tiles", () => {
       s.tiles.filter((t) => t.coverage === "facebook" || t.coverage === "instagram")
         .length,
     );
+    expect(s.actionNeeded).toBe(s.tiles.filter((t) => t.action !== null).length);
+  });
+
+  it("a fully queued morning reports nothing to do", () => {
+    const rows = fullDay().map((r) => ({ ...r, post_status: "scheduled" }));
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    expect(s.queued).toBe(EXPECTED_MORNING.length);
+    expect(s.actionNeeded).toBe(0);
+    expect(s.tiles.every((t) => t.action === null)).toBe(true);
+  });
+
+  it("a fully drafted morning reports every set as needing action", () => {
+    const rows = fullDay().map((r) => ({ ...r, post_status: "draft" }));
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    expect(s.drafts).toBe(EXPECTED_MORNING.length);
+    expect(s.actionNeeded).toBe(EXPECTED_MORNING.length);
   });
 });

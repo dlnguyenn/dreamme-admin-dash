@@ -16,11 +16,13 @@
 import * as React from "react";
 import { useIsMobile } from "@/lib/useIsMobile";
 import {
-  morningTileProblem,
+  STATUS_LABEL,
+  coverageFlag,
   type MorningSection,
   type MorningTile as MorningTileData,
+  type MorningTileState,
 } from "@/lib/morningPosts";
-import { Card, SectionHeader, StatusPill } from "../porcelain";
+import { Card, SectionHeader, StatusPill, fam } from "../porcelain";
 import { Sheet } from "../Sheet";
 import { Chip } from "../ui";
 import { overlayPill } from "../tileOverlay";
@@ -30,6 +32,31 @@ const PLATFORM_SHORT: Record<string, string> = {
   facebook: "FB",
   instagram: "IG",
 };
+
+/**
+ * Colour per state. Only two states resolve themselves — queued and posted —
+ * so everything else reads as needing a person, which is the distinction the
+ * panel exists to make.
+ */
+const STATE_FAMILY: Record<MorningTileState, Parameters<typeof fam>[0]> = {
+  posted: "success",
+  scheduled: "info",
+  draft: "warning",
+  failed: "danger",
+  missing: "danger",
+  unknown: "warning",
+};
+
+function statusPillStyle(state: MorningTileState): React.CSSProperties {
+  const f = fam(STATE_FAMILY[state]);
+  return {
+    ...overlayPill,
+    background: f.solid,
+    color: f.onSolid,
+    backdropFilter: "none",
+    WebkitBackdropFilter: "none",
+  };
+}
 
 /** Past this many sets, one row would make the tiles too small to read. */
 const MAX_ONE_ROW = 9;
@@ -87,7 +114,7 @@ function MissingMorningTile({ tile }: { tile: MorningTileData }) {
   return (
     <div>
       <div
-        title={`${tile.setLabel} — nothing created this morning`}
+        title={`${tile.setLabel} — ${tile.action ?? "nothing created this morning"}`}
         style={{
           ...cellStyle,
           border: "1px dashed var(--warning)",
@@ -123,7 +150,7 @@ function MorningTileCard({
   const [hover, setHover] = React.useState(false);
   if (tile.coverage === "none") return <MissingMorningTile tile={tile} />;
 
-  const flag = morningTileProblem(tile.state, tile.coverage);
+  const flag = coverageFlag(tile.coverage);
 
   return (
     <div>
@@ -193,13 +220,13 @@ function MorningTileCard({
             </div>
           )}
 
-          {/* Only shown when a set did NOT make both surfaces — otherwise the
-              artwork stays bare, which is what makes the grid read clean. */}
-          {tile.coverage !== "both" && (
-            <span style={{ ...overlayPill, bottom: 6, left: 6 }}>
-              {PLATFORM_SHORT[tile.coverage] ?? tile.coverage}
-            </span>
-          )}
+          {/* EVERY tile carries its status. The earlier design left healthy
+              tiles bare, which looked cleaner but meant a queued post and a
+              stuck draft were visually identical — the one question Dan
+              actually needs this grid to answer. */}
+          <span style={{ ...statusPillStyle(tile.state), bottom: 6, left: 6 }}>
+            {STATUS_LABEL[tile.state]}
+          </span>
 
           {flag && (
             <span
@@ -241,8 +268,23 @@ function MorningTileDetail({
           <Chip tone="neutral">{tile.setLabel}</Chip>
           <Chip tone="neutral">{tile.routine}</Chip>
           <Chip tone="neutral">{tile.postKind}</Chip>
-          <Chip tone={tile.state === "posted" ? "success" : "neutral"}>{tile.state}</Chip>
+          <Chip tone={STATE_FAMILY[tile.state]}>{STATUS_LABEL[tile.state]}</Chip>
         </div>
+
+        {tile.action && (
+          <div
+            style={{
+              font: "600 12.5px/1.45 var(--font-ui)",
+              color: "var(--warning-text)",
+              background: "var(--warning-soft)",
+              border: "1px solid var(--warning)",
+              borderRadius: 9,
+              padding: "8px 10px",
+            }}
+          >
+            {tile.action}
+          </div>
+        )}
 
         {tile.postKind === "video" && video ? (
           // The one video element in the dash, Sheet-only by design — the grid
@@ -355,19 +397,30 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
   const isMobile = useIsMobile();
   const [openTile, setOpenTile] = React.useState<MorningTileData | null>(null);
 
-  const attention =
-    (morning?.missing ?? 0) + (morning?.failed ?? 0) + (morning?.partial ?? 0) > 0;
+  const needs = morning?.actionNeeded ?? 0;
 
   return (
     <div>
       <SectionHeader
-        family={attention ? "warning" : "accent"}
+        family={needs > 0 ? "warning" : "success"}
         icon="Sun"
         title="This morning's posts"
-        meta={
-          morning
-            ? `${morning.created}/${morning.expected} sets · ${morning.date}`
-            : undefined
+        meta={morning ? morning.date : undefined}
+        right={
+          morning ? (
+            // The verdict, stated rather than implied. The old header made you
+            // add up pills to work out whether you were done.
+            <span
+              style={{
+                font: "700 12px var(--font-ui)",
+                color: needs > 0 ? "var(--warning-text)" : "var(--success-text)",
+              }}
+            >
+              {needs > 0
+                ? `${needs} need${needs === 1 ? "s" : ""} you`
+                : "Nothing to do"}
+            </span>
+          ) : undefined
         }
       />
       <Card pad={isMobile ? "14px 14px" : "18px 20px"}>
@@ -395,13 +448,17 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
               >
                 {morning.created}/{morning.expected} CREATED
               </StatusPill>
-              {morning.posted > 0 && (
-                <StatusPill kind="running">{morning.posted} POSTED</StatusPill>
+              {/* The two self-resolving states, so a clean morning still
+                  says something rather than showing an empty pill row. */}
+              {morning.queued > 0 && (
+                <StatusPill kind="neutral">{morning.queued} QUEUED</StatusPill>
               )}
-              {/* Drafts awaiting promotion are the EXPECTED morning state,
-                  not a problem — attention, never danger. */}
+              {morning.posted > 0 && (
+                <StatusPill kind="success">{morning.posted} POSTED</StatusPill>
+              )}
+              {/* Everything below needs a person. */}
               {morning.drafts > 0 && (
-                <StatusPill kind="attention">{morning.drafts} DRAFT</StatusPill>
+                <StatusPill kind="attention">{morning.drafts} IN DRAFT</StatusPill>
               )}
               {morning.partial > 0 && (
                 <StatusPill kind="danger">{morning.partial} PARTIAL</StatusPill>

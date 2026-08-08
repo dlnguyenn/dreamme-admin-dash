@@ -103,6 +103,8 @@ export interface MorningTile {
   state: MorningTileState;
   platforms: MorningPlatformEntry[];
   coverage: MorningCoverage;
+  /** What Dan has to do about it, or null when it resolves itself. */
+  action: string | null;
 }
 
 export interface MorningSection {
@@ -112,18 +114,27 @@ export interface MorningSection {
   expected: number;
   created: number;
   posted: number;
+  /** Genuinely queued in Doublespeed — will publish without anyone. */
+  queued: number;
   drafts: number;
   failed: number;
   missing: number;
   /** Sets that produced one platform but not the other. */
   partial: number;
+  /** Tiles with a non-null action. The headline number. */
+  actionNeeded: number;
 }
 
 /**
- * Synced REST state is trusted only where it is trustworthy: posted and
- * failed are real transitions the API can see; "scheduled" from the API is
- * ambiguous (drafts report as scheduled) so anything non-terminal falls back
- * to the routine-recorded created_status.
+ * post_status is now the DERIVED live state written by
+ * batchState.syncMorningPostState — draft / scheduled / posted, worked out
+ * from which Doublespeed status FILTER returns the post rather than from the
+ * post's own `status` field (which reports "scheduled" for drafts too).
+ *
+ * So it is trusted outright, including for draft-vs-scheduled. That is the
+ * whole point: it tracks Dan promoting a draft in the Doublespeed UI, which
+ * the routine-recorded created_status can never see. created_status is only
+ * the fallback for a row that has never synced.
  */
 export function toMorningState(row: MorningPostRow): MorningTileState {
   switch ((row.post_status ?? "").toLowerCase()) {
@@ -133,6 +144,12 @@ export function toMorningState(row: MorningPostRow): MorningTileState {
     case "failed":
     case "error":
       return "failed";
+    case "draft":
+      return "draft";
+    case "scheduled":
+    case "pending":
+    case "queued":
+      return "scheduled";
   }
   switch ((row.created_status ?? "").toLowerCase()) {
     case "draft":
@@ -141,6 +158,31 @@ export function toMorningState(row: MorningPostRow): MorningTileState {
       return "scheduled";
   }
   return "unknown";
+}
+
+/**
+ * Does this tile need Dan to do something, and what?
+ *
+ * The question the panel exists to answer. `scheduled` and `posted` are the
+ * only states that resolve themselves; everything else is waiting on a person.
+ */
+export function tileAction(
+  state: MorningTileState,
+  coverage: MorningCoverage,
+): string | null {
+  switch (state) {
+    case "missing":
+      return "Routine did not create this";
+    case "failed":
+      return "Post failed, needs a retry";
+    case "draft":
+      return "Sitting in draft, promote it to queue";
+    case "unknown":
+      return "State unknown, check it in Doublespeed";
+  }
+  if (coverage === "facebook") return "No Instagram post for this set";
+  if (coverage === "instagram") return "No Facebook post for this set";
+  return null;
 }
 
 /**
@@ -163,24 +205,24 @@ export function worstState(states: MorningTileState[]): MorningTileState {
   return states.reduce((a, b) => (SEVERITY[b] > SEVERITY[a] ? b : a));
 }
 
-/** Per-tile problem label, or null when the tile needs no attention. */
-export function morningTileProblem(
-  state: MorningTileState,
-  coverage: MorningCoverage = "both",
-): string | null {
-  switch (state) {
-    case "failed":
-      return "FAILED";
-    case "missing":
-      return "NOT CREATED";
-    case "unknown":
-      return "UNKNOWN";
-  }
-  // Produced on one surface only — the signal a naive collapse would lose.
+/**
+ * The status badge every tile carries. Dan's ask: he must be able to tell at a
+ * glance whether a post is drafted, queued or already out — so unlike the
+ * earlier design, healthy tiles are labelled too rather than left bare.
+ */
+export const STATUS_LABEL: Record<MorningTileState, string> = {
+  posted: "POSTED",
+  scheduled: "QUEUED",
+  draft: "DRAFT",
+  failed: "FAILED",
+  missing: "NOT CREATED",
+  unknown: "UNKNOWN",
+};
+
+/** Extra red flag for a set that only made one surface. */
+export function coverageFlag(coverage: MorningCoverage): string | null {
   if (coverage === "facebook") return "FB ONLY";
   if (coverage === "instagram") return "IG ONLY";
-  // draft is the EXPECTED morning state (routines create drafts for Dan to
-  // promote), so it gets a neutral summary pill, not a red per-tile flag.
   return null;
 }
 
@@ -219,6 +261,8 @@ function buildTile(
   const withThumb = setRows.find((r) => isMorningPlatform(r.platform) && r.thumb_url);
   const any = setRows.find((r) => isMorningPlatform(r.platform));
   const coverage = coverageOf(platforms.map((p) => p.platform));
+  const state: MorningTileState =
+    coverage === "none" ? "missing" : worstState(platforms.map((p) => p.state));
 
   return {
     setKey,
@@ -227,12 +271,10 @@ function buildTile(
     postKind: any?.post_kind === "carousel" ? "carousel" : "video",
     caption: any?.caption ?? null,
     thumbUrl: withThumb?.thumb_url ?? null,
-    state:
-      coverage === "none"
-        ? "missing"
-        : worstState(platforms.map((p) => p.state)),
+    state,
     platforms,
     coverage,
+    action: tileAction(state, coverage),
   };
 }
 
@@ -274,11 +316,13 @@ export function buildMorningSection(
     expected: expected.length,
     created: tiles.filter((t) => t.coverage !== "none").length,
     posted: n("posted"),
+    queued: n("scheduled"),
     drafts: n("draft"),
     failed: n("failed"),
     missing: n("missing"),
     partial: tiles.filter(
       (t) => t.coverage === "facebook" || t.coverage === "instagram",
     ).length,
+    actionNeeded: tiles.filter((t) => t.action !== null).length,
   };
 }
