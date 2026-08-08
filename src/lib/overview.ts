@@ -25,6 +25,7 @@ import {
 } from "@/lib/pagedFetch";
 import {
   consumerDbConfigured,
+  fetchJoinDatesByIds,
   fetchReferralSourcesSince,
   type ReferralSourceRow,
 } from "@/lib/support/consumer-db";
@@ -162,6 +163,19 @@ export interface AttributionSection {
   trialsTotal: number | null;
   /** trialsTotal / all signups that day */
   trialRatePct: number | null;
+  /**
+   * Reconciliation against the "Trials today" tile, which counts trial
+   * EVENTS on the date across every cohort. The two numbers answer different
+   * questions and will rarely match — surfacing the split is what stops the
+   * difference from reading as a bug (which is exactly how it read on
+   * 2026-08-07: tile 46, cohort 37, and the missing 9 were 8 earlier-day
+   * signups plus 1 event with no consumer account).
+   */
+  trialEventsOnDay: number | null;
+  /** of trialEventsOnDay, those whose signup predates this day */
+  trialEventsFromEarlierCohorts: number | null;
+  /** of trialEventsOnDay, events with no consumer user in the window */
+  trialEventsUnattributed: number | null;
 }
 
 export interface ViewsSection {
@@ -351,8 +365,19 @@ interface DayBucket {
   trials: number;
 }
 
+/** Trial EVENTS that fired on one Eastern day, split by whose they were. */
+interface DayTrialEvents {
+  events: number;
+  /** signup predates the event day — the Trials tile counts these, cohorts don't */
+  fromEarlierCohorts: number;
+  /** no consumer user in the window (web-checkout orphans, ~2%) */
+  unattributed: number;
+}
+
 export interface DayBuckets {
   byDay: Map<string, DayBucket>;
+  /** keyed by the EVENT day — a different axis from the signup-day buckets */
+  eventsByDay: Map<string, DayTrialEvents>;
   /**
    * false when the trial query failed — rendered as "—", never as 0. This
    * belongs to the bucketing run, not to a bucket: a day with no signups has
@@ -380,6 +405,13 @@ function dayOffset(day: string, n: number): string {
 export function bucketByEasternDay(
   rows: ReferralSourceRow[],
   trials: TrialStartRow[] | null = null,
+  /**
+   * joined_at for trial users whose signup predates `rows`' window. Only used
+   * to classify trial events (earlier-cohort vs accountless); deliberately
+   * NOT folded into the day buckets, since those days are outside the window
+   * and a partial bucket would poison any baseline that touched it.
+   */
+  extraJoinDates: Map<string, string> | null = null,
 ): DayBuckets {
   // Trials are attributed to the user's SIGNUP day, not the day the trial
   // fired: the panel row is "74 TikTok signups on Aug 5", so the number beside
@@ -414,7 +446,36 @@ export function bucketByEasternDay(
       b.trialsBySource.set(source, (b.trialsBySource.get(source) ?? 0) + 1);
     }
   }
-  return { byDay: buckets, trialsKnown };
+
+  // Second axis: trial EVENTS per event day, so a day's view can reconcile
+  // itself against the "Trials today" tile (which counts events, not
+  // cohorts). Dedupe per user keeping the earliest event — a user starts a
+  // trial once, and the earliest fire is the one the tile counted.
+  const signupDay = new Map<string, string>();
+  for (const [id, joinedAt] of extraJoinDates ?? []) {
+    signupDay.set(id, easternDate(new Date(joinedAt)));
+  }
+  for (const r of rows) signupDay.set(r.id, easternDate(new Date(r.joined_at)));
+  const firstEvent = new Map<string, string>();
+  for (const t of trials ?? []) {
+    const eventDay = easternDate(new Date(t.event_at));
+    const prev = firstEvent.get(t.app_user_id);
+    if (!prev || eventDay < prev) firstEvent.set(t.app_user_id, eventDay);
+  }
+  const eventsByDay = new Map<string, DayTrialEvents>();
+  for (const [userId, eventDay] of firstEvent) {
+    let e = eventsByDay.get(eventDay);
+    if (!e) {
+      e = { events: 0, fromEarlierCohorts: 0, unattributed: 0 };
+      eventsByDay.set(eventDay, e);
+    }
+    e.events++;
+    const joined = signupDay.get(userId);
+    if (!joined) e.unattributed++;
+    else if (joined < eventDay) e.fromEarlierCohorts++;
+  }
+
+  return { byDay: buckets, eventsByDay, trialsKnown };
 }
 
 /**
@@ -443,6 +504,7 @@ export function attributionForDay(
   const todayBy = target?.bySource ?? new Map<string, number>();
   const todayTotal = target?.answered ?? 0;
   const trialsKnown = buckets.trialsKnown;
+  const events = buckets.eventsByDay.get(day);
 
   // Union of both windows — a source can be brand new on the day (youtube,
   // seen 2026-08-07 with 1 and 0 before) or have dried up entirely.
@@ -477,6 +539,11 @@ export function attributionForDay(
     // otherwise the headline rate would silently exclude ~1% of the funnel.
     trialsTotal: trialsKnown ? (target?.trials ?? 0) : null,
     trialRatePct: trialsKnown ? pct(target?.trials ?? 0, target?.total ?? 0) : null,
+    trialEventsOnDay: trialsKnown ? (events?.events ?? 0) : null,
+    trialEventsFromEarlierCohorts: trialsKnown
+      ? (events?.fromEarlierCohorts ?? 0)
+      : null,
+    trialEventsUnattributed: trialsKnown ? (events?.unattributed ?? 0) : null,
   };
 }
 
@@ -484,6 +551,7 @@ export function buildAttribution(
   rows: ReferralSourceRow[] | null,
   now = new Date(),
   trials: TrialStartRow[] | null = null,
+  extraJoinDates: Map<string, string> | null = null,
 ): AttributionSection {
   if (!rows) {
     return {
@@ -494,9 +562,15 @@ export function buildAttribution(
       coveragePct: null,
       trialsTotal: null,
       trialRatePct: null,
+      trialEventsOnDay: null,
+      trialEventsFromEarlierCohorts: null,
+      trialEventsUnattributed: null,
     };
   }
-  return attributionForDay(bucketByEasternDay(rows, trials), easternDate(now));
+  return attributionForDay(
+    bucketByEasternDay(rows, trials, extraJoinDates),
+    easternDate(now),
+  );
 }
 
 export interface AttributionSeries {
@@ -520,9 +594,10 @@ export function buildAttributionSeries(
   now = new Date(),
   days = HISTORY_DAYS,
   trials: TrialStartRow[] | null = null,
+  extraJoinDates: Map<string, string> | null = null,
 ): AttributionSeries {
   if (!rows) return { days: [], byDay: {}, shareHistory: {} };
-  const buckets = bucketByEasternDay(rows, trials);
+  const buckets = bucketByEasternDay(rows, trials, extraJoinDates);
   const today = easternDate(now);
 
   const dayList: string[] = [];
@@ -591,6 +666,24 @@ async function fetchTrialStartUsers(sinceIso: string): Promise<TrialStartRow[]> 
   });
 }
 
+/**
+ * joined_at for trial users the signup window didn't cover. Best-effort: a
+ * failure leaves those events classified as accountless, which is the same
+ * state as not looking — never worse.
+ */
+async function resolveTrialJoinDates(
+  rows: ReferralSourceRow[],
+  trials: TrialStartRow[] | null,
+): Promise<Map<string, string> | null> {
+  if (!trials?.length) return null;
+  const known = new Set(rows.map((r) => r.id));
+  const missing = [...new Set(trials.map((t) => t.app_user_id))].filter(
+    (id) => !known.has(id),
+  );
+  if (missing.length === 0) return null;
+  return fetchJoinDatesByIds(missing).catch(() => null);
+}
+
 /** 8-day window: today plus the 7 complete days it is compared against. */
 async function fetchAttribution(): Promise<AttributionSection> {
   if (!consumerDbConfigured()) {
@@ -609,7 +702,8 @@ async function fetchAttribution(): Promise<AttributionSection> {
     // null, not [] — a failed lookup must render as "—", never as zero trials.
     fetchTrialStartUsers(since).catch(() => null),
   ]);
-  return buildAttribution(rows, new Date(), trials);
+  const extra = await resolveTrialJoinDates(rows, trials);
+  return buildAttribution(rows, new Date(), trials, extra);
 }
 
 /**
@@ -629,7 +723,8 @@ export async function fetchAttributionSeries(): Promise<AttributionSeries> {
     // null, not [] — a failed lookup must render as "—", never as zero trials.
     fetchTrialStartUsers(since).catch(() => null),
   ]);
-  return buildAttributionSeries(rows, new Date(), HISTORY_DAYS, trials);
+  const extra = await resolveTrialJoinDates(rows, trials);
+  return buildAttributionSeries(rows, new Date(), HISTORY_DAYS, trials, extra);
 }
 
 /**

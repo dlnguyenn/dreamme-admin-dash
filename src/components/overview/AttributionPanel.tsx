@@ -505,6 +505,30 @@ export function AttributionPanel({
                 )}
               </span>
 
+              {/* Reconciliation against the "Trials today" tile, which counts
+                  trial EVENTS on the date across every cohort. Without this
+                  line the two numbers read as a bug (2026-08-07: tile said 46,
+                  cohort said 37 — the gap was 8 earlier-day signups plus one
+                  event with no consumer account). */}
+              {viewing.trialEventsOnDay != null &&
+                viewing.trialEventsOnDay !== viewing.trialsTotal && (
+                  <span
+                    style={{
+                      font: "400 11.5px var(--font-ui)",
+                      color: "var(--ink-4)",
+                    }}
+                  >
+                    {fmtNum(viewing.trialEventsOnDay)} trials fired{" "}
+                    {isToday ? "today" : "that day"} (the tile's number)
+                    {(viewing.trialEventsFromEarlierCohorts ?? 0) > 0 && (
+                      <> · {fmtNum(viewing.trialEventsFromEarlierCohorts)} from earlier signups</>
+                    )}
+                    {(viewing.trialEventsUnattributed ?? 0) > 0 && (
+                      <> · {fmtNum(viewing.trialEventsUnattributed)} without an account</>
+                    )}
+                  </span>
+                )}
+
               <span
                 style={{
                   font: "400 11.5px var(--font-ui)",

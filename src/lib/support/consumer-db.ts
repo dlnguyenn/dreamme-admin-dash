@@ -127,6 +127,30 @@ export async function fetchReferralSourcesSince(
   });
 }
 
+/**
+ * joined_at for specific users, by id. Used to classify trial events whose
+ * user signed up BEFORE the attribution window: without this lookup they are
+ * indistinguishable from accountless orphans and inflate that count (seen
+ * live 2026-08-07: 7 "without an account" where the truth was 1 orphan and 6
+ * older signups). The id set is tiny — trial events per day, not signups —
+ * so this is one or two requests, chunked defensively.
+ */
+export async function fetchJoinDatesByIds(
+  ids: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    if (chunk.length === 0) break;
+    const rows = await cGet<{ id: string; joined_at: string }[]>(
+      `users?select=id,joined_at&id=in.(${chunk.map((x) => encodeURIComponent(x)).join(",")})`,
+    );
+    for (const r of rows) out.set(r.id, r.joined_at);
+  }
+  return out;
+}
+
 export interface ConsumerAuthInfo {
   createdAt: string | null;
   lastSignInAt: string | null;

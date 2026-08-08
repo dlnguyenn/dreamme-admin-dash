@@ -328,4 +328,75 @@ describe("trial join", () => {
     expect(a.trialsTotal).toBe(0);
     expect(a.trialRatePct).toBe(0);
   });
+
+  /**
+   * The reconciliation line: the 2026-08-07 report was tile 46 vs cohort 37,
+   * and the gap (8 earlier-day signups + 1 accountless event) read as a bug.
+   * Events-on-day must decompose exactly so the footer can show the split.
+   */
+  it("splits the day's trial events into cohort / earlier / unattributed", () => {
+    const todayUser = at("2026-08-07", "tiktok");
+    const earlierUser = at("2026-08-05", "facebook");
+    const a = buildAttribution([todayUser, earlierUser], NOW, [
+      trial(todayUser.id, "2026-08-07"), // today's signup, fired today
+      trial(earlierUser.id, "2026-08-07"), // Aug 5 signup, fired today
+      trial("ghost-user", "2026-08-07"), // no consumer account
+    ]);
+    expect(a.trialsTotal).toBe(1); // cohort number: only today's signup
+    expect(a.trialEventsOnDay).toBe(3); // the tile's number
+    expect(a.trialEventsFromEarlierCohorts).toBe(1);
+    expect(a.trialEventsUnattributed).toBe(1);
+    // events = same-day cohort + earlier + unattributed, exactly.
+    expect(a.trialEventsOnDay).toBe(
+      1 + a.trialEventsFromEarlierCohorts! + a.trialEventsUnattributed!,
+    );
+  });
+
+  it("counts a user's trial once even when duplicate events arrive", () => {
+    const u = at("2026-08-07", "tiktok");
+    const a = buildAttribution([u], NOW, [
+      trial(u.id, "2026-08-07"),
+      trial(u.id, "2026-08-07"),
+    ]);
+    expect(a.trialEventsOnDay).toBe(1);
+    expect(a.trialsTotal).toBe(1);
+  });
+
+  /**
+   * The live bug (2026-08-07 evening): a trial fired today by someone who
+   * signed up BEFORE the fetch window has no signup row, and without the
+   * supplemental join-date lookup it was counted as "without an account" —
+   * the panel showed 7 orphans where the truth was 1 orphan + 6 older
+   * signups. The extraJoinDates map is that lookup's result.
+   */
+  it("classifies out-of-window signups as earlier cohorts, not orphans", () => {
+    const inWindow = at("2026-08-07", "tiktok");
+    const trials = [
+      trial(inWindow.id, "2026-08-07"),
+      trial("old-timer", "2026-08-07"), // signed up before the window
+      trial("true-ghost", "2026-08-07"), // genuinely no account
+    ];
+    const withoutLookup = buildAttribution([inWindow], NOW, trials);
+    expect(withoutLookup.trialEventsUnattributed).toBe(2); // old-timer misread
+
+    const withLookup = buildAttribution(
+      [inWindow],
+      NOW,
+      trials,
+      new Map([["old-timer", "2026-07-15T12:00:00Z"]]),
+    );
+    expect(withLookup.trialEventsFromEarlierCohorts).toBe(1);
+    expect(withLookup.trialEventsUnattributed).toBe(1);
+    // The lookup must not create a cohort: old-timer's signup day is outside
+    // the window and contributes to no bucket or baseline.
+    expect(withLookup.trialsTotal).toBe(1);
+    expect(withLookup.prior7dTotal).toBe(0);
+  });
+
+  it("nulls the event split when the trial query is unavailable", () => {
+    const a = buildAttribution([at("2026-08-07", "tiktok")], NOW, null);
+    expect(a.trialEventsOnDay).toBe(null);
+    expect(a.trialEventsFromEarlierCohorts).toBe(null);
+    expect(a.trialEventsUnattributed).toBe(null);
+  });
 });
