@@ -130,14 +130,20 @@ export function App() {
   }, [viewAs, hydrated]);
 
   React.useEffect(() => {
-    // Must wait for hydration: viewAs starts at "user" and only becomes
-    // "admin" once storage is read. Running this on the first render would
-    // bounce an adminOnly landing tab (Overview) to Content Pipeline before
-    // the real role ever arrives, and the bounce is not undone afterwards.
-    if (!hydrated) return;
+    // Must wait for hydration AND auth: viewAs starts at "user" and only
+    // becomes "admin" once storage is read — or, in a FRESH browser, only
+    // when the Gate's onEnter fires. Running earlier bounces the adminOnly
+    // landing tab (Overview) to Content Pipeline behind the password gate,
+    // and the bounce is never undone because Content Pipeline is legal for
+    // admins too. That was the "fresh browser always lands on Content
+    // Pipeline" bug (2026-08-07): hydration alone didn't cover the
+    // no-saved-session case, where the true role arrives at login, not at
+    // hydration. Nothing is visible before auth anyway, so deferring the
+    // bounce costs nothing.
+    if (!hydrated || !authed) return;
     const allowed = visibleNavItems(viewAs).map((n) => n.id);
     if (!allowed.includes(current)) setCurrent(allowed[0]);
-  }, [viewAs, current, hydrated]);
+  }, [viewAs, current, hydrated, authed]);
 
   React.useEffect(() => {
     if (!hydrated) return;
