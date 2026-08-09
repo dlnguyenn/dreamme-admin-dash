@@ -9,13 +9,22 @@
  * Per-file PostgREST helper, same convention as clippers.ts and support/db.ts.
  */
 import { SUPABASE_URL } from "@/lib/supabase";
-import { syncBatchPostState, syncMorningPostState } from "@/lib/batchState";
+import {
+  liveDoublespeedPosts,
+  syncBatchPostState,
+  syncMorningPostState,
+} from "@/lib/batchState";
 import {
   EXPECTED_MORNING,
+  MORNING_ACCOUNTS,
   buildMorningSection,
   type MorningPostRow,
   type MorningSection,
 } from "@/lib/morningPosts";
+import {
+  discoverMorningRows,
+  mergeMorningRows,
+} from "@/lib/morningDiscovery";
 import type { TilePost } from "@/lib/batchDisplay";
 import {
   doublespeedConfigured,
@@ -938,15 +947,43 @@ async function fetchViews(): Promise<ViewsSection> {
  */
 async function fetchMorning(): Promise<MorningSection> {
   const today = easternDate();
-  await syncMorningPostState({ batchDate: today });
-  const rows = await soft<MorningPostRow[]>(
-    `morning_posts?select=batch_date,routine,set_key,platform,username,` +
-      `doublespeed_post_id,post_kind,caption,sound,thumb_url,video_url,` +
-      `created_status,post_status,posted_at,public_post_url` +
-      `&batch_date=eq.${today}&order=set_key.asc,platform.asc&limit=100`,
-    [],
+
+  // One live pull, shared with the sync below and reused by discovery. A
+  // Doublespeed outage degrades to "DB rows only", never a blank panel.
+  const live = doublespeedConfigured()
+    ? await liveDoublespeedPosts(new Date(Date.now() - 2 * 86_400_000)).catch(
+        () => null,
+      )
+    : null;
+
+  const [, dbRows] = await Promise.all([
+    syncMorningPostState({ batchDate: today, live: live ?? undefined }),
+    soft<MorningPostRow[]>(
+      `morning_posts?select=batch_date,routine,set_key,platform,username,` +
+        `doublespeed_post_id,post_kind,caption,sound,thumb_url,video_url,` +
+        `created_status,post_status,posted_at,public_post_url` +
+        `&batch_date=eq.${today}&order=set_key.asc,platform.asc&limit=100`,
+      [],
+    ),
+  ]);
+
+  // Safe to read the DB concurrently with its own sync: the merge below takes
+  // live state from discovery for any row describing the same post, so a
+  // pre-sync read cannot leave a stale status on screen.
+  const discovered = live
+    ? discoverMorningRows(
+        [...live.values()],
+        MORNING_ACCOUNTS,
+        EXPECTED_MORNING,
+        today,
+      )
+    : [];
+
+  return buildMorningSection(
+    mergeMorningRows(dbRows, discovered),
+    EXPECTED_MORNING,
+    today,
   );
-  return buildMorningSection(rows, EXPECTED_MORNING, today);
 }
 
 interface SupportThreadLite {
@@ -1347,7 +1384,10 @@ const OPS_CHECKS: {
   },
   {
     key: "morning",
-    label: "Morning posts published",
+    // Measures MANIFEST freshness, not whether posts exist — the Overview
+    // discovers those live now. Named accordingly so a green light here is
+    // never read as "the morning ran".
+    label: "Morning manifest written",
     path: "morning_posts?select=created_at&order=created_at.desc&limit=1",
     field: "created_at",
     expectHours: 30,

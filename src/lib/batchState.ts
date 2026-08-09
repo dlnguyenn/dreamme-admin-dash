@@ -48,6 +48,29 @@ interface DsPost {
   post_time: string | null;
   succeeded_at: string | null;
   public_post_url: string | null;
+  /** A post Dan deleted still comes back in the `all` filter. */
+  delete_requested?: boolean;
+  /** This IS the caption; the API has no separate caption field. */
+  title?: string | null;
+  account?: { username: string | null; account_type: string | null } | null;
+}
+
+/**
+ * One post's live truth: the derived state plus the fields the REST API
+ * actually returns. Everything the Overview needs to show a post it has never
+ * been told about — see lib/morningDiscovery.ts.
+ */
+export interface LivePost {
+  id: string;
+  derived: "posted" | "scheduled" | "draft";
+  username: string | null;
+  accountType: string | null;
+  /** The caption. */
+  title: string | null;
+  postTime: string | null;
+  succeededAt: string | null;
+  publicPostUrl: string | null;
+  deleteRequested: boolean;
 }
 
 interface DsPostsPage {
@@ -106,7 +129,7 @@ const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 async function collect(
   status: "all" | "scheduled" | "posted",
   since: Date,
-  into: Map<string, BatchPostState>,
+  into: Map<string, DsPost>,
 ): Promise<void> {
   let page = 1;
   let totalPages = 1;
@@ -119,16 +142,21 @@ async function collect(
     const posts = body.posts ?? [];
     for (const p of posts) {
       if (!p.id) continue;
-      into.set(p.id, {
-        post_status: p.status ?? status,
-        // succeeded_at is when it actually went live; post_time is only the slot.
-        posted_at: p.succeeded_at ?? p.post_time ?? null,
-        public_post_url: p.public_post_url ?? null,
-      });
+      into.set(p.id, p);
     }
     if (posts.length === 0) break;
     page++;
   }
+}
+
+/** The stored shape, from a raw post. `fallback` is the filter it came from. */
+function toState(p: DsPost, fallback: string): BatchPostState {
+  return {
+    post_status: p.status ?? fallback,
+    // succeeded_at is when it actually went live; post_time is only the slot.
+    posted_at: p.succeeded_at ?? p.post_time ?? null,
+    public_post_url: p.public_post_url ?? null,
+  };
 }
 
 /**
@@ -173,16 +201,16 @@ export async function syncBatchPostState(opts?: {
     }
 
     const since = new Date(Date.now() - lookbackDays * 86_400_000);
+    const raw = new Map<string, DsPost>();
+    // One 'all' pass, and the post's own `status` field is stored verbatim —
+    // which means a draft is recorded as "scheduled", because that is what the
+    // field says. syncMorningPostState below does NOT do this; it derives the
+    // real state from filter membership. The same fix applies here and would
+    // stop a stuck draft reading as QUEUED (the b28/maya failure), but this
+    // sync feeds a different panel and is left alone deliberately.
+    await collect("all", since, raw);
     const remote = new Map<string, BatchPostState>();
-    // One 'all' pass covers both live states. An earlier version called
-    // collect('draft') first to catch posts that had fallen back to draft; that
-    // is not a value this API accepts, so it 400'd on every run and the catch
-    // below swallowed it, leaving the sync writing nothing at all. Drafts are
-    // simply not exposed here: 'all' over 45 days returns only 'posted' and
-    // 'scheduled'. A post that never drains therefore shows as QUEUED forever,
-    // which is the honest reading, and the stuck-queue check below is what
-    // turns a stale QUEUED into something visible.
-    await collect("all", since, remote);
+    for (const [id, p] of raw) remote.set(id, toState(p, "all"));
 
     const now = new Date().toISOString();
     let updated = 0;
@@ -254,37 +282,61 @@ export async function syncBatchPostState(opts?: {
  * were invisible to this API. They are invisible to the *field*, not to the
  * *filters* — that pass was never run.
  */
-async function collectDerived(
-  since: Date,
-): Promise<Map<string, BatchPostState>> {
+async function collectDerived(since: Date): Promise<Map<string, LivePost>> {
+  const one = async (s: "all" | "scheduled" | "posted") => {
+    const m = new Map<string, DsPost>();
+    await collect(s, since, m);
+    return m;
+  };
   const [all, scheduled, posted] = await Promise.all([
-    (async () => {
-      const m = new Map<string, BatchPostState>();
-      await collect("all", since, m);
-      return m;
-    })(),
-    (async () => {
-      const m = new Map<string, BatchPostState>();
-      await collect("scheduled", since, m);
-      return m;
-    })(),
-    (async () => {
-      const m = new Map<string, BatchPostState>();
-      await collect("posted", since, m);
-      return m;
-    })(),
+    one("all"),
+    one("scheduled"),
+    one("posted"),
   ]);
 
-  const out = new Map<string, BatchPostState>();
-  for (const [id, v] of all) {
-    const derived = posted.has(id)
-      ? "posted"
-      : scheduled.has(id)
-        ? "scheduled"
-        : "draft";
-    out.set(id, { ...v, post_status: derived });
+  const out = new Map<string, LivePost>();
+  for (const [id, p] of all) {
+    out.set(id, {
+      id,
+      derived: posted.has(id)
+        ? "posted"
+        : scheduled.has(id)
+          ? "scheduled"
+          : "draft",
+      username: p.account?.username ?? null,
+      accountType: p.account?.account_type ?? null,
+      title: p.title ?? null,
+      postTime: p.post_time ?? null,
+      succeededAt: p.succeeded_at ?? null,
+      publicPostUrl: p.public_post_url ?? null,
+      deleteRequested: p.delete_requested === true,
+    });
   }
   return out;
+}
+
+/**
+ * The live post map, memoized briefly so the Overview's two consumers — the
+ * morning sync and morning discovery — share ONE set of three paged pulls.
+ *
+ * Per-lambda-instance and read-only; nothing depends on it for correctness,
+ * only for not fetching twice inside a single Overview build. Callers must not
+ * mutate the returned map.
+ */
+let liveMemo: { key: string; at: number; value: Map<string, LivePost> } | null =
+  null;
+const LIVE_TTL_MS = 60_000;
+
+export async function liveDoublespeedPosts(
+  since: Date,
+): Promise<Map<string, LivePost>> {
+  const key = isoDate(since);
+  if (liveMemo && liveMemo.key === key && Date.now() - liveMemo.at < LIVE_TTL_MS) {
+    return liveMemo.value;
+  }
+  const value = await collectDerived(since);
+  liveMemo = { key, at: Date.now(), value };
+  return value;
 }
 
 /**
@@ -299,6 +351,8 @@ export async function syncMorningPostState(opts: {
   batchDate: string;
   maxAgeMs?: number;
   lookbackDays?: number;
+  /** Share the caller's already-fetched map instead of pulling again. */
+  live?: Map<string, LivePost>;
 }): Promise<{ ok: boolean; updated: number; skipped: boolean; error?: string }> {
   if (!batchStateConfigured()) {
     return { ok: false, updated: 0, skipped: true, error: "not configured" };
@@ -327,7 +381,7 @@ export async function syncMorningPostState(opts: {
     }
 
     const since = new Date(Date.now() - lookbackDays * 86_400_000);
-    const remote = await collectDerived(since);
+    const remote = opts.live ?? (await liveDoublespeedPosts(since));
 
     const now = new Date().toISOString();
     let updated = 0;
@@ -335,8 +389,13 @@ export async function syncMorningPostState(opts: {
     for (const row of rows) {
       const id = row.doublespeed_post_id;
       if (!id) continue;
-      const next = remote.get(id);
-      if (!next) continue;
+      const live = remote.get(id);
+      if (!live) continue;
+      const next: BatchPostState = {
+        post_status: live.derived,
+        posted_at: live.succeededAt ?? live.postTime ?? null,
+        public_post_url: live.publicPostUrl,
+      };
 
       const changed =
         next.post_status !== row.post_status ||

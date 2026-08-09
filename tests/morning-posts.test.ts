@@ -10,11 +10,13 @@ import {
   STATUS_LABEL,
   buildMorningSection,
   coverageFlag,
+  missingMeta,
   tileAction,
   toMorningState,
   worstState,
   type MorningPostRow,
 } from "../src/lib/morningPosts";
+import { mergeMorningRows } from "../src/lib/morningDiscovery";
 
 const DATE = "2026-08-08";
 
@@ -122,19 +124,35 @@ describe("status labels and action", () => {
   });
 
   it("only queued and posted resolve themselves; everything else needs a person", () => {
-    expect(tileAction("scheduled", "both")).toBeNull();
-    expect(tileAction("posted", "both")).toBeNull();
-    expect(tileAction("draft", "both")).toMatch(/promote/i);
-    expect(tileAction("missing", "both")).toBeTruthy();
-    expect(tileAction("failed", "both")).toBeTruthy();
-    expect(tileAction("unknown", "both")).toBeTruthy();
+    expect(tileAction("scheduled", "both").action).toBeNull();
+    expect(tileAction("posted", "both").action).toBeNull();
+    expect(tileAction("draft", "both").action).toMatch(/promote/i);
+    expect(tileAction("missing", "both").action).toBeTruthy();
+    expect(tileAction("failed", "both").action).toBeTruthy();
+    expect(tileAction("unknown", "both").action).toBeTruthy();
   });
 
   it("a one-surface set needs action even when that surface is healthy", () => {
-    expect(tileAction("posted", "facebook")).toMatch(/Instagram/i);
-    expect(tileAction("scheduled", "instagram")).toMatch(/Facebook/i);
+    expect(tileAction("posted", "facebook").action).toMatch(/Instagram/i);
+    expect(tileAction("scheduled", "instagram").action).toMatch(/Facebook/i);
     // A hard problem still wins the message.
-    expect(tileAction("failed", "instagram")).toMatch(/failed/i);
+    expect(tileAction("failed", "instagram").action).toMatch(/failed/i);
+  });
+
+  it("an empty set reads differently per routine", () => {
+    // The wall-of-text lane runs itself, so nothing there is a broken cron.
+    const wot = tileAction("missing", "none", "wall-of-text");
+    expect(wot.severity).toBe("alert");
+    expect(missingMeta("wall-of-text").label).toBe("NOT CREATED");
+
+    // Queueing decks is a manual step; unqueued at 9am is normal, not broken.
+    const deck = tileAction("missing", "none", "text-card-decks");
+    expect(deck.severity).toBe("pending");
+    expect(deck.action).toMatch(/not queued/i);
+    expect(missingMeta("text-card-decks").label).toBe("NOT QUEUED");
+
+    // An unrecognised routine must not silently become neutral.
+    expect(tileAction("missing", "none", "nonsense").severity).toBe("alert");
   });
 
   it("coverageFlag marks partials only", () => {
@@ -290,5 +308,92 @@ describe("pills agree with tiles", () => {
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
     expect(s.drafts).toBe(EXPECTED_MORNING.length);
     expect(s.actionNeeded).toBe(EXPECTED_MORNING.length);
+  });
+
+  it("unqueued decks are pending, not part of the red headline", () => {
+    // Only the three wall-of-text trios queued; the four decks absent.
+    const rows = fullDay()
+      .filter((r) => r.routine === "wall-of-text")
+      .map((r) => ({ ...r, post_status: "scheduled" }));
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    expect(s.queued).toBe(3);
+    expect(s.pending).toBe(4);
+    expect(s.actionNeeded).toBe(0); // nothing is BROKEN
+    for (const t of s.tiles.filter((x) => x.routine === "text-card-decks")) {
+      expect(t.severity).toBe("pending");
+      expect(t.statusLabel).toBe("NOT QUEUED");
+    }
+  });
+});
+
+describe("merge with discovery", () => {
+  const disc = (over: Partial<MorningPostRow>): MorningPostRow =>
+    row({ discovered: true, created_status: "", sound: null, ...over });
+
+  it("THE REGRESSION: discovery alone populates sets the DB never heard of", () => {
+    // The real 2026-08-06/07 shape: the manifest covered the three trios, the
+    // four deck sets went out and were never recorded, and the panel lied.
+    const dbRows = fullDay().filter((r) => r.routine === "wall-of-text");
+    const discovered = EXPECTED_MORNING.filter(
+      (e) => e.routine === "text-card-decks",
+    ).flatMap((e) =>
+      (["facebook", "instagram"] as const).map((platform) =>
+        disc({
+          set_key: e.setKey,
+          routine: e.routine,
+          platform,
+          post_status: "posted",
+          post_kind: "carousel",
+        }),
+      ),
+    );
+
+    const before = buildMorningSection(dbRows, EXPECTED_MORNING, DATE);
+    expect(before.missing).toBe(4); // what Dan was seeing
+
+    const after = buildMorningSection(
+      mergeMorningRows(dbRows, discovered),
+      EXPECTED_MORNING,
+      DATE,
+    );
+    expect(after.missing).toBe(0);
+    expect(after.posted).toBe(4);
+    expect(after.pending).toBe(0);
+  });
+
+  it("a DB row keeps its thumbnail, sound and caption", () => {
+    const dbRows = [
+      row({ thumb_url: "https://x/manifest.jpg", sound: "Snatched", caption: "db" }),
+    ];
+    const discovered = [
+      disc({ thumb_url: "https://x/live/1", caption: "live", post_status: "posted" }),
+    ];
+    const merged = mergeMorningRows(dbRows, discovered);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].thumb_url).toBe("https://x/manifest.jpg");
+    expect(merged[0].sound).toBe("Snatched");
+    expect(merged[0].caption).toBe("db");
+  });
+
+  it("live state overrides the stored one for the SAME post", () => {
+    const dbRows = [row({ doublespeed_post_id: "p1", post_status: "draft" })];
+    const discovered = [disc({ doublespeed_post_id: "p1", post_status: "posted" })];
+    const merged = mergeMorningRows(dbRows, discovered);
+    expect(merged[0].post_status).toBe("posted");
+    // ...but only those fields.
+    expect(merged[0].sound).toBe("Snatched");
+  });
+
+  it("does NOT override when the ids differ — that is a different post", () => {
+    const dbRows = [row({ doublespeed_post_id: "p1", post_status: "draft" })];
+    const discovered = [disc({ doublespeed_post_id: "p2", post_status: "posted" })];
+    const merged = mergeMorningRows(dbRows, discovered);
+    expect(merged[0].post_status).toBe("draft");
+  });
+
+  it("empty on both sides is unchanged from the all-missing grid", () => {
+    const s = buildMorningSection(mergeMorningRows([], []), EXPECTED_MORNING, DATE);
+    expect(s.created).toBe(0);
+    expect(s.missing).toBe(EXPECTED_MORNING.length);
   });
 });

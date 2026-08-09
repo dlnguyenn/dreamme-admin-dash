@@ -16,9 +16,9 @@
 import * as React from "react";
 import { useIsMobile } from "@/lib/useIsMobile";
 import {
-  STATUS_LABEL,
   coverageFlag,
   type MorningSection,
+  type MorningSeverity,
   type MorningTile as MorningTileData,
   type MorningTileState,
 } from "@/lib/morningPosts";
@@ -47,8 +47,14 @@ const STATE_FAMILY: Record<MorningTileState, Parameters<typeof fam>[0]> = {
   unknown: "warning",
 };
 
-function statusPillStyle(state: MorningTileState): React.CSSProperties {
-  const f = fam(STATE_FAMILY[state]);
+/** A `pending` tile is a normal state of the day, so it must not read red. */
+function tileFamily(tile: MorningTileData): Parameters<typeof fam>[0] {
+  if (tile.severity === "pending") return "neutral";
+  return STATE_FAMILY[tile.state];
+}
+
+function statusPillStyle(tile: MorningTileData): React.CSSProperties {
+  const f = fam(tileFamily(tile));
   return {
     ...overlayPill,
     background: f.solid,
@@ -111,14 +117,15 @@ function TileLabel({ tile }: { tile: MorningTileData }) {
 }
 
 function MissingMorningTile({ tile }: { tile: MorningTileData }) {
+  const f = fam(tileFamily(tile));
   return (
     <div>
       <div
         title={`${tile.setLabel} — ${tile.action ?? "nothing created this morning"}`}
         style={{
           ...cellStyle,
-          border: "1px dashed var(--warning)",
-          background: "var(--warning-soft)",
+          border: `1px dashed ${f.solid}`,
+          background: f.soft,
           display: "grid",
           placeItems: "center",
           padding: 6,
@@ -129,10 +136,10 @@ function MissingMorningTile({ tile }: { tile: MorningTileData }) {
           style={{
             font: "600 9px var(--font-ui)",
             letterSpacing: "0.04em",
-            color: "var(--warning-text)",
+            color: f.text,
           }}
         >
-          NOT CREATED
+          {tile.statusLabel}
         </div>
       </div>
       <TileLabel tile={tile} />
@@ -224,8 +231,8 @@ function MorningTileCard({
               tiles bare, which looked cleaner but meant a queued post and a
               stuck draft were visually identical — the one question Dan
               actually needs this grid to answer. */}
-          <span style={{ ...statusPillStyle(tile.state), bottom: 6, left: 6 }}>
-            {STATUS_LABEL[tile.state]}
+          <span style={{ ...statusPillStyle(tile), bottom: 6, left: 6 }}>
+            {tile.statusLabel}
           </span>
 
           {flag && (
@@ -268,16 +275,16 @@ function MorningTileDetail({
           <Chip tone="neutral">{tile.setLabel}</Chip>
           <Chip tone="neutral">{tile.routine}</Chip>
           <Chip tone="neutral">{tile.postKind}</Chip>
-          <Chip tone={STATE_FAMILY[tile.state]}>{STATUS_LABEL[tile.state]}</Chip>
+          <Chip tone={tileFamily(tile)}>{tile.statusLabel}</Chip>
         </div>
 
         {tile.action && (
           <div
             style={{
               font: "600 12.5px/1.45 var(--font-ui)",
-              color: "var(--warning-text)",
-              background: "var(--warning-soft)",
-              border: "1px solid var(--warning)",
+              color: fam(tileFamily(tile)).text,
+              background: fam(tileFamily(tile)).soft,
+              border: `1px solid ${fam(tileFamily(tile)).solid}`,
               borderRadius: 9,
               padding: "8px 10px",
             }}
@@ -345,7 +352,19 @@ function MorningTileDetail({
               </span>
               {p.username && <span style={{ color: "var(--ink-4)" }}>@{p.username}</span>}
               <Chip tone={p.state === "posted" ? "success" : "neutral"}>{p.state}</Chip>
-              {p.sound && <span style={{ color: "var(--ink-4)" }}>♪ {p.sound}</span>}
+              {p.sound ? (
+                <span style={{ color: "var(--ink-4)" }}>♪ {p.sound}</span>
+              ) : p.discovered ? (
+                // No manifest for this one, so the sound is unknown rather than
+                // absent. Say which, or a silent post and an unrecorded one
+                // look identical.
+                <span style={{ color: "var(--ink-4)" }} title="Found live on Doublespeed; no manifest recorded the sound">
+                  ♪ not recorded
+                </span>
+              ) : null}
+              {p.extraPosts > 0 && (
+                <Chip tone="neutral">+{p.extraPosts} more today</Chip>
+              )}
               {p.publicPostUrl && (
                 <a
                   href={p.publicPostUrl}
@@ -398,11 +417,24 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
   const [openTile, setOpenTile] = React.useState<MorningTileData | null>(null);
 
   const needs = morning?.actionNeeded ?? 0;
+  const pending = morning?.pending ?? 0;
+  // Three tiers, deliberately: red only when something is actually broken, so
+  // the number keeps its meaning. Decks awaiting a manual queue are neutral.
+  const verdictFamily: MorningSeverity extends never
+    ? never
+    : Parameters<typeof fam>[0] =
+    needs > 0 ? "warning" : pending > 0 ? "neutral" : "success";
+  const verdict =
+    needs > 0
+      ? `${needs} need${needs === 1 ? "s" : ""} you`
+      : pending > 0
+        ? `${pending} not queued yet`
+        : "Nothing to do";
 
   return (
     <div>
       <SectionHeader
-        family={needs > 0 ? "warning" : "success"}
+        family={verdictFamily}
         icon="Sun"
         title="This morning's posts"
         meta={morning ? morning.date : undefined}
@@ -413,12 +445,10 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
             <span
               style={{
                 font: "700 12px var(--font-ui)",
-                color: needs > 0 ? "var(--warning-text)" : "var(--success-text)",
+                color: fam(verdictFamily).text,
               }}
             >
-              {needs > 0
-                ? `${needs} need${needs === 1 ? "s" : ""} you`
-                : "Nothing to do"}
+              {verdict}
             </span>
           ) : undefined
         }
@@ -463,8 +493,17 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
               {morning.partial > 0 && (
                 <StatusPill kind="danger">{morning.partial} PARTIAL</StatusPill>
               )}
-              {morning.missing > 0 && (
-                <StatusPill kind="danger">{morning.missing} MISSING</StatusPill>
+              {/* Split by severity: an unqueued deck is neutral, a routine
+                  that failed to produce anything is not. */}
+              {morning.pending > 0 && (
+                <StatusPill kind="neutral">
+                  {morning.pending} NOT QUEUED
+                </StatusPill>
+              )}
+              {morning.missing - morning.pending > 0 && (
+                <StatusPill kind="danger">
+                  {morning.missing - morning.pending} MISSING
+                </StatusPill>
               )}
               {morning.failed > 0 && (
                 <StatusPill kind="danger">{morning.failed} FAILED</StatusPill>

@@ -27,10 +27,20 @@ export type MorningPlatform = "facebook" | "instagram";
 
 export const MORNING_PLATFORMS: MorningPlatform[] = ["facebook", "instagram"];
 
+export type MorningRoutine = "wall-of-text" | "text-card-decks";
+
 export interface ExpectedSet {
   setKey: string;
   label: string;
-  routine: "wall-of-text" | "text-card-decks";
+  routine: MorningRoutine;
+  /**
+   * What this set posts to FB/IG. Decides how a thumbnail is derived from a
+   * post id, and the two forms are mutually exclusive (curl-verified):
+   *   carousel -> renders/<id>/1  is image/jpeg   (renders/<id> 400s)
+   *   video    -> renders/<id>    is video/mp4    (renders/<id>/1 400s)
+   * It is a property of the SET, not something the REST payload exposes.
+   */
+  kind: "video" | "carousel";
 }
 
 /**
@@ -41,13 +51,49 @@ export interface ExpectedSet {
  * fold it into the coverage model.
  */
 export const EXPECTED_MORNING: ExpectedSet[] = [
-  { setKey: "hannah", label: "Hannah", routine: "wall-of-text" },
-  { setKey: "olivia", label: "Olivia", routine: "wall-of-text" },
-  { setKey: "mikayla", label: "Mikayla", routine: "wall-of-text" },
-  { setKey: "glp1_tips", label: "GLP-1 Tips", routine: "text-card-decks" },
-  { setKey: "glp1_tips_tricks", label: "Tips & Tricks", routine: "text-card-decks" },
-  { setKey: "glp1hacks", label: "GLP-1 Hacks", routine: "text-card-decks" },
-  { setKey: "julie_glp1", label: "Julie", routine: "text-card-decks" },
+  { setKey: "hannah", label: "Hannah", routine: "wall-of-text", kind: "video" },
+  { setKey: "olivia", label: "Olivia", routine: "wall-of-text", kind: "video" },
+  { setKey: "mikayla", label: "Mikayla", routine: "wall-of-text", kind: "video" },
+  { setKey: "glp1_tips", label: "GLP-1 Tips", routine: "text-card-decks", kind: "carousel" },
+  { setKey: "glp1_tips_tricks", label: "Tips & Tricks", routine: "text-card-decks", kind: "carousel" },
+  { setKey: "glp1hacks", label: "GLP-1 Hacks", routine: "text-card-decks", kind: "carousel" },
+  { setKey: "julie_glp1", label: "Julie", routine: "text-card-decks", kind: "carousel" },
+];
+
+export interface MorningAccount {
+  username: string;
+  platform: MorningPlatform;
+  setKey: string;
+}
+
+/**
+ * Which Doublespeed account belongs to which set, so the dash can recognise a
+ * post it was never told about.
+ *
+ * Keyed on the (username, platform) PAIR: usernames repeat across platforms
+ * with different accounts behind them, and the Facebook handles differ from
+ * the Instagram ones in ways no rule predicts — `glp1tipss` (double s),
+ * `glp1tipstrickss`, `dreammeglp1tips`, `hannahhglp1` (double h),
+ * `mikaylaaglp1` (double a). Verified against data/accounts/account-identities.json.
+ *
+ * An unrecognised username is DROPPED, never guessed — same convention as
+ * viewsources/types.toPlatform.
+ */
+export const MORNING_ACCOUNTS: MorningAccount[] = [
+  { username: "hannahhglp1", platform: "facebook", setKey: "hannah" },
+  { username: "hannahglp1", platform: "instagram", setKey: "hannah" },
+  { username: "oliviaglp1", platform: "facebook", setKey: "olivia" },
+  { username: "oliviaglp1", platform: "instagram", setKey: "olivia" },
+  { username: "mikaylaaglp1", platform: "facebook", setKey: "mikayla" },
+  { username: "mikaylaglp1", platform: "instagram", setKey: "mikayla" },
+  { username: "glp1tipss", platform: "facebook", setKey: "glp1_tips" },
+  { username: "glp1_tips", platform: "instagram", setKey: "glp1_tips" },
+  { username: "glp1tipstrickss", platform: "facebook", setKey: "glp1_tips_tricks" },
+  { username: "glp1_tips_tricks", platform: "instagram", setKey: "glp1_tips_tricks" },
+  { username: "glp1hacks", platform: "facebook", setKey: "glp1hacks" },
+  { username: "glp1hacks", platform: "instagram", setKey: "glp1hacks" },
+  { username: "dreammeglp1tips", platform: "facebook", setKey: "julie_glp1" },
+  { username: "julie_glp1", platform: "instagram", setKey: "julie_glp1" },
 ];
 
 export type MorningTileState =
@@ -77,6 +123,9 @@ export interface MorningPostRow {
   post_status: string | null;
   posted_at: string | null;
   public_post_url: string | null;
+  /** Set by discovery, never persisted. */
+  discovered?: boolean;
+  extra_posts?: number;
 }
 
 /** Per-platform detail behind a tile. Sound differs per platform (FB takes
@@ -89,6 +138,11 @@ export interface MorningPlatformEntry {
   videoUrl: string | null;
   publicPostUrl: string | null;
   postedAt: string | null;
+  /** Found on the live API rather than published by a routine manifest — so a
+   *  missing sound means "we don't have it", not "there isn't one". */
+  discovered: boolean;
+  /** Further posts on this account today beyond the one shown. Usually 0. */
+  extraPosts: number;
 }
 
 export interface MorningTile {
@@ -105,6 +159,11 @@ export interface MorningTile {
   coverage: MorningCoverage;
   /** What Dan has to do about it, or null when it resolves itself. */
   action: string | null;
+  /** Drives both the badge colour and whether it lands in the red headline. */
+  severity: MorningSeverity;
+  /** Badge text — differs from STATUS_LABEL only for a missing tile, whose
+   *  wording depends on the routine (NOT CREATED vs NOT QUEUED). */
+  statusLabel: string;
 }
 
 export interface MorningSection {
@@ -121,8 +180,10 @@ export interface MorningSection {
   missing: number;
   /** Sets that produced one platform but not the other. */
   partial: number;
-  /** Tiles with a non-null action. The headline number. */
+  /** Tiles at severity "alert". The red headline number. */
   actionNeeded: number;
+  /** Tiles at severity "pending" — decks awaiting a manual queue. Neutral. */
+  pending: number;
 }
 
 /**
@@ -169,20 +230,31 @@ export function toMorningState(row: MorningPostRow): MorningTileState {
 export function tileAction(
   state: MorningTileState,
   coverage: MorningCoverage,
-): string | null {
+  routine = "",
+): { action: string | null; severity: MorningSeverity } {
   switch (state) {
-    case "missing":
-      return "Routine did not create this";
+    case "missing": {
+      const m = missingMeta(routine);
+      return { action: m.action, severity: m.severity };
+    }
     case "failed":
-      return "Post failed, needs a retry";
+      return { action: "Post failed, needs a retry", severity: "alert" };
     case "draft":
-      return "Sitting in draft, promote it to queue";
+      return {
+        action: "Sitting in draft, promote it to queue",
+        severity: "alert",
+      };
     case "unknown":
-      return "State unknown, check it in Doublespeed";
+      return {
+        action: "State unknown, check it in Doublespeed",
+        severity: "alert",
+      };
   }
-  if (coverage === "facebook") return "No Instagram post for this set";
-  if (coverage === "instagram") return "No Facebook post for this set";
-  return null;
+  if (coverage === "facebook")
+    return { action: "No Instagram post for this set", severity: "alert" };
+  if (coverage === "instagram")
+    return { action: "No Facebook post for this set", severity: "alert" };
+  return { action: null, severity: "none" };
 }
 
 /**
@@ -219,6 +291,44 @@ export const STATUS_LABEL: Record<MorningTileState, string> = {
   unknown: "UNKNOWN",
 };
 
+/**
+ * How loudly a tile should complain.
+ *
+ * `alert` is the red "N need you" headline; `pending` is a neutral count.
+ * The distinction exists because an empty set means different things per
+ * routine: the wall-of-text lane runs itself at 05:30, so nothing there is a
+ * broken cron. Queueing the decks is a deliberate manual step, so an unqueued
+ * deck at 9am is just the normal state of the day, and colouring it red every
+ * morning would train the red number to mean nothing (Dan's call, 2026-08-08).
+ */
+export type MorningSeverity = "alert" | "pending" | "none";
+
+const ROUTINE_MISSING: Record<
+  string,
+  { label: string; action: string; severity: MorningSeverity }
+> = {
+  "wall-of-text": {
+    label: "NOT CREATED",
+    action: "Routine did not create this",
+    severity: "alert",
+  },
+  "text-card-decks": {
+    label: "NOT QUEUED",
+    action: "Decks not queued to Doublespeed yet",
+    severity: "pending",
+  },
+};
+
+const UNKNOWN_ROUTINE_MISSING = {
+  label: "NOT CREATED",
+  action: "Nothing created for this set today",
+  severity: "alert" as MorningSeverity,
+};
+
+export function missingMeta(routine: string) {
+  return ROUTINE_MISSING[routine] ?? UNKNOWN_ROUTINE_MISSING;
+}
+
 /** Extra red flag for a set that only made one surface. */
 export function coverageFlag(coverage: MorningCoverage): string | null {
   if (coverage === "facebook") return "FB ONLY";
@@ -253,6 +363,8 @@ function buildTile(
       videoUrl: row.video_url,
       publicPostUrl: row.public_post_url,
       postedAt: row.posted_at,
+      discovered: row.discovered === true,
+      extraPosts: row.extra_posts ?? 0,
     });
   }
 
@@ -263,6 +375,7 @@ function buildTile(
   const coverage = coverageOf(platforms.map((p) => p.platform));
   const state: MorningTileState =
     coverage === "none" ? "missing" : worstState(platforms.map((p) => p.state));
+  const { action, severity } = tileAction(state, coverage, routine);
 
   return {
     setKey,
@@ -274,7 +387,10 @@ function buildTile(
     state,
     platforms,
     coverage,
-    action: tileAction(state, coverage),
+    action,
+    severity,
+    statusLabel:
+      state === "missing" ? missingMeta(routine).label : STATUS_LABEL[state],
   };
 }
 
@@ -323,6 +439,7 @@ export function buildMorningSection(
     partial: tiles.filter(
       (t) => t.coverage === "facebook" || t.coverage === "instagram",
     ).length,
-    actionNeeded: tiles.filter((t) => t.action !== null).length,
+    actionNeeded: tiles.filter((t) => t.severity === "alert").length,
+    pending: tiles.filter((t) => t.severity === "pending").length,
   };
 }
