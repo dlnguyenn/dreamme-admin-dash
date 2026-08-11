@@ -312,20 +312,28 @@ interface ReportStatusResponse {
     status?: string;
     download_url?: string;
     url?: string;
+    error_message?: string;
   };
 }
 
 async function createReport(params: Record<string, string>): Promise<string> {
-  const body = new URLSearchParams({ ...params, api_key: getApiKey() });
-  const res = await fetch(`${BASE_URL}/api/v2.0/create_async_report`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      accept: "application/json",
+  const body = new URLSearchParams(params);
+  // api_key rides in the QUERY STRING, matching the docs' own sample
+  // (requests.post(url, params={"api_key": ...}, data=payload)). A form-body
+  // api_key is nowhere documented and would surface as a 401 on the first
+  // live call if Singular doesn't parse it.
+  const res = await fetch(
+    `${BASE_URL}/api/v2.0/create_async_report?api_key=${encodeURIComponent(getApiKey())}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+      },
+      body: body.toString(),
+      cache: "no-store",
     },
-    body: body.toString(),
-    cache: "no-store",
-  });
+  );
   if (!res.ok) {
     throw new Error(
       `Singular create_async_report failed: ${res.status} ${(await res.text()).slice(0, 200)}`,
@@ -350,7 +358,12 @@ async function awaitReport(reportId: string): Promise<string> {
       return dl;
     }
     if (state === "FAILED") {
-      throw new Error(`Singular report ${reportId} FAILED`);
+      // The docs say FAILED responses carry error_message — the only clue
+      // Singular gives about why. Losing it means debugging blind.
+      const detail = json.value?.error_message;
+      throw new Error(
+        `Singular report ${reportId} FAILED${detail ? `: ${detail}` : ""}`,
+      );
     }
     // QUEUED / STARTED — keep waiting.
   }

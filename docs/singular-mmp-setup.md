@@ -43,7 +43,11 @@ Three things that bite here:
   are fired by the app but will land only in user-level logs — never in
   aggregated reports or the Reporting API's `cohort_metrics` — until they are
   added on this page by hand.
-- **The page is capped at 12 events** on Free/Growth. We use 5. Budget the rest.
+- **The page is capped at 12 events** on Free/Growth. We use 5 — but check
+  what's already there first: newer Growth accounts get standard SDK events
+  auto-added (up to 6 unique + 6 non-unique versions), so `sng_start_trial` /
+  `sng_subscribe` may already be present and some slots already consumed.
+  Don't add duplicates; don't assume 7 free slots.
 - **Allow ~24h** before a newly defined event appears in reports. The sync will
   return zero rows until then, which is indistinguishable from "no spend".
 
@@ -56,8 +60,14 @@ disagree" tickets.
 
 **Cost:** Settings → Data Connectors → Facebook → *Connect with Facebook*,
 signed in as a user with Business Manager asset access. Activate
-`act_1575502753719515`. First setup backfills 3 months, then pulls 30 days back
-daily.
+`act_1575502753719515`.
+
+Refresh cadence, per the current connector docs: **daily pulls cover the last
+7 days of cost; Mondays pull 30 days back.** There is no documented initial
+backfill — if months of historical Meta cost matter, ask Singular support
+rather than assuming it appears. Consequence for our sync: within the 35-day
+window, Meta *cost* for days 8–35 only refreshes weekly, while cohort trial
+counts recompute on every run.
 
 Then in **Meta Events Manager**, set Preferred Connection Method = **MMP**.
 
