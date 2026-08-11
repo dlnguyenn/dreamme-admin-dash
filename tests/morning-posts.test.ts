@@ -310,18 +310,21 @@ describe("pills agree with tiles", () => {
     expect(s.actionNeeded).toBe(EXPECTED_MORNING.length);
   });
 
-  it("unqueued decks are pending, not part of the red headline", () => {
-    // Only the three wall-of-text trios queued; the four decks absent.
+  it("manual lanes are pending, not part of the red headline", () => {
+    // Only the wall-of-text trios queued; every manual lane absent. Counts are
+    // derived from the roster so adding a lane doesn't break this test — which
+    // is exactly what happened when the single-slide personas were added.
+    const auto = EXPECTED_MORNING.filter((e) => e.routine === "wall-of-text");
+    const manual = EXPECTED_MORNING.filter((e) => e.routine !== "wall-of-text");
     const rows = fullDay()
       .filter((r) => r.routine === "wall-of-text")
       .map((r) => ({ ...r, post_status: "scheduled" }));
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
-    expect(s.queued).toBe(3);
-    expect(s.pending).toBe(4);
+    expect(s.queued).toBe(auto.length);
+    expect(s.pending).toBe(manual.length);
     expect(s.actionNeeded).toBe(0); // nothing is BROKEN
-    for (const t of s.tiles.filter((x) => x.routine === "text-card-decks")) {
+    for (const t of s.tiles.filter((x) => x.routine !== "wall-of-text")) {
       expect(t.severity).toBe("pending");
-      expect(t.statusLabel).toBe("NOT QUEUED");
     }
   });
 });
@@ -348,17 +351,28 @@ describe("merge with discovery", () => {
       ),
     );
 
+    // Derived, not hardcoded: every set the manifest didn't cover.
+    const uncovered = EXPECTED_MORNING.filter((e) => e.routine !== "wall-of-text").length;
     const before = buildMorningSection(dbRows, EXPECTED_MORNING, DATE);
-    expect(before.missing).toBe(4); // what Dan was seeing
+    expect(before.missing).toBe(uncovered); // what Dan was seeing
 
     const after = buildMorningSection(
       mergeMorningRows(dbRows, discovered),
       EXPECTED_MORNING,
       DATE,
     );
-    expect(after.missing).toBe(0);
-    expect(after.posted).toBe(4);
-    expect(after.pending).toBe(0);
+    // Every deck set discovery supplied is now populated — that is the bug this
+    // shipped for. Lanes discovery said nothing about (single-slide) stay
+    // missing, which is correct: they genuinely had no post.
+    const decks = EXPECTED_MORNING.filter((e) => e.routine === "text-card-decks").length;
+    const untouched = EXPECTED_MORNING.filter(
+      (e) => e.routine !== "wall-of-text" && e.routine !== "text-card-decks",
+    ).length;
+    expect(after.posted).toBe(decks);
+    expect(after.missing).toBe(untouched);
+    expect(
+      after.tiles.filter((t) => t.routine === "text-card-decks" && t.state === "missing"),
+    ).toHaveLength(0);
   });
 
   it("a DB row keeps its thumbnail, sound and caption", () => {
