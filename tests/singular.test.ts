@@ -175,6 +175,43 @@ describe("singular vendor client", () => {
       expect(out.rows[0].trial_starts).toBe(22);
     });
 
+    it("merges rows that fan out across os/app onto the table's PK grain", async () => {
+      const { mapSingularRows } = await import("@/lib/vendors/singular");
+      // The report requests `app` and `os` dimensions, so one campaign/date
+      // arrives as multiple rows. Left unmerged, these become duplicate
+      // conflict keys in one PostgREST INSERT, which Postgres rejects
+      // wholesale ("cannot affect row a second time") — the upsert 500s.
+      const out = mapSingularRows(
+        [
+          docShapeRow({ os: "iOS", custom_installs: "150", [`${TRIAL_ID}_7d`]: "12", adn_cost: "100.00" }),
+          docShapeRow({ os: "Android", custom_installs: "62", [`${TRIAL_ID}_7d`]: "6", adn_cost: "45.70" }),
+        ],
+        { trialEventId: TRIAL_ID, subscribeEventId: SUB_ID, cohortPeriod: "7d" },
+      );
+
+      expect(out.rows).toHaveLength(1);
+      expect(out.rows[0].installs).toBe(212);
+      expect(out.rows[0].trial_starts).toBe(18);
+      expect(out.rows[0].spend).toBeCloseTo(145.7);
+      // os is meaningless once platforms are merged — must be null, not "iOS".
+      expect(out.rows[0].os).toBeNull();
+    });
+
+    it("keeps os when every fanned row agrees on it", async () => {
+      const { mapSingularRows } = await import("@/lib/vendors/singular");
+      const out = mapSingularRows(
+        [
+          docShapeRow({ app: "DreamMe", custom_installs: "100" }),
+          docShapeRow({ app: "DreamMe Widget", custom_installs: "12" }),
+        ],
+        { trialEventId: TRIAL_ID, subscribeEventId: SUB_ID, cohortPeriod: "7d" },
+      );
+      expect(out.rows).toHaveLength(1);
+      expect(out.rows[0].os).toBe("iOS");
+      // `app` is consumed (it is a requested dimension), never unmapped noise.
+      expect(out.unmappedKeys).toEqual([]);
+    });
+
     it("drops rows with no campaign id — it is the primary key", async () => {
       const { mapSingularRows } = await import("@/lib/vendors/singular");
       const out = mapSingularRows(

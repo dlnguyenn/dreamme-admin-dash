@@ -84,9 +84,13 @@ async function singularFetchJson<T>(url: string, maxRetries = 4): Promise<T> {
 
 /**
  * Custom/standard events are addressed in `cohort_metrics=` by an
- * AUTO-GENERATED id, never by display name. Resolve at runtime and cache for
- * the request lifetime — hardcoding the id means a silent zero the day someone
- * recreates the event in the Singular UI.
+ * AUTO-GENERATED id, never by display name — hardcoding the id means a silent
+ * zero the day someone recreates the event in the Singular UI.
+ *
+ * The cache below lives for the PROCESS lifetime, which on a warm Vercel
+ * lambda can span many cron invocations. Acceptable: the catalog changes only
+ * when someone edits Settings > Events, and the worst case is one stale run
+ * before the lambda recycles.
  */
 export interface CohortMetricsCatalog {
   byName: Record<string, string>;
@@ -234,6 +238,10 @@ export function mapSingularRows(
       ? [`${subscribeEventId}_${cohortPeriod}`, subscribeEventId, `sng_subscribe_${cohortPeriod}`, "sng_subscribe"]
       : [`sng_subscribe_${cohortPeriod}`, "sng_subscribe"];
 
+    // `app` is a requested dimension we don't store — consume it so it never
+    // pollutes unmappedKeys, but note it CAN fan rows out (see merge below).
+    take(r, ["app"]);
+
     return {
       source: String(take(r, ["source", "adn_name"]) ?? "facebook"),
       campaign_id: String(
@@ -258,9 +266,35 @@ export function mapSingularRows(
     for (const k of Object.keys(r)) if (!consumed.has(k)) unmapped.add(k);
   }
 
+  // MERGE to the table's PK grain (source, campaign_id, date). The report is
+  // requested with `app` and `os` dimensions, so Singular returns one row per
+  // (app, os, campaign, date) — multiple rows sharing our PK. Passing those
+  // through would put duplicate conflict keys in a single PostgREST INSERT,
+  // and Postgres rejects that batch outright ("ON CONFLICT DO UPDATE command
+  // cannot affect row a second time") — a 500 on the first run with real data.
+  const merged = new Map<string, SingularCampaignRow>();
+  for (const r of rows) {
+    if (!r.campaign_id || !r.date) continue; // unusable — PK columns
+    const key = `${r.source} ${r.campaign_id} ${r.date}`;
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, { ...r });
+      continue;
+    }
+    prev.campaign_name = prev.campaign_name ?? r.campaign_name;
+    // os only survives the merge if every fanned row agrees on it.
+    prev.os = prev.os === r.os ? prev.os : null;
+    prev.spend += r.spend;
+    prev.installs += r.installs;
+    prev.adn_installs += r.adn_installs;
+    prev.tracker_installs += r.tracker_installs;
+    prev.trial_starts += r.trial_starts;
+    prev.subscribes += r.subscribes;
+    prev.revenue += r.revenue;
+  }
+
   return {
-    // A row with no campaign id is unusable downstream (it is the PK).
-    rows: rows.filter((r) => r.campaign_id && r.date),
+    rows: [...merged.values()],
     unmappedKeys: [...unmapped].sort(),
     sampleRaw: raw[0] ?? null,
   };

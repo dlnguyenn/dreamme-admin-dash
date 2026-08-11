@@ -131,9 +131,14 @@ select
   max(campaign_name)  as campaign_name,
   date,
   sum(spend)          as spend,
-  sum(installs)       as installs,
-  sum(trial_starts)   as trial_starts,
-  sum(purchases)      as purchases,
+  -- ::bigint casts are load-bearing. The live view's integer-ish columns are
+  -- bigint (sum over integer). The meta arm here is PRE-aggregated, so the
+  -- outer sum runs over bigint, and sum(bigint) returns NUMERIC — and
+  -- create-or-replace refuses to change an existing column's type, so without
+  -- the casts this migration fails on apply. Verified against prod pg_attribute.
+  sum(installs)::bigint       as installs,
+  sum(trial_starts)::bigint   as trial_starts,
+  sum(purchases)::bigint      as purchases,
   sum(purchase_value) as purchase_value,
   max(trial_source)   as trial_source
 from unioned
