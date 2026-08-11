@@ -412,7 +412,127 @@ function MorningTileDetail({
   );
 }
 
-export function MorningPanel({ morning }: { morning: MorningSection | null }) {
+/**
+ * Queue-all control.
+ *
+ * Two things are deliberate. It always confirms first — this publishes to live
+ * accounts. And it never sends a list of posts: the server re-derives what is
+ * queueable, so this button cannot be talked into queueing something else.
+ */
+type QueueRow = { id: string; setKey: string; username: string; platform: string };
+type QueueResp = {
+  ok?: boolean;
+  error?: string;
+  queued?: QueueRow[];
+  unqueued?: QueueRow[];
+  skipped?: { username: string | null; reason: string }[];
+  failed?: { username: string; error: string }[];
+};
+
+function QueueAllButton({ drafts, onDone }: { drafts: number; onDone: () => void }) {
+  const [phase, setPhase] = React.useState<"idle" | "confirm" | "busy" | "done">("idle");
+  const [result, setResult] = React.useState<QueueResp | null>(null);
+
+  const call = async (action: "queue" | "undo", ids?: string[]) => {
+    setPhase("busy");
+    try {
+      const res = await fetch("/api/morning/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      const body = (await res.json()) as QueueResp;
+      setResult(body);
+      setPhase("done");
+      onDone();
+    } catch (e) {
+      setResult({ ok: false, error: (e as Error).message });
+      setPhase("done");
+    }
+  };
+
+  const btn: React.CSSProperties = {
+    font: "700 12px var(--font-ui)",
+    padding: "7px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--line)",
+    background: "var(--surface-2)",
+    color: "var(--ink)",
+    cursor: "pointer",
+  };
+
+  if (phase === "done" && result) {
+    const done = result.queued ?? result.unqueued ?? [];
+    const failed = result.failed ?? [];
+    return (
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ font: "700 12px var(--font-ui)", color: failed.length ? "var(--danger)" : "var(--success-text)" }}>
+          {result.error
+            ? `Failed: ${result.error}`
+            : `${done.length} ${result.unqueued ? "moved back to draft" : "queued"}${failed.length ? `, ${failed.length} failed` : ""}`}
+        </span>
+        {result.queued && result.queued.length > 0 && (
+          // Undo is possible because the vendor accepts status:"draft" too.
+          <button type="button" style={btn} onClick={() => call("undo", result.queued!.map((q) => q.id))}>
+            Undo
+          </button>
+        )}
+        {failed.map((f, i) => (
+          <span key={i} style={{ font: "400 11px var(--font-ui)", color: "var(--danger)" }}>
+            {f.username}: {f.error}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  if (phase === "busy") {
+    return (
+      <span style={{ marginLeft: "auto", font: "600 12px var(--font-ui)", color: "var(--ink-3)" }}>
+        Working…
+      </span>
+    );
+  }
+
+  if (phase === "confirm") {
+    return (
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "600 12px var(--font-ui)", color: "var(--ink-2)" }}>
+          Queue today&apos;s drafts to live accounts?
+        </span>
+        <button
+          type="button"
+          style={{ ...btn, background: "var(--accent)", color: "var(--on-accent)", borderColor: "var(--accent)" }}
+          onClick={() => call("queue")}
+        >
+          Yes, queue
+        </button>
+        <button type="button" style={btn} onClick={() => setPhase("idle")}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      style={{ ...btn, marginLeft: "auto" }}
+      onClick={() => setPhase("confirm")}
+      data-testid="queue-all"
+    >
+      Queue {drafts} draft{drafts === 1 ? "" : "s"}
+    </button>
+  );
+}
+
+export function MorningPanel({
+  morning,
+  onQueued,
+}: {
+  morning: MorningSection | null;
+  onQueued?: () => void;
+}) {
   const isMobile = useIsMobile();
   const [openTile, setOpenTile] = React.useState<MorningTileData | null>(null);
 
@@ -507,6 +627,12 @@ export function MorningPanel({ morning }: { morning: MorningSection | null }) {
               )}
               {morning.failed > 0 && (
                 <StatusPill kind="danger">{morning.failed} FAILED</StatusPill>
+              )}
+              {morning.drafts > 0 && (
+                <QueueAllButton
+                  drafts={morning.drafts}
+                  onDone={() => onQueued?.()}
+                />
               )}
             </div>
 

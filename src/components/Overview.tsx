@@ -231,7 +231,7 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
           <ViewsPanel views={data?.views ?? null} />
 
           {/* Did the machines run — sits under the reach numbers it feeds. */}
-          <MorningPanel morning={data?.morning ?? null} />
+          <MorningPanel morning={data?.morning ?? null} onQueued={load} />
 
           <div
             style={{

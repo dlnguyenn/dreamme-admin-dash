@@ -330,6 +330,14 @@ const ROUTINE_MISSING: Record<
     action: "Decks not queued to Doublespeed yet",
     severity: "pending",
   },
+  // No cron builds the single-slide personas yet — they are made on request.
+  // Absent is therefore the normal state, not a broken routine, so it must
+  // not sit in the red headline every day.
+  "single-slide": {
+    label: "NOT CREATED",
+    action: "Single-slide post not built yet",
+    severity: "pending",
+  },
 };
 
 const UNKNOWN_ROUTINE_MISSING = {
