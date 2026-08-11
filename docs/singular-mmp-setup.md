@@ -86,11 +86,30 @@ rather than assuming it appears. Consequence for our sync: within the 35-day
 window, Meta *cost* for days 8–35 only refreshes weekly, while cohort trial
 counts recompute on every run.
 
-Then in **Meta Events Manager**, set Preferred Connection Method = **MMP**.
+Then map each SDK event to its Meta conversion event in Partner Configuration.
+**Event mapping is not retroactive** — do this before you care about the data,
+not after.
 
-Finally, map each SDK event to its Meta conversion event in Partner
-Configuration. **Event mapping is not retroactive** — do this before you care
-about the data, not after.
+### Preferred Connection Method — LAST, and not required for our goal
+
+Only after the event mapping above is in place: Meta Events Manager → the iOS
+app dataset → set Preferred Connection Method = **MMP**.
+
+**Order matters.** This tells Meta to prefer the MMP as the source of app
+events. Setting it before Singular is actually forwarding mapped events points
+Meta at a source that has nothing to send, and risks disrupting the working
+RC→Meta CAPI path that currently supplies Meta's trial signal for optimization
+(see `docs/attribution-handoff.md` for how hard-won that path was).
+
+**It is also not required for the trial-per-campaign number.** That number is
+read out of Singular's Reporting API, which depends on the partner
+configuration, the data connector, and the registered events — none of which
+care about this setting. Preferred Connection Method governs which source
+*Meta* optimizes on. So if this screen is broken or blocked, it does not block
+the pipeline; carry on and come back.
+
+Treat flipping it as a deliberate decision about whether Meta should optimize
+on Singular's signal instead of RevenueCat's CAPI feed — not as a checkbox.
 
 ## Step 4 — Paste into env
 
