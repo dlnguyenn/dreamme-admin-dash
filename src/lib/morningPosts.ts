@@ -27,7 +27,7 @@ export type MorningPlatform = "facebook" | "instagram";
 
 export const MORNING_PLATFORMS: MorningPlatform[] = ["facebook", "instagram"];
 
-export type MorningRoutine = "wall-of-text" | "text-card-decks";
+export type MorningRoutine = "wall-of-text" | "text-card-decks" | "single-slide";
 
 export interface ExpectedSet {
   setKey: string;
@@ -44,7 +44,7 @@ export interface ExpectedSet {
 }
 
 /**
- * Which sets the morning routines should produce daily — 7 sets, each
+ * Which sets the morning routines should produce daily — 10 sets, each
  * expected on both FB and IG. YouTube rows are stored in morning_posts too
  * but deliberately excluded from this panel (Dan's ask was the FB and IG
  * sets); adding "youtube" to MORNING_PLATFORMS is the only change needed to
@@ -58,6 +58,11 @@ export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "glp1_tips_tricks", label: "Tips & Tricks", routine: "text-card-decks", kind: "carousel" },
   { setKey: "glp1hacks", label: "GLP-1 Hacks", routine: "text-card-decks", kind: "carousel" },
   { setKey: "julie_glp1", label: "Julie", routine: "text-card-decks", kind: "carousel" },
+  // single-slide: one pinned persona photo + a long first-person caption.
+  // Stored as a one-image slideshow, so the thumbnail derives like a carousel.
+  { setKey: "chris", label: "Chris", routine: "single-slide", kind: "carousel" },
+  { setKey: "jimmy", label: "Jimmy", routine: "single-slide", kind: "carousel" },
+  { setKey: "mike", label: "Mike", routine: "single-slide", kind: "carousel" },
 ];
 
 export interface MorningAccount {
@@ -94,6 +99,14 @@ export const MORNING_ACCOUNTS: MorningAccount[] = [
   { username: "glp1hacks", platform: "instagram", setKey: "glp1hacks" },
   { username: "dreammeglp1tips", platform: "facebook", setKey: "julie_glp1" },
   { username: "julie_glp1", platform: "instagram", setKey: "julie_glp1" },
+  // single-slide lane. Same trap as above: the FB handles carry a doubled
+  // letter the IG ones do not (chrissglp1, mikeeglp1).
+  { username: "chrissglp1", platform: "facebook", setKey: "chris" },
+  { username: "chrisglp1", platform: "instagram", setKey: "chris" },
+  { username: "jimmyglp1", platform: "facebook", setKey: "jimmy" },
+  { username: "jimmyglp1", platform: "instagram", setKey: "jimmy" },
+  { username: "mikeeglp1", platform: "facebook", setKey: "mike" },
+  { username: "mikeglp1", platform: "instagram", setKey: "mike" },
 ];
 
 export type MorningTileState =
