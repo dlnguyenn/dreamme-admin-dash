@@ -6,18 +6,21 @@
  *
  * Auth: `api_key` query param (Developer Tools > API Keys in the dashboard).
  *
- * ── PROVISIONAL RESPONSE SHAPE ────────────────────────────────────────────
- * This client was written against Singular's published API docs BEFORE the
- * account was configured, so no real response has ever been observed. The
- * request side (async job flow, chunking, rate limits) is well specified. The
- * RESPONSE side — particularly how cohort metrics are keyed — is not, and is
- * the part most likely to be wrong.
+ * ── RESPONSE SHAPE: OBSERVED LIVE (2026-08-12) ───────────────────────────
+ * Confirmed against a real combined report (source=facebook, iOS, 35d):
+ *   - Rows carry `start_date` + `end_date`; no `date` key.
+ *   - `source` is CASED ("Facebook") — the mapper lowercases it; see below.
+ *   - Cohort metric columns are keyed by the BARE auto-generated event id
+ *     (e.g. "fdf7c893...", no `_7d` period suffix), and revenue by bare
+ *     `revenue`. The `_${period}` candidates are kept first for tolerance.
+ *   - `custom_installs` equals `tracker_installs` on this account, NOT the
+ *     network number the docs suggest for SANs; `adn_installs` carries the
+ *     network count. Both are stored separately.
  *
- * Rather than guess and silently return zeros, `mapSingularRows` records every
- * response key it did not consume in `unmappedKeys`, and the cron route echoes
- * those plus a sample row. The first live run therefore TELLS US the real
- * shape instead of quietly producing an empty dashboard. Fix the key lookups
- * here once that lands, then delete this notice.
+ * `mapSingularRows` still records unconsumed keys in `unmappedKeys` and the
+ * cron route echoes them plus a sample row + the resolved cohort event ids —
+ * that instrumentation is what confirmed all of the above in one run, and it
+ * stays so any future shape drift announces itself.
  *
  * Field renames (Singular ↔ our schema):
  *   adn_cost              ↔ spend
@@ -249,7 +252,10 @@ export function mapSingularRows(
 
     // `app` is a requested dimension we don't store — consume it so it never
     // pollutes unmappedKeys, but note it CAN fan rows out (see merge below).
+    // `end_date` pairs with start_date on every time_breakdown=day row
+    // (observed live); we key rows on start_date alone.
     take(r, ["app"]);
+    take(r, ["end_date"]);
 
     return {
       // LOWERCASED, and this is load-bearing: Singular returns "Facebook",

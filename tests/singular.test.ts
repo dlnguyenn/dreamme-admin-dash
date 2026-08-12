@@ -117,14 +117,18 @@ describe("singular vendor client", () => {
         os: "iOS",
         unified_campaign_id: "120236521685380622",
         unified_campaign_name: "Comic sans scribble campaign",
-        date: "2026-08-05",
+        // Observed live: rows carry start_date + end_date, never `date`.
+        start_date: "2026-08-05",
+        end_date: "2026-08-05",
         adn_cost: "145.70",
         custom_installs: "212",
         adn_installs: "220",
         tracker_installs: "34",
-        [`${TRIAL_ID}_7d`]: "18",
-        [`${SUB_ID}_7d`]: "3",
-        revenue_7d: "88.20",
+        // Observed live: cohort columns are keyed by the BARE event id (no
+        // `_7d` suffix), and revenue by bare `revenue`.
+        [TRIAL_ID]: "18",
+        [SUB_ID]: "3",
+        revenue: "88.20",
         ...overrides,
       };
     }
@@ -168,11 +172,13 @@ describe("singular vendor client", () => {
       expect(out.sampleRaw).not.toBeNull();
     });
 
-    it("falls back to the bare event id when the period suffix is absent", async () => {
+    it("also accepts period-suffixed cohort keys, preferring them over bare ids", async () => {
+      // The docs' ETL schemas name cohort columns `<metric>_<period>`; the
+      // live API returns bare ids. Tolerate both, suffixed first.
       const { mapSingularRows } = await import("@/lib/vendors/singular");
       const row = docShapeRow();
-      delete (row as Record<string, unknown>)[`${TRIAL_ID}_7d`];
-      (row as Record<string, unknown>)[TRIAL_ID] = "22";
+      delete (row as Record<string, unknown>)[TRIAL_ID];
+      (row as Record<string, unknown>)[`${TRIAL_ID}_7d`] = "22";
 
       const out = mapSingularRows([row], {
         trialEventId: TRIAL_ID,

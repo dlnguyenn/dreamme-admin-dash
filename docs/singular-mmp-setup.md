@@ -106,16 +106,33 @@ Empty — expected until step 2 has had ~24h:
   "note": "no Singular rows returned — ..." }
 ```
 
-### Read `unmapped_keys` on the first live run
+### Response shape: confirmed live (2026-08-12)
 
-The client's request side follows the documented API, but the **response** side
-was written without ever seeing a real response. `mapSingularRows` reports every
-key it did not consume rather than silently returning zeros. On the first real
-run, check `unmapped_keys` and `sample_raw`: if the cohort metric came back under
-a key shape we did not anticipate, that is where it shows up. Fix the candidate
-lists in `src/lib/vendors/singular.ts`, update the fixture in
-`tests/singular.test.ts`, and delete the PROVISIONAL notice at the top of the
-client.
+The first live runs settled every open question about the response. Rows carry
+`start_date`/`end_date` (no `date`); `source` is cased (`"Facebook"` — the
+mapper lowercases it, and MUST: the cased value once leaked through the 4th
+UNION arm as a phantom channel and double-counted $11.3k into the blended CAC);
+cohort columns are keyed by the **bare auto-generated event id**, revenue by
+bare `revenue`; `custom_installs` equals `tracker_installs` on this account
+(the network count lives in `adn_installs`). The `unmapped_keys` / `sample_raw`
+/ resolved-event-id diagnostics stay in the route so any future drift announces
+itself.
+
+### The trials-per-campaign reality (measured 2026-08-12)
+
+The cohort columns resolve and map correctly — **and their values are genuinely
+zero**. Device-level attribution is the constraint: `tracker_installs` is ~1.6%
+of `adn_installs` (44 vs 2,674 over 35d), consistent with the ~3% ATT opt-in
+measured in Singular's UI, and cohort events only break out per campaign for
+that attributed slice. This is the empirical answer to the support question
+below, pending their written confirmation. The sequence that changes it:
+
+1. **Ship the ATT-at-launch release** (davngu28/DreamMe#21) — raises the
+   attributable slice ~3% → ~10%.
+2. **AMM accrual** — terms accepted 2026-08-11, non-retroactive; watch
+   `tracker_installs` trend in the days after.
+3. Until then the dashboard is not blind: `cross_network_cost_daily`'s meta arm
+   falls back to Meta-network trials (`trial_source='network'`).
 
 ## How the data lands
 
