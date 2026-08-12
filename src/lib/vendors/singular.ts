@@ -166,6 +166,15 @@ export interface SingularReportResult {
   unmappedKeys: string[];
   /** One raw row, so a live run can show us the real shape. */
   sampleRaw: Record<string, unknown> | null;
+  /**
+   * Which cohort event ids the catalog lookup actually resolved. Null means
+   * the event was NOT requested in cohort_metrics at all — trials/subscribes
+   * are then guaranteed zero no matter what the response contains, which is
+   * indistinguishable from "no data" without this field. First live run
+   * returned all-zero trials; this exists so the next run says why.
+   */
+  resolvedTrialEventId?: string | null;
+  resolvedSubscribeEventId?: string | null;
 }
 
 /** Inclusive [start, end] split into <= MAX_SPAN_DAYS chunks. */
@@ -243,7 +252,13 @@ export function mapSingularRows(
     take(r, ["app"]);
 
     return {
-      source: String(take(r, ["source", "adn_name"]) ?? "facebook"),
+      // LOWERCASED, and this is load-bearing: Singular returns "Facebook",
+      // and every downstream consumer — singular_reconciliation, the meta-arm
+      // enrichment, and the 4th UNION arm's `source <> 'facebook'` — filters
+      // on the lowercase literal. On the first live sync the cased rows
+      // leaked through that 4th arm as a phantom 'singular:Facebook' channel
+      // and double-counted $11.3k of spend into the blended CAC.
+      source: String(take(r, ["source", "adn_name"]) ?? "facebook").toLowerCase(),
       campaign_id: String(
         take(r, ["unified_campaign_id", "adn_campaign_id", "campaign_id"]) ?? "",
       ),
@@ -426,9 +441,14 @@ export async function fetchSingularCampaignReport(opts: {
     }),
   );
 
-  return mapSingularRows(results.flat(), {
+  const mapped = mapSingularRows(results.flat(), {
     trialEventId,
     subscribeEventId,
     cohortPeriod,
   });
+  return {
+    ...mapped,
+    resolvedTrialEventId: trialEventId,
+    resolvedSubscribeEventId: subscribeEventId,
+  };
 }

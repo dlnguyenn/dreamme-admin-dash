@@ -108,7 +108,12 @@ describe("singular vendor client", () => {
 
     function docShapeRow(overrides: Record<string, unknown> = {}) {
       return {
-        source: "facebook",
+        // Capitalized deliberately — this is what Singular actually returns
+        // (observed live 2026-08-12). The mapper must normalize it, because
+        // every SQL consumer filters on lowercase 'facebook' and the cased
+        // value leaked through the 4th UNION arm as a phantom channel that
+        // double-counted $11.3k of spend into the blended CAC.
+        source: "Facebook",
         os: "iOS",
         unified_campaign_id: "120236521685380622",
         unified_campaign_name: "Comic sans scribble campaign",
@@ -134,6 +139,8 @@ describe("singular vendor client", () => {
 
       expect(out.rows).toHaveLength(1);
       expect(out.rows[0]).toMatchObject({
+        // Lowercased from the fixture's "Facebook" — the normalization is the
+        // regression guard for the phantom-channel double count.
         source: "facebook",
         campaign_id: "120236521685380622",
         campaign_name: "Comic sans scribble campaign",
