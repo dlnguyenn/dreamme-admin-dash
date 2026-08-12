@@ -108,6 +108,20 @@ export async function GET(req: Request) {
     synced_at: syncedAt,
   }));
 
+  // One greppable line in the function logs (Hobby retains 1h — read soon
+  // after a run). This is how we distinguish "trials were never requested"
+  // (resolved id null) from "requested but keyed differently" (see raw_keys)
+  // without needing the response body. Fires on the empty path too.
+  console.log(
+    "[sync-singular] diagnostics",
+    JSON.stringify({
+      resolved_trial_event_id: report.resolvedTrialEventId ?? null,
+      resolved_subscribe_event_id: report.resolvedSubscribeEventId ?? null,
+      unmapped_keys: report.unmappedKeys,
+      raw_keys: report.sampleRaw ? Object.keys(report.sampleRaw).sort() : null,
+    }),
+  );
+
   if (!rows.length) {
     return NextResponse.json({
       ok: true,
@@ -150,5 +164,8 @@ export async function GET(req: Request) {
     cohort_period: cohortPeriod,
     window: { since: sinceDate, until: untilDate },
     unmapped_keys: report.unmappedKeys,
+    resolved_trial_event_id: report.resolvedTrialEventId ?? null,
+    resolved_subscribe_event_id: report.resolvedSubscribeEventId ?? null,
+    sample_raw: report.sampleRaw,
   });
 }
