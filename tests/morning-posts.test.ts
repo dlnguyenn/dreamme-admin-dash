@@ -44,9 +44,12 @@ function row(over: Partial<MorningPostRow>): MorningPostRow {
   };
 }
 
-/** Every expected set on both surfaces. */
+/** The sets due on DATE, both surfaces. Not the whole roster: a rotating set
+ *  on someone else's day is not part of that morning's obligation. */
+const DUE = expectedForDate(DATE);
+
 function fullDay(): MorningPostRow[] {
-  return EXPECTED_MORNING.flatMap((e) =>
+  return DUE.flatMap((e) =>
     (["facebook", "instagram"] as const).map((platform) =>
       row({ set_key: e.setKey, routine: e.routine, platform }),
     ),
@@ -160,6 +163,56 @@ describe("two-beat rotation", () => {
     expect(dueOn("2026-08-15")).toEqual(["angela"]);
     expect(dueOn("2026-08-16")).toEqual(["brittany"]);
     expect(dueOn("2026-08-17")).toEqual(["mia"]); // wraps
+  });
+
+  it("renders a tile for ALL THREE personas every day", () => {
+    // Dan's ask: whenever a two-beat set is drafted he wants to see it here,
+    // without having to remember whose turn it was. So the lane is always
+    // fully visible; only the counts narrow to today.
+    const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
+    const keys = s.tiles.filter((t) => t.routine === "two-beat").map((t) => t.setKey);
+    expect(keys.sort()).toEqual(["angela", "brittany", "mia"]);
+  });
+
+  it("counts only the persona whose turn it is", () => {
+    const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
+    const daily = EXPECTED_MORNING.filter((e) => !e.rotation).length;
+    expect(s.expected).toBe(daily + 1); // not daily + 3
+    const twoBeat = s.tiles.filter((t) => t.routine === "two-beat");
+    expect(twoBeat.filter((t) => t.due).map((t) => t.setKey)).toEqual(["mia"]);
+  });
+
+  it("an off-rotation persona is silent — no alert, no action, no MISSING", () => {
+    const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
+    for (const t of s.tiles.filter((x) => x.routine === "two-beat" && !x.due)) {
+      expect(t.state).toBe("missing"); // nothing was built, truthfully
+      expect(t.severity).toBe("none"); // but nobody is being asked for anything
+      expect(t.action).toBeNull();
+      expect(t.statusLabel).toBe("NOT TODAY");
+    }
+    // Mia IS due and absent, so exactly one two-beat set counts as missing.
+    expect(
+      s.tiles.filter((t) => t.routine === "two-beat" && t.state === "missing").length,
+    ).toBe(3);
+    expect(s.missing).toBe(s.expected); // nothing at all was built
+  });
+
+  it("shows a real state when an off-rotation persona IS drafted", () => {
+    // The whole point of keeping the tile: an early or extra build is visible
+    // rather than silently absent.
+    const rows = (["facebook", "instagram"] as const).map((platform) =>
+      row({
+        routine: "two-beat",
+        set_key: "brittany",
+        platform,
+        post_status: "draft",
+      }),
+    );
+    const s = buildMorningSection(rows, EXPECTED_MORNING, "2026-08-14");
+    const brittany = s.tiles.find((t) => t.setKey === "brittany")!;
+    expect(brittany.due).toBe(false);
+    expect(brittany.state).toBe("draft");
+    expect(brittany.statusLabel).toBe("DRAFT");
   });
 
   it("expects nothing before the lane went live", () => {
@@ -311,11 +364,11 @@ describe("buildMorningSection — one tile per set", () => {
   it("collapses FB+IG into a single tile per set", () => {
     const s = buildMorningSection(fullDay(), EXPECTED_MORNING, DATE);
     expect(s.tiles).toHaveLength(EXPECTED_MORNING.length);
-    expect(s.expected).toBe(EXPECTED_MORNING.length);
+    expect(s.expected).toBe(DUE.length);
     expect(s.created).toBe(s.expected);
     expect(s.missing).toBe(0);
     expect(s.partial).toBe(0);
-    for (const t of s.tiles) {
+    for (const t of s.tiles.filter((x) => x.due)) {
       expect(t.coverage).toBe("both");
       expect(t.platforms.map((p) => p.platform)).toEqual(["facebook", "instagram"]);
     }
@@ -402,8 +455,8 @@ describe("buildMorningSection — one tile per set", () => {
     const last = s.tiles[s.tiles.length - 1];
     expect(last.setKey).toBe("emma");
     expect(last.coverage).toBe("facebook");
-    // The denominator stays the roster; an extra set can't push created past it.
-    expect(s.expected).toBe(EXPECTED_MORNING.length);
+    // The denominator stays what was due; an extra set can't push created past it.
+    expect(s.expected).toBe(DUE.length);
     expect(s.created).toBe(s.expected + 1);
   });
 
@@ -431,7 +484,11 @@ describe("pills agree with tiles", () => {
     expect(s.queued).toBe(n("scheduled"));
     expect(s.failed).toBe(n("failed"));
     expect(s.drafts).toBe(n("draft"));
-    expect(s.missing).toBe(n("missing"));
+    // MISSING is a due-only count now: an off-rotation tile is "missing" in
+    // state but is not something the morning owed.
+    expect(s.missing).toBe(
+      s.tiles.filter((t) => t.state === "missing" && t.due).length,
+    );
     expect(s.created).toBe(s.tiles.filter((t) => t.coverage !== "none").length);
     expect(s.partial).toBe(
       s.tiles.filter((t) => t.coverage === "facebook" || t.coverage === "instagram")
@@ -443,7 +500,7 @@ describe("pills agree with tiles", () => {
   it("a fully queued morning reports nothing to do", () => {
     const rows = fullDay().map((r) => ({ ...r, post_status: "scheduled" }));
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
-    expect(s.queued).toBe(EXPECTED_MORNING.length);
+    expect(s.queued).toBe(DUE.length);
     expect(s.actionNeeded).toBe(0);
     expect(s.tiles.every((t) => t.action === null)).toBe(true);
   });
@@ -451,8 +508,8 @@ describe("pills agree with tiles", () => {
   it("a fully drafted morning reports every set as needing action", () => {
     const rows = fullDay().map((r) => ({ ...r, post_status: "draft" }));
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
-    expect(s.drafts).toBe(EXPECTED_MORNING.length);
-    expect(s.actionNeeded).toBe(EXPECTED_MORNING.length);
+    expect(s.drafts).toBe(DUE.length);
+    expect(s.actionNeeded).toBe(DUE.length);
   });
 
   it("manual lanes are pending, not part of the red headline", () => {
@@ -461,8 +518,8 @@ describe("pills agree with tiles", () => {
     // lane landed, which is automated and so must alert when it doesn't run.
     const isManual = (e: { routine: string }) =>
       missingMeta(e.routine).severity === "pending";
-    const queued = EXPECTED_MORNING.filter((e) => !isManual(e));
-    const manual = EXPECTED_MORNING.filter(isManual);
+    const queued = DUE.filter((e) => !isManual(e));
+    const manual = DUE.filter(isManual);
     const rows = fullDay()
       .filter((r) => !isManual(r))
       .map((r) => ({ ...r, post_status: "scheduled" }));
@@ -478,16 +535,26 @@ describe("pills agree with tiles", () => {
   it("an automated lane that did not run DOES hit the red headline", () => {
     // The counterpart to the test above, and the reason the split matters:
     // two-beat absent is a broken cron, not a chore Dan hasn't done yet.
-    const rows = fullDay()
-      .filter((r) => r.routine !== "two-beat")
-      .map((r) => ({ ...r, post_status: "scheduled" }));
-    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
-    const twoBeat = s.tiles.filter((t) => t.routine === "two-beat");
-    expect(twoBeat.length).toBeGreaterThan(0);
-    for (const t of twoBeat) {
-      expect(t.state).toBe("missing");
-      expect(t.severity).toBe("alert");
-    }
+    // Dated on Mia's day, since only the persona on rotation is owed.
+    const MIAS_DAY = "2026-08-14";
+    const rows = expectedForDate(MIAS_DAY)
+      .filter((e) => e.routine !== "two-beat")
+      .flatMap((e) =>
+        (["facebook", "instagram"] as const).map((platform) =>
+          row({
+            set_key: e.setKey,
+            routine: e.routine,
+            platform,
+            post_status: "scheduled",
+          }),
+        ),
+      );
+    const s = buildMorningSection(rows, EXPECTED_MORNING, MIAS_DAY);
+    const owed = s.tiles.filter((t) => t.routine === "two-beat" && t.due);
+    expect(owed.map((t) => t.setKey)).toEqual(["mia"]);
+    expect(owed[0].state).toBe("missing");
+    expect(owed[0].severity).toBe("alert");
+    expect(s.actionNeeded).toBe(1);
   });
 });
 
@@ -514,7 +581,7 @@ describe("merge with discovery", () => {
     );
 
     // Derived, not hardcoded: every set the manifest didn't cover.
-    const uncovered = EXPECTED_MORNING.filter((e) => e.routine !== "wall-of-text").length;
+    const uncovered = DUE.filter((e) => e.routine !== "wall-of-text").length;
     const before = buildMorningSection(dbRows, EXPECTED_MORNING, DATE);
     expect(before.missing).toBe(uncovered); // what Dan was seeing
 
@@ -526,8 +593,8 @@ describe("merge with discovery", () => {
     // Every deck set discovery supplied is now populated — that is the bug this
     // shipped for. Lanes discovery said nothing about (single-slide) stay
     // missing, which is correct: they genuinely had no post.
-    const decks = EXPECTED_MORNING.filter((e) => e.routine === "text-card-decks").length;
-    const untouched = EXPECTED_MORNING.filter(
+    const decks = DUE.filter((e) => e.routine === "text-card-decks").length;
+    const untouched = DUE.filter(
       (e) => e.routine !== "wall-of-text" && e.routine !== "text-card-decks",
     ).length;
     expect(after.posted).toBe(decks);
@@ -570,6 +637,6 @@ describe("merge with discovery", () => {
   it("empty on both sides is unchanged from the all-missing grid", () => {
     const s = buildMorningSection(mergeMorningRows([], []), EXPECTED_MORNING, DATE);
     expect(s.created).toBe(0);
-    expect(s.missing).toBe(EXPECTED_MORNING.length);
+    expect(s.missing).toBe(DUE.length);
   });
 });

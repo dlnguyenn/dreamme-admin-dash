@@ -50,6 +50,9 @@ const STATE_FAMILY: Record<MorningTileState, Parameters<typeof fam>[0]> = {
 /** A `pending` tile is a normal state of the day, so it must not read red. */
 function tileFamily(tile: MorningTileData): Parameters<typeof fam>[0] {
   if (tile.severity === "pending") return "neutral";
+  // Nor may a rotating set on someone else's day. Its tile is there to show
+  // the whole lane; a red badge would be a false alarm two mornings in three.
+  if (tile.due === false && tile.state === "missing") return "neutral";
   return STATE_FAMILY[tile.state];
 }
 

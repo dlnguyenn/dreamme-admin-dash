@@ -282,6 +282,12 @@ export interface MorningTile {
   state: MorningTileState;
   platforms: MorningPlatformEntry[];
   coverage: MorningCoverage;
+  /**
+   * Is this set one the routine should have built today? False only for a
+   * rotating set on someone else's day — its tile still renders so the whole
+   * lane is visible, but it must not read as a failure or ask for anything.
+   */
+  due: boolean;
   /** What Dan has to do about it, or null when it resolves itself. */
   action: string | null;
   /** Drives both the badge colour and whether it lands in the red headline. */
@@ -356,9 +362,14 @@ export function tileAction(
   state: MorningTileState,
   coverage: MorningCoverage,
   routine = "",
+  due = true,
 ): { action: string | null; severity: MorningSeverity } {
   switch (state) {
     case "missing": {
+      // A rotating set that isn't up today hasn't failed to do anything. Its
+      // tile is there so Dan can see the whole lane at a glance, not to ask
+      // him for something.
+      if (!due) return { action: null, severity: "none" };
       const m = missingMeta(routine);
       return { action: m.action, severity: m.severity };
     }
@@ -491,6 +502,7 @@ function buildTile(
   label: string,
   routine: string,
   setRows: MorningPostRow[],
+  due = true,
 ): MorningTile {
   const platforms: MorningPlatformEntry[] = [];
   for (const platform of MORNING_PLATFORMS) {
@@ -516,12 +528,13 @@ function buildTile(
   const coverage = coverageOf(platforms.map((p) => p.platform));
   const state: MorningTileState =
     coverage === "none" ? "missing" : worstState(platforms.map((p) => p.state));
-  const { action, severity } = tileAction(state, coverage, routine);
+  const { action, severity } = tileAction(state, coverage, routine, due);
 
   return {
     setKey,
     setLabel: label,
     routine,
+    due,
     postKind: any?.post_kind === "carousel" ? "carousel" : "video",
     caption: any?.caption ?? null,
     thumbUrl: withThumb?.thumb_url ?? null,
@@ -531,7 +544,11 @@ function buildTile(
     action,
     severity,
     statusLabel:
-      state === "missing" ? missingMeta(routine).label : STATUS_LABEL[state],
+      state === "missing"
+        ? due
+          ? missingMeta(routine).label
+          : "NOT TODAY"
+        : STATUS_LABEL[state],
   };
 }
 
@@ -556,8 +573,18 @@ export function buildMorningSection(
     bySet.get(r.set_key)!.push(r);
   }
 
+  // Every expected set gets a tile, including a rotating one on someone
+  // else's day — Dan asked to see the whole lane, so that whenever a two-beat
+  // set IS drafted it shows up here without him having to remember whose turn
+  // it was. `due` is what keeps the off-day ones out of the counts.
   const tiles: MorningTile[] = expected.map((e) =>
-    buildTile(e.setKey, e.label, e.routine, bySet.get(e.setKey) ?? []),
+    buildTile(
+      e.setKey,
+      e.label,
+      e.routine,
+      bySet.get(e.setKey) ?? [],
+      isDueOn(e, date),
+    ),
   );
   for (const [setKey, setRows] of bySet) {
     if (expectedKeys.has(setKey)) continue;
@@ -570,13 +597,20 @@ export function buildMorningSection(
   return {
     date,
     tiles,
-    expected: expected.length,
+    // Counts describe TODAY's obligation, so an off-rotation tile is neither
+    // expected nor missing — otherwise the headline would read "10/13" and a
+    // clean morning would look like a shortfall every day.
+    //
+    // Derived from the roster rather than from `tiles`, so that a set which
+    // posted without being on the roster raises `created` without also
+    // raising the denominator it is being measured against.
+    expected: expected.filter((e) => isDueOn(e, date)).length,
     created: tiles.filter((t) => t.coverage !== "none").length,
     posted: n("posted"),
     queued: n("scheduled"),
     drafts: n("draft"),
     failed: n("failed"),
-    missing: n("missing"),
+    missing: tiles.filter((t) => t.state === "missing" && t.due).length,
     partial: tiles.filter(
       (t) => t.coverage === "facebook" || t.coverage === "instagram",
     ).length,

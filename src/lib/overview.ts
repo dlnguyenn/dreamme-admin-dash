@@ -18,7 +18,6 @@ import {
   EXPECTED_MORNING,
   MORNING_ACCOUNTS,
   buildMorningSection,
-  expectedForDate,
   type MorningPostRow,
   type MorningSection,
 } from "@/lib/morningPosts";
@@ -980,12 +979,12 @@ async function fetchMorning(): Promise<MorningSection> {
       )
     : [];
 
-  // Discovery above gets the FULL roster; the section gets only what is due
-  // today, so a rotating two-beat persona is required on its own morning and
-  // merely appended as an extra tile if it turns up on someone else's.
+  // Full roster both times: buildMorningSection works out per-set whether it
+  // is due today, so every two-beat persona keeps a tile while only the one
+  // whose turn it is counts toward the morning's obligation.
   return buildMorningSection(
     mergeMorningRows(dbRows, discovered),
-    expectedForDate(today),
+    EXPECTED_MORNING,
     today,
   );
 }
