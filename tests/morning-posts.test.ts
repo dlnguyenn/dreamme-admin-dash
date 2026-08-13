@@ -129,18 +129,21 @@ describe("account roster", () => {
 });
 
 /**
- * The two-beat lane posts ONE persona per morning, not all three: beat B cuts
- * to a real app screenshot and only one screen exists, so a daily three-up
- * would show the same screen three times. If the dash expected all three it
- * would report two false "NOT CREATED" alerts every single day — the exact
- * failure the oliviaaglp1 typo caused.
+ * The two-beat lane: all three personas every morning (Dan, 2026-08-13).
+ *
+ * `from` keeps them unexpected until the first morning the routine actually
+ * builds them. Without it, adding a lane mid-afternoon paints a red NOT
+ * CREATED across the rest of that day for a routine that was never scheduled
+ * to have run -- the same class of standing false alarm the oliviaaglp1 typo
+ * produced.
  */
-describe("two-beat rotation", () => {
+describe("two-beat lane", () => {
   const twoBeat = EXPECTED_MORNING.filter((s) => s.routine === "two-beat");
   const dueOn = (date: string) =>
     expectedForDate(date)
       .filter((s) => s.routine === "two-beat")
-      .map((s) => s.setKey);
+      .map((s) => s.setKey)
+      .sort();
 
   it("has all three personas on the roster", () => {
     expect(twoBeat.map((s) => s.setKey).sort()).toEqual([
@@ -150,56 +153,50 @@ describe("two-beat rotation", () => {
     ]);
   });
 
-  it("expects exactly one two-beat set on any given day", () => {
-    // A fortnight, so a bad modulus can't hide behind a lucky sample.
+  it("expects ALL THREE every morning once live", () => {
     for (let i = 0; i < 14; i++) {
       const date = new Date(Date.UTC(2026, 7, 14 + i)).toISOString().slice(0, 10);
-      expect({ date, due: dueOn(date).length }).toEqual({ date, due: 1 });
+      expect({ date, due: dueOn(date) }).toEqual({
+        date,
+        due: ["angela", "brittany", "mia"],
+      });
     }
   });
 
-  it("runs mia -> angela -> brittany from the anchor", () => {
-    expect(dueOn("2026-08-14")).toEqual(["mia"]);
-    expect(dueOn("2026-08-15")).toEqual(["angela"]);
-    expect(dueOn("2026-08-16")).toEqual(["brittany"]);
-    expect(dueOn("2026-08-17")).toEqual(["mia"]); // wraps
-  });
-
-  it("renders a tile for ALL THREE personas every day", () => {
-    // Dan's ask: whenever a two-beat set is drafted he wants to see it here,
-    // without having to remember whose turn it was. So the lane is always
-    // fully visible; only the counts narrow to today.
+  it("renders a tile for all three", () => {
     const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
     const keys = s.tiles.filter((t) => t.routine === "two-beat").map((t) => t.setKey);
     expect(keys.sort()).toEqual(["angela", "brittany", "mia"]);
   });
 
-  it("counts only the persona whose turn it is", () => {
+  it("counts all three toward the morning once live", () => {
     const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
-    const daily = EXPECTED_MORNING.filter((e) => !e.rotation).length;
-    expect(s.expected).toBe(daily + 1); // not daily + 3
-    const twoBeat = s.tiles.filter((t) => t.routine === "two-beat");
-    expect(twoBeat.filter((t) => t.due).map((t) => t.setKey)).toEqual(["mia"]);
+    expect(s.expected).toBe(EXPECTED_MORNING.length);
+    expect(s.tiles.filter((t) => t.routine === "two-beat" && t.due)).toHaveLength(3);
   });
 
-  it("an off-rotation persona is silent — no alert, no action, no MISSING", () => {
-    const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
-    for (const t of s.tiles.filter((x) => x.routine === "two-beat" && !x.due)) {
+  it("expects nothing before the lane went live", () => {
+    expect(dueOn("2026-08-13")).toEqual([]);
+    expect(dueOn("2026-07-01")).toEqual([]);
+  });
+
+  it("is silent on a pre-live day -- no alert, no action, no MISSING", () => {
+    const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-13");
+    const pre = s.tiles.filter((t) => t.routine === "two-beat");
+    expect(pre).toHaveLength(3);
+    for (const t of pre) {
+      expect(t.due).toBe(false);
       expect(t.state).toBe("missing"); // nothing was built, truthfully
       expect(t.severity).toBe("none"); // but nobody is being asked for anything
       expect(t.action).toBeNull();
       expect(t.statusLabel).toBe("NOT TODAY");
     }
-    // Mia IS due and absent, so exactly one two-beat set counts as missing.
-    expect(
-      s.tiles.filter((t) => t.routine === "two-beat" && t.state === "missing").length,
-    ).toBe(3);
-    expect(s.missing).toBe(s.expected); // nothing at all was built
+    expect(s.expected).toBe(EXPECTED_MORNING.length - 3);
   });
 
-  it("shows a real state when an off-rotation persona IS drafted", () => {
-    // The whole point of keeping the tile: an early or extra build is visible
-    // rather than silently absent.
+  it("shows a real state when a pre-live set IS drafted", () => {
+    // The reason the tile stays rather than being hidden: an early build is
+    // visible instead of silently absent.
     const rows = (["facebook", "instagram"] as const).map((platform) =>
       row({
         routine: "two-beat",
@@ -208,41 +205,35 @@ describe("two-beat rotation", () => {
         post_status: "draft",
       }),
     );
-    const s = buildMorningSection(rows, EXPECTED_MORNING, "2026-08-14");
+    const s = buildMorningSection(rows, EXPECTED_MORNING, "2026-08-13");
     const brittany = s.tiles.find((t) => t.setKey === "brittany")!;
     expect(brittany.due).toBe(false);
     expect(brittany.state).toBe("draft");
     expect(brittany.statusLabel).toBe("DRAFT");
   });
 
-  it("expects nothing before the lane went live", () => {
-    // The lane shipped on the 13th, after that morning's run. Expecting it the
-    // same day would put a red NOT CREATED on the Overview for a routine that
-    // was never scheduled to have run — the false alarm this panel exists to
-    // avoid.
-    expect(dueOn("2026-08-13")).toEqual([]);
-    expect(dueOn("2026-07-01")).toEqual([]);
+  it("a set with no `from` is expected on every date", () => {
+    const set = {
+      setKey: "x",
+      label: "X",
+      routine: "wall-of-text" as const,
+      kind: "video" as const,
+    };
+    expect(isDueOn(set, "2020-01-01")).toBe(true);
+    expect(isDueOn(set, "2099-12-31")).toBe(true);
   });
 
-  it("handles dates before the anchor without a signed-modulus bug", () => {
-    // JS % is signed: a naive n % cycle returns -1 here and matches nothing.
-    // Guarded directly, since `from` now hides it on the real roster.
+  it("`from` is inclusive of its own day", () => {
     const set = {
       setKey: "x",
       label: "X",
       routine: "two-beat" as const,
       kind: "video" as const,
-      rotation: { anchor: "2026-08-14", cycle: 3, slot: 2 },
+      from: "2026-08-14",
     };
-    expect(isDueOn(set, "2026-08-13")).toBe(true); // -1 mod 3 === 2
-    expect(isDueOn(set, "2026-08-12")).toBe(false);
-  });
-
-  it("still expects every non-rotating set daily", () => {
-    const daily = EXPECTED_MORNING.filter((s) => !s.rotation).length;
-    for (const date of ["2026-08-14", "2026-08-15", "2026-08-16"]) {
-      expect(expectedForDate(date).length).toBe(daily + 1);
-    }
+    expect(isDueOn(set, "2026-08-13")).toBe(false);
+    expect(isDueOn(set, "2026-08-14")).toBe(true);
+    expect(isDueOn(set, "2026-08-15")).toBe(true);
   });
 
   it("treats a missing two-beat post as an alert, not a pending nudge", () => {
@@ -535,9 +526,9 @@ describe("pills agree with tiles", () => {
   it("an automated lane that did not run DOES hit the red headline", () => {
     // The counterpart to the test above, and the reason the split matters:
     // two-beat absent is a broken cron, not a chore Dan hasn't done yet.
-    // Dated on Mia's day, since only the persona on rotation is owed.
-    const MIAS_DAY = "2026-08-14";
-    const rows = expectedForDate(MIAS_DAY)
+    // Dated once the lane is live, so all three personas are owed.
+    const LIVE_DAY = "2026-08-14";
+    const rows = expectedForDate(LIVE_DAY)
       .filter((e) => e.routine !== "two-beat")
       .flatMap((e) =>
         (["facebook", "instagram"] as const).map((platform) =>
@@ -549,12 +540,18 @@ describe("pills agree with tiles", () => {
           }),
         ),
       );
-    const s = buildMorningSection(rows, EXPECTED_MORNING, MIAS_DAY);
+    const s = buildMorningSection(rows, EXPECTED_MORNING, LIVE_DAY);
     const owed = s.tiles.filter((t) => t.routine === "two-beat" && t.due);
-    expect(owed.map((t) => t.setKey)).toEqual(["mia"]);
-    expect(owed[0].state).toBe("missing");
-    expect(owed[0].severity).toBe("alert");
-    expect(s.actionNeeded).toBe(1);
+    expect(owed.map((t) => t.setKey).sort()).toEqual([
+      "angela",
+      "brittany",
+      "mia",
+    ]);
+    for (const t of owed) {
+      expect(t.state).toBe("missing");
+      expect(t.severity).toBe("alert");
+    }
+    expect(s.actionNeeded).toBe(3);
   });
 });
 

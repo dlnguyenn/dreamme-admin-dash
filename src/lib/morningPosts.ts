@@ -33,37 +33,19 @@ export type MorningRoutine =
   | "single-slide"
   | "two-beat";
 
-/**
- * A set that is only expected on some mornings.
- *
- * The two-beat lane rotates one persona per day rather than posting all three
- * daily: it cuts to a real app screenshot, and there is currently exactly one
- * screen in `wall-of-text/app-screens/`, so three-a-day would show the same
- * screen three times. Date-derived rather than stored, so a skipped run cannot
- * desynchronise the rotation — day N always belongs to the same persona.
- */
-export interface RotationSpec {
-  /** Eastern day the cycle starts, "YYYY-MM-DD". This day is slot 0. */
-  anchor: string;
-  /** How many days before the rotation repeats. */
-  cycle: number;
-  /** Which day of the cycle this set owns, 0-based. */
-  slot: number;
-  /**
-   * First morning the routine actually builds this lane. Before it, the set is
-   * never expected — otherwise the day a lane is added, the dash spends the
-   * rest of that day reporting a red "NOT CREATED" for a routine that was
-   * never scheduled to have run yet.
-   */
-  from?: string;
-}
-
 export interface ExpectedSet {
   setKey: string;
   label: string;
   routine: MorningRoutine;
-  /** Absent = expected every morning. */
-  rotation?: RotationSpec;
+  /**
+   * First morning the routine actually builds this set. Before it, the set is
+   * never expected — otherwise the day a lane is added, the dash spends the
+   * rest of that day reporting a red "NOT CREATED" for a routine that was
+   * never scheduled to have run yet.
+   *
+   * Absent = expected every morning, which is the normal case.
+   */
+  from?: string;
   /**
    * What this set posts to FB/IG. Decides how a thumbnail is derived from a
    * post id, and the two forms are mutually exclusive (curl-verified):
@@ -82,18 +64,10 @@ export interface ExpectedSet {
  * fold it into the coverage model.
  */
 /**
- * The two-beat rotation: mia -> angela -> brittany, one per morning, anchored
- * so 2026-08-14 is Mia's day. Keep the order in step with the SKILL's own
- * rotation or the dash will expect a different persona than the routine builds.
+ * The lane was added to the SKILL on 2026-08-13, after that morning's run had
+ * already finished, so the first unattended build is the 05:30 of the 14th.
  */
-const TWO_BEAT_ROTATION = (slot: number): RotationSpec => ({
-  anchor: "2026-08-14",
-  cycle: 3,
-  slot,
-  // The lane was added to the SKILL on 2026-08-13, after that morning's run
-  // had already finished. First unattended build is the 05:30 of the 14th.
-  from: "2026-08-14",
-});
+const TWO_BEAT_FROM = "2026-08-14";
 
 export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "hannah", label: "Hannah", routine: "wall-of-text", kind: "video" },
@@ -109,28 +83,11 @@ export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "jimmy", label: "Jimmy", routine: "single-slide", kind: "carousel" },
   { setKey: "mike", label: "Mike", routine: "single-slide", kind: "carousel" },
   // two-beat: reaction clip asking a question, hard cut to a real app screen
-  // answering it. ONE of these three per morning — see RotationSpec.
-  {
-    setKey: "mia",
-    label: "Mia",
-    routine: "two-beat",
-    kind: "video",
-    rotation: TWO_BEAT_ROTATION(0),
-  },
-  {
-    setKey: "angela",
-    label: "Angela",
-    routine: "two-beat",
-    kind: "video",
-    rotation: TWO_BEAT_ROTATION(1),
-  },
-  {
-    setKey: "brittany",
-    label: "Brittany",
-    routine: "two-beat",
-    kind: "video",
-    rotation: TWO_BEAT_ROTATION(2),
-  },
+  // answering it. All three every morning (Dan, 2026-08-13) — this briefly
+  // rotated one persona a day, which he reversed.
+  { setKey: "mia", label: "Mia", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
+  { setKey: "angela", label: "Angela", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
+  { setKey: "brittany", label: "Brittany", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
 ];
 
 export interface MorningAccount {
@@ -191,28 +148,18 @@ export const MORNING_ACCOUNTS: MorningAccount[] = [
   { username: "brittanyglp1_", platform: "instagram", setKey: "brittany" },
 ];
 
-/** Whole days from `anchor` to `date`, both "YYYY-MM-DD". UTC on purpose:
- *  these are already Eastern calendar days, so no second shift applies. */
-function daysBetween(anchor: string, date: string): number {
-  const ms = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`);
-  return Math.round(ms / 86_400_000);
-}
-
-/** Is this set one of the ones the routine should have built on `date`? */
+/** Is this set one the routine should have built on `date`? */
 export function isDueOn(set: ExpectedSet, date: string): boolean {
-  if (!set.rotation) return true;
-  const { anchor, cycle, slot, from } = set.rotation;
-  if (from && date < from) return false; // ISO dates compare lexicographically
-  const n = daysBetween(anchor, date);
-  return ((n % cycle) + cycle) % cycle === slot; // correct before the anchor too
+  // ISO dates compare lexicographically, so no parsing is needed.
+  return !set.from || date >= set.from;
 }
 
 /**
  * The roster to hold the morning to, for one day.
  *
  * Note this is NOT what discovery should be given: discovery takes the full
- * EXPECTED_MORNING so that an off-rotation post still gets recognised and
- * surfaced as an extra tile, rather than silently dropped for being early.
+ * EXPECTED_MORNING so that a post from a set that has not gone live yet is
+ * still recognised and surfaced, rather than silently dropped for being early.
  */
 export function expectedForDate(
   date: string,
@@ -283,9 +230,9 @@ export interface MorningTile {
   platforms: MorningPlatformEntry[];
   coverage: MorningCoverage;
   /**
-   * Is this set one the routine should have built today? False only for a
-   * rotating set on someone else's day — its tile still renders so the whole
-   * lane is visible, but it must not read as a failure or ask for anything.
+   * Is this set one the routine should have built today? False only for a set
+   * that has not gone live yet — its tile still renders so the lane is
+   * visible, but it must not read as a failure or ask for anything.
    */
   due: boolean;
   /** What Dan has to do about it, or null when it resolves itself. */
@@ -366,7 +313,7 @@ export function tileAction(
 ): { action: string | null; severity: MorningSeverity } {
   switch (state) {
     case "missing": {
-      // A rotating set that isn't up today hasn't failed to do anything. Its
+      // A set that hasn't gone live yet hasn't failed to do anything. Its
       // tile is there so Dan can see the whole lane at a glance, not to ask
       // him for something.
       if (!due) return { action: null, severity: "none" };
@@ -463,7 +410,7 @@ const ROUTINE_MISSING: Record<
   },
   // Runs unattended inside the 05:30 wall-of-text task, so an absent post is a
   // routine that fell over — alert, same as the other cron lanes. Only the
-  // persona whose rotation slot it is gets here (expectedForDate).
+  // Applies from the morning the lane first runs (ExpectedSet.from).
   "two-beat": {
     label: "NOT CREATED",
     action: "Two-beat routine did not create this",
@@ -573,10 +520,10 @@ export function buildMorningSection(
     bySet.get(r.set_key)!.push(r);
   }
 
-  // Every expected set gets a tile, including a rotating one on someone
-  // else's day — Dan asked to see the whole lane, so that whenever a two-beat
-  // set IS drafted it shows up here without him having to remember whose turn
-  // it was. `due` is what keeps the off-day ones out of the counts.
+  // Every expected set gets a tile, including one whose lane has not gone
+  // live yet — Dan asked to see the whole lane, so that whenever a two-beat
+  // set IS drafted it shows up here. `due` keeps a not-yet-live set out of
+  // the counts without hiding it.
   const tiles: MorningTile[] = expected.map((e) =>
     buildTile(
       e.setKey,
@@ -597,9 +544,10 @@ export function buildMorningSection(
   return {
     date,
     tiles,
-    // Counts describe TODAY's obligation, so an off-rotation tile is neither
-    // expected nor missing — otherwise the headline would read "10/13" and a
-    // clean morning would look like a shortfall every day.
+    // Counts describe TODAY's obligation, so a set whose lane has not gone
+    // live yet is neither expected nor missing — otherwise the headline would
+    // read "10/13" today and look like a shortfall for a lane that was never
+    // scheduled to have run.
     //
     // Derived from the roster rather than from `tiles`, so that a set which
     // posted without being on the roster raises `created` without also
