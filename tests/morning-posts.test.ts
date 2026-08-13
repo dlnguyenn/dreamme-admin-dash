@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EXPECTED_MORNING,
+  MORNING_ACCOUNTS,
   STATUS_LABEL,
   buildMorningSection,
   coverageFlag,
@@ -52,6 +53,58 @@ function fullDay(): MorningPostRow[] {
 
 const tileFor = (s: ReturnType<typeof buildMorningSection>, setKey: string) =>
   s.tiles.find((t) => t.setKey === setKey)!;
+
+/**
+ * A wrong username here fails SILENTLY and daily: the account matches nothing,
+ * so the tile reports the post missing and the queue button skips the draft as
+ * off-roster — indistinguishable from the routine never having run. That is
+ * exactly what "oliviaglp1" on Facebook did, for as long as the roster existed;
+ * the post was on oliviaaglp1 the whole time.
+ *
+ * Every one of these was read back off a LIVE post on that account, not
+ * inferred. The Facebook handle doubles a letter that Instagram's does not,
+ * and there is no rule to it — check the account, don't derive it.
+ */
+describe("account roster", () => {
+  const FACEBOOK: Record<string, string> = {
+    hannah: "hannahhglp1",
+    olivia: "oliviaaglp1",
+    mikayla: "mikaylaaglp1",
+    chris: "chrissglp1",
+    mike: "mikeeglp1",
+    jimmy: "jimmyglp1", // no doubling on this one
+  };
+
+  it.each(Object.entries(FACEBOOK))(
+    "%s posts to Facebook as %s",
+    (setKey, username) => {
+      const fb = MORNING_ACCOUNTS.find(
+        (a) => a.setKey === setKey && a.platform === "facebook",
+      );
+      expect(fb?.username).toBe(username);
+    },
+  );
+
+  it("gives every set exactly one Facebook and one Instagram account", () => {
+    const seen = new Map<string, Set<string>>();
+    for (const a of MORNING_ACCOUNTS) {
+      const platforms = seen.get(a.setKey) ?? new Set();
+      expect(platforms.has(a.platform)).toBe(false); // no set posts twice to one platform
+      platforms.add(a.platform);
+      seen.set(a.setKey, platforms);
+    }
+    for (const [setKey, platforms] of seen) {
+      expect(
+        { setKey, platforms: [...platforms].sort() },
+      ).toEqual({ setKey, platforms: ["facebook", "instagram"] });
+    }
+  });
+
+  it("never maps one (username, platform) pair to two sets", () => {
+    const pairs = MORNING_ACCOUNTS.map((a) => `${a.username}|${a.platform}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
+  });
+});
 
 describe("toMorningState", () => {
   it("trusts synced state for terminal transitions", () => {

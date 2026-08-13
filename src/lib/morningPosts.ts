@@ -87,7 +87,12 @@ export interface MorningAccount {
 export const MORNING_ACCOUNTS: MorningAccount[] = [
   { username: "hannahhglp1", platform: "facebook", setKey: "hannah" },
   { username: "hannahglp1", platform: "instagram", setKey: "hannah" },
-  { username: "oliviaglp1", platform: "facebook", setKey: "olivia" },
+  // Doubled a, like hannahhglp1 / mikaylaaglp1. Was "oliviaglp1" here, which
+  // matches no account at all: the panel therefore reported Olivia's Facebook
+  // post missing every single day while the draft sat on oliviaaglp1, and the
+  // queue button skipped it as off-roster. Silent because a miss looks exactly
+  // like the routine not having run.
+  { username: "oliviaaglp1", platform: "facebook", setKey: "olivia" },
   { username: "oliviaglp1", platform: "instagram", setKey: "olivia" },
   { username: "mikaylaaglp1", platform: "facebook", setKey: "mikayla" },
   { username: "mikaylaglp1", platform: "instagram", setKey: "mikayla" },
