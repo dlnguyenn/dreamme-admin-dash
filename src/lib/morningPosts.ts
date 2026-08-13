@@ -27,12 +27,43 @@ export type MorningPlatform = "facebook" | "instagram";
 
 export const MORNING_PLATFORMS: MorningPlatform[] = ["facebook", "instagram"];
 
-export type MorningRoutine = "wall-of-text" | "text-card-decks" | "single-slide";
+export type MorningRoutine =
+  | "wall-of-text"
+  | "text-card-decks"
+  | "single-slide"
+  | "two-beat";
+
+/**
+ * A set that is only expected on some mornings.
+ *
+ * The two-beat lane rotates one persona per day rather than posting all three
+ * daily: it cuts to a real app screenshot, and there is currently exactly one
+ * screen in `wall-of-text/app-screens/`, so three-a-day would show the same
+ * screen three times. Date-derived rather than stored, so a skipped run cannot
+ * desynchronise the rotation — day N always belongs to the same persona.
+ */
+export interface RotationSpec {
+  /** Eastern day the cycle starts, "YYYY-MM-DD". This day is slot 0. */
+  anchor: string;
+  /** How many days before the rotation repeats. */
+  cycle: number;
+  /** Which day of the cycle this set owns, 0-based. */
+  slot: number;
+  /**
+   * First morning the routine actually builds this lane. Before it, the set is
+   * never expected — otherwise the day a lane is added, the dash spends the
+   * rest of that day reporting a red "NOT CREATED" for a routine that was
+   * never scheduled to have run yet.
+   */
+  from?: string;
+}
 
 export interface ExpectedSet {
   setKey: string;
   label: string;
   routine: MorningRoutine;
+  /** Absent = expected every morning. */
+  rotation?: RotationSpec;
   /**
    * What this set posts to FB/IG. Decides how a thumbnail is derived from a
    * post id, and the two forms are mutually exclusive (curl-verified):
@@ -50,6 +81,20 @@ export interface ExpectedSet {
  * sets); adding "youtube" to MORNING_PLATFORMS is the only change needed to
  * fold it into the coverage model.
  */
+/**
+ * The two-beat rotation: mia -> angela -> brittany, one per morning, anchored
+ * so 2026-08-14 is Mia's day. Keep the order in step with the SKILL's own
+ * rotation or the dash will expect a different persona than the routine builds.
+ */
+const TWO_BEAT_ROTATION = (slot: number): RotationSpec => ({
+  anchor: "2026-08-14",
+  cycle: 3,
+  slot,
+  // The lane was added to the SKILL on 2026-08-13, after that morning's run
+  // had already finished. First unattended build is the 05:30 of the 14th.
+  from: "2026-08-14",
+});
+
 export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "hannah", label: "Hannah", routine: "wall-of-text", kind: "video" },
   { setKey: "olivia", label: "Olivia", routine: "wall-of-text", kind: "video" },
@@ -63,6 +108,29 @@ export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "chris", label: "Chris", routine: "single-slide", kind: "carousel" },
   { setKey: "jimmy", label: "Jimmy", routine: "single-slide", kind: "carousel" },
   { setKey: "mike", label: "Mike", routine: "single-slide", kind: "carousel" },
+  // two-beat: reaction clip asking a question, hard cut to a real app screen
+  // answering it. ONE of these three per morning — see RotationSpec.
+  {
+    setKey: "mia",
+    label: "Mia",
+    routine: "two-beat",
+    kind: "video",
+    rotation: TWO_BEAT_ROTATION(0),
+  },
+  {
+    setKey: "angela",
+    label: "Angela",
+    routine: "two-beat",
+    kind: "video",
+    rotation: TWO_BEAT_ROTATION(1),
+  },
+  {
+    setKey: "brittany",
+    label: "Brittany",
+    routine: "two-beat",
+    kind: "video",
+    rotation: TWO_BEAT_ROTATION(2),
+  },
 ];
 
 export interface MorningAccount {
@@ -112,7 +180,46 @@ export const MORNING_ACCOUNTS: MorningAccount[] = [
   { username: "jimmyglp1", platform: "instagram", setKey: "jimmy" },
   { username: "mikeeglp1", platform: "facebook", setKey: "mike" },
   { username: "mikeglp1", platform: "instagram", setKey: "mike" },
+  // two-beat lane. Read off live posts on each account: Mia is the only set
+  // whose handle is identical everywhere, Angela doubles the a on Facebook,
+  // and Brittany's Instagram carries a TRAILING UNDERSCORE.
+  { username: "glp1mia", platform: "facebook", setKey: "mia" },
+  { username: "glp1mia", platform: "instagram", setKey: "mia" },
+  { username: "angelaaglp1", platform: "facebook", setKey: "angela" },
+  { username: "angelaglp1", platform: "instagram", setKey: "angela" },
+  { username: "brittanyglp1", platform: "facebook", setKey: "brittany" },
+  { username: "brittanyglp1_", platform: "instagram", setKey: "brittany" },
 ];
+
+/** Whole days from `anchor` to `date`, both "YYYY-MM-DD". UTC on purpose:
+ *  these are already Eastern calendar days, so no second shift applies. */
+function daysBetween(anchor: string, date: string): number {
+  const ms = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`);
+  return Math.round(ms / 86_400_000);
+}
+
+/** Is this set one of the ones the routine should have built on `date`? */
+export function isDueOn(set: ExpectedSet, date: string): boolean {
+  if (!set.rotation) return true;
+  const { anchor, cycle, slot, from } = set.rotation;
+  if (from && date < from) return false; // ISO dates compare lexicographically
+  const n = daysBetween(anchor, date);
+  return ((n % cycle) + cycle) % cycle === slot; // correct before the anchor too
+}
+
+/**
+ * The roster to hold the morning to, for one day.
+ *
+ * Note this is NOT what discovery should be given: discovery takes the full
+ * EXPECTED_MORNING so that an off-rotation post still gets recognised and
+ * surfaced as an extra tile, rather than silently dropped for being early.
+ */
+export function expectedForDate(
+  date: string,
+  sets: ExpectedSet[] = EXPECTED_MORNING,
+): ExpectedSet[] {
+  return sets.filter((s) => isDueOn(s, date));
+}
 
 export type MorningTileState =
   | "posted"
@@ -342,6 +449,14 @@ const ROUTINE_MISSING: Record<
     label: "NOT CREATED",
     action: "Single-slide post not built yet",
     severity: "pending",
+  },
+  // Runs unattended inside the 05:30 wall-of-text task, so an absent post is a
+  // routine that fell over — alert, same as the other cron lanes. Only the
+  // persona whose rotation slot it is gets here (expectedForDate).
+  "two-beat": {
+    label: "NOT CREATED",
+    action: "Two-beat routine did not create this",
+    severity: "alert",
   },
 };
 

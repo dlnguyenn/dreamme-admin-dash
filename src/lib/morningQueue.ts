@@ -33,6 +33,10 @@ export const QUEUE_ACCOUNTS: QueueAccount[] = [
   { username: "glp1_tips_tricks", platform: "youtube", setKey: "glp1_tips_tricks" },
   { username: "glp1hacks", platform: "youtube", setKey: "glp1hacks" },
   { username: "dreammeglp1tips", platform: "youtube", setKey: "julie_glp1" },
+  // two-beat lane's YouTube surfaces. FB/IG arrive via MORNING_ACCOUNTS above.
+  { username: "glp1mia", platform: "youtube", setKey: "mia" },
+  { username: "angelaglp1", platform: "youtube", setKey: "angela" },
+  { username: "brittanyglp1", platform: "youtube", setKey: "brittany" },
 ];
 
 /**

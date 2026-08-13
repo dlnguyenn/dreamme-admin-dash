@@ -11,6 +11,8 @@ import {
   STATUS_LABEL,
   buildMorningSection,
   coverageFlag,
+  expectedForDate,
+  isDueOn,
   missingMeta,
   tileAction,
   toMorningState,
@@ -103,6 +105,96 @@ describe("account roster", () => {
   it("never maps one (username, platform) pair to two sets", () => {
     const pairs = MORNING_ACCOUNTS.map((a) => `${a.username}|${a.platform}`);
     expect(new Set(pairs).size).toBe(pairs.length);
+  });
+
+  it("carries Brittany's trailing-underscore Instagram handle", () => {
+    const ig = MORNING_ACCOUNTS.find(
+      (a) => a.setKey === "brittany" && a.platform === "instagram",
+    );
+    expect(ig?.username).toBe("brittanyglp1_");
+  });
+
+  it("gives every expected set a pair of accounts", () => {
+    for (const set of EXPECTED_MORNING) {
+      const mine = MORNING_ACCOUNTS.filter((a) => a.setKey === set.setKey);
+      expect({ set: set.setKey, n: mine.length }).toEqual({
+        set: set.setKey,
+        n: 2,
+      });
+    }
+  });
+});
+
+/**
+ * The two-beat lane posts ONE persona per morning, not all three: beat B cuts
+ * to a real app screenshot and only one screen exists, so a daily three-up
+ * would show the same screen three times. If the dash expected all three it
+ * would report two false "NOT CREATED" alerts every single day — the exact
+ * failure the oliviaaglp1 typo caused.
+ */
+describe("two-beat rotation", () => {
+  const twoBeat = EXPECTED_MORNING.filter((s) => s.routine === "two-beat");
+  const dueOn = (date: string) =>
+    expectedForDate(date)
+      .filter((s) => s.routine === "two-beat")
+      .map((s) => s.setKey);
+
+  it("has all three personas on the roster", () => {
+    expect(twoBeat.map((s) => s.setKey).sort()).toEqual([
+      "angela",
+      "brittany",
+      "mia",
+    ]);
+  });
+
+  it("expects exactly one two-beat set on any given day", () => {
+    // A fortnight, so a bad modulus can't hide behind a lucky sample.
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(Date.UTC(2026, 7, 14 + i)).toISOString().slice(0, 10);
+      expect({ date, due: dueOn(date).length }).toEqual({ date, due: 1 });
+    }
+  });
+
+  it("runs mia -> angela -> brittany from the anchor", () => {
+    expect(dueOn("2026-08-14")).toEqual(["mia"]);
+    expect(dueOn("2026-08-15")).toEqual(["angela"]);
+    expect(dueOn("2026-08-16")).toEqual(["brittany"]);
+    expect(dueOn("2026-08-17")).toEqual(["mia"]); // wraps
+  });
+
+  it("expects nothing before the lane went live", () => {
+    // The lane shipped on the 13th, after that morning's run. Expecting it the
+    // same day would put a red NOT CREATED on the Overview for a routine that
+    // was never scheduled to have run — the false alarm this panel exists to
+    // avoid.
+    expect(dueOn("2026-08-13")).toEqual([]);
+    expect(dueOn("2026-07-01")).toEqual([]);
+  });
+
+  it("handles dates before the anchor without a signed-modulus bug", () => {
+    // JS % is signed: a naive n % cycle returns -1 here and matches nothing.
+    // Guarded directly, since `from` now hides it on the real roster.
+    const set = {
+      setKey: "x",
+      label: "X",
+      routine: "two-beat" as const,
+      kind: "video" as const,
+      rotation: { anchor: "2026-08-14", cycle: 3, slot: 2 },
+    };
+    expect(isDueOn(set, "2026-08-13")).toBe(true); // -1 mod 3 === 2
+    expect(isDueOn(set, "2026-08-12")).toBe(false);
+  });
+
+  it("still expects every non-rotating set daily", () => {
+    const daily = EXPECTED_MORNING.filter((s) => !s.rotation).length;
+    for (const date of ["2026-08-14", "2026-08-15", "2026-08-16"]) {
+      expect(expectedForDate(date).length).toBe(daily + 1);
+    }
+  });
+
+  it("treats a missing two-beat post as an alert, not a pending nudge", () => {
+    // It runs unattended in the 05:30 task, so absent means the routine broke.
+    expect(missingMeta("two-beat").severity).toBe("alert");
   });
 });
 
@@ -364,20 +456,37 @@ describe("pills agree with tiles", () => {
   });
 
   it("manual lanes are pending, not part of the red headline", () => {
-    // Only the wall-of-text trios queued; every manual lane absent. Counts are
-    // derived from the roster so adding a lane doesn't break this test — which
-    // is exactly what happened when the single-slide personas were added.
-    const auto = EXPECTED_MORNING.filter((e) => e.routine === "wall-of-text");
-    const manual = EXPECTED_MORNING.filter((e) => e.routine !== "wall-of-text");
+    // Split by what an ABSENT post means for that lane, not by routine name.
+    // "everything except wall-of-text is manual" was true until the two-beat
+    // lane landed, which is automated and so must alert when it doesn't run.
+    const isManual = (e: { routine: string }) =>
+      missingMeta(e.routine).severity === "pending";
+    const queued = EXPECTED_MORNING.filter((e) => !isManual(e));
+    const manual = EXPECTED_MORNING.filter(isManual);
     const rows = fullDay()
-      .filter((r) => r.routine === "wall-of-text")
+      .filter((r) => !isManual(r))
       .map((r) => ({ ...r, post_status: "scheduled" }));
     const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
-    expect(s.queued).toBe(auto.length);
+    expect(s.queued).toBe(queued.length);
     expect(s.pending).toBe(manual.length);
     expect(s.actionNeeded).toBe(0); // nothing is BROKEN
-    for (const t of s.tiles.filter((x) => x.routine !== "wall-of-text")) {
+    for (const t of s.tiles.filter(isManual)) {
       expect(t.severity).toBe("pending");
+    }
+  });
+
+  it("an automated lane that did not run DOES hit the red headline", () => {
+    // The counterpart to the test above, and the reason the split matters:
+    // two-beat absent is a broken cron, not a chore Dan hasn't done yet.
+    const rows = fullDay()
+      .filter((r) => r.routine !== "two-beat")
+      .map((r) => ({ ...r, post_status: "scheduled" }));
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    const twoBeat = s.tiles.filter((t) => t.routine === "two-beat");
+    expect(twoBeat.length).toBeGreaterThan(0);
+    for (const t of twoBeat) {
+      expect(t.state).toBe("missing");
+      expect(t.severity).toBe("alert");
     }
   });
 });
