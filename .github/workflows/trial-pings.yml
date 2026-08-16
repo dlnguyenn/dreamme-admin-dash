@@ -1,0 +1,48 @@
+# Trial-quality silent pushes — every 15 minutes.
+#
+# Triggers /api/cron/trial-pings on the deployed dash, which wakes devices at
+# +2h (trial_qualified) and +24h (trial_engaged) after each trial start so the
+# app fires those events to the Meta SDK and Singular. Scheduled HERE rather
+# than vercel.json because Vercel Hobby crons are daily-only.
+#
+# This workflow is also the monitor: the previous incarnation of this pipeline
+# (an n8n workflow) died silently on 2026-07-06 and nobody noticed for five
+# weeks. A failing run here is red in the Actions tab and emails the repo
+# owner. The route is idempotent (server-side ledger claim), so overlapping or
+# retried runs cannot double-ping.
+#
+# Requires the CRON_SECRET repository secret (same value as the Vercel env).
+
+name: trial-pings
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: trial-pings
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Trigger trial-pings route
+        run: |
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set — the route cannot be authenticated. Add it in Settings > Secrets and variables > Actions (same value as the Vercel CRON_SECRET env)."
+            exit 1
+          fi
+          resp=$(curl -sS -w '\n%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://dreamme-admin-dash.vercel.app/api/cron/trial-pings")
+          code=$(printf '%s' "$resp" | tail -n1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "status: $code"
+          echo "body: $body"
+          [ "$code" = "200" ] || exit 1
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
