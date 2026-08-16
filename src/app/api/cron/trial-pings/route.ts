@@ -25,8 +25,12 @@ import { checkCronAuth } from "@/lib/auth-ingest";
 import {
   sendTrialPings,
   type TrialPingTarget,
-  type TrialPingType,
 } from "@/lib/vendors/expo-push";
+import {
+  pickLatestTokenPerUser,
+  pingWindows,
+  type TokenRow,
+} from "@/lib/trial-pings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,52 +44,11 @@ const SERVICE_ROLE =
 const CONSUMER_URL = process.env.CONSUMER_SUPABASE_URL ?? "";
 const CONSUMER_KEY = process.env.CONSUMER_SERVICE_ROLE_KEY ?? "";
 
-interface WindowSpec {
-  pingType: TrialPingType;
-  from: string; // ISO, exclusive lower bound of event_at
-  to: string; // ISO, inclusive upper bound of event_at
-}
-
-/**
- * Pure, exported for tests. A trial qualifies for a ping when its event_at is
- * at least the ping delay old, but no more than delay+4h old.
- */
-export function pingWindows(now: Date): WindowSpec[] {
-  const iso = (msAgo: number) => new Date(now.getTime() - msAgo).toISOString();
-  const H = 3_600_000;
-  return [
-    { pingType: "trial_qualified", from: iso(6 * H), to: iso(2 * H) },
-    { pingType: "trial_engaged", from: iso(28 * H), to: iso(24 * H) },
-  ];
-}
-
 interface RcTrialRow {
   original_transaction_id: string | null;
   app_user_id: string | null;
   product_id: string | null;
   price_usd: string | number | null;
-}
-
-interface TokenRow {
-  user_id: string;
-  expo_push_token: string;
-  updated_at: string;
-}
-
-/**
- * Pure, exported for tests: newest token per user. PostgREST returns rows
- * ordered updated_at desc; keep the first seen per user_id. One device per
- * user on purpose — every device runs its own client-side ledger, so pushing
- * to several would double-fire the events.
- */
-export function pickLatestTokenPerUser(rows: TokenRow[]): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const r of rows) {
-    if (r.user_id && r.expo_push_token && !out.has(r.user_id)) {
-      out.set(r.user_id, r.expo_push_token);
-    }
-  }
-  return out;
 }
 
 const UUID_RE =

@@ -3,10 +3,7 @@ import {
   buildTrialPingMessages,
   type TrialPingTarget,
 } from "@/lib/vendors/expo-push";
-import {
-  pickLatestTokenPerUser,
-  pingWindows,
-} from "@/app/api/cron/trial-pings/route";
+import { pickLatestTokenPerUser, pingWindows } from "@/lib/trial-pings";
 
 /**
  * The trial-ping pipeline replaces a workflow that died silently for five
