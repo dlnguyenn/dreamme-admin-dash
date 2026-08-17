@@ -27,6 +27,27 @@ export type MorningPlatform = "facebook" | "instagram";
 
 export const MORNING_PLATFORMS: MorningPlatform[] = ["facebook", "instagram"];
 
+/**
+ * Platforms the morning is currently NOT held to.
+ *
+ * Facebook posting is PAUSED as of 2026-08-17 for the virality audit — the FB
+ * accounts measured dead (0-200 median views), so the routines now produce
+ * Instagram-only rows. Without this, every set would read "instagram" coverage
+ * -> "No Facebook post for this set" -> the panel goes red daily as a standing
+ * false alarm.
+ *
+ * A paused platform is treated as NOT EXPECTED: a set with every non-paused
+ * surface present reads as complete ("both"), no partial flag, no alert, no
+ * entry in the missing count. But a paused-platform row that DOES exist
+ * (posted before the pause, or someone posts anyway) still displays with its
+ * real state and still participates in worstState — pausing changes what is
+ * owed, never what is shown.
+ *
+ * To unpause, empty this list. Restore when
+ * data/loop-cache/audit-20260817/PHASE0-FINDINGS.md lifts the pause.
+ */
+export const PAUSED_PLATFORMS: MorningPlatform[] = ["facebook"];
+
 export type MorningRoutine =
   | "wall-of-text"
   | "text-card-decks"
@@ -310,6 +331,7 @@ export function tileAction(
   coverage: MorningCoverage,
   routine = "",
   due = true,
+  paused: MorningPlatform[] = PAUSED_PLATFORMS,
 ): { action: string | null; severity: MorningSeverity } {
   switch (state) {
     case "missing": {
@@ -333,9 +355,11 @@ export function tileAction(
         severity: "alert",
       };
   }
-  if (coverage === "facebook")
+  // A one-surface set only asks for the OTHER surface when that surface is
+  // actually owed — a paused platform's absence is not a problem to fix.
+  if (coverage === "facebook" && !paused.includes("instagram"))
     return { action: "No Instagram post for this set", severity: "alert" };
-  if (coverage === "instagram")
+  if (coverage === "instagram" && !paused.includes("facebook"))
     return { action: "No Facebook post for this set", severity: "alert" };
   return { action: null, severity: "none" };
 }
@@ -438,9 +462,19 @@ export function coverageFlag(coverage: MorningCoverage): string | null {
 const isMorningPlatform = (p: string): p is MorningPlatform =>
   (MORNING_PLATFORMS as string[]).includes(p);
 
-function coverageOf(present: MorningPlatform[]): MorningCoverage {
+function coverageOf(
+  present: MorningPlatform[],
+  paused: MorningPlatform[] = PAUSED_PLATFORMS,
+): MorningCoverage {
   if (present.length === 0) return "none";
-  if (present.length >= MORNING_PLATFORMS.length) return "both";
+  // Coverage is judged against the platforms actually owed: an absent PAUSED
+  // platform is not a gap, so an Instagram-only set during the Facebook pause
+  // reads as complete. A paused row that exists anyway is still in `present`
+  // and still renders — the pause only stops us demanding it.
+  const owedButAbsent = MORNING_PLATFORMS.filter(
+    (p) => !paused.includes(p) && !present.includes(p),
+  );
+  if (owedButAbsent.length === 0) return "both";
   return present[0];
 }
 
@@ -450,6 +484,7 @@ function buildTile(
   routine: string,
   setRows: MorningPostRow[],
   due = true,
+  paused: MorningPlatform[] = PAUSED_PLATFORMS,
 ): MorningTile {
   const platforms: MorningPlatformEntry[] = [];
   for (const platform of MORNING_PLATFORMS) {
@@ -472,10 +507,10 @@ function buildTile(
   // row that actually carries them rather than assuming FB exists.
   const withThumb = setRows.find((r) => isMorningPlatform(r.platform) && r.thumb_url);
   const any = setRows.find((r) => isMorningPlatform(r.platform));
-  const coverage = coverageOf(platforms.map((p) => p.platform));
+  const coverage = coverageOf(platforms.map((p) => p.platform), paused);
   const state: MorningTileState =
     coverage === "none" ? "missing" : worstState(platforms.map((p) => p.state));
-  const { action, severity } = tileAction(state, coverage, routine, due);
+  const { action, severity } = tileAction(state, coverage, routine, due, paused);
 
   return {
     setKey,
@@ -511,6 +546,8 @@ export function buildMorningSection(
   rows: MorningPostRow[],
   expected: ExpectedSet[],
   date: string,
+  // Overridable so tests can prove unpausing is just editing the const.
+  paused: MorningPlatform[] = PAUSED_PLATFORMS,
 ): MorningSection {
   const expectedKeys = new Set(expected.map((e) => e.setKey));
   const bySet = new Map<string, MorningPostRow[]>();
@@ -531,12 +568,13 @@ export function buildMorningSection(
       e.routine,
       bySet.get(e.setKey) ?? [],
       isDueOn(e, date),
+      paused,
     ),
   );
   for (const [setKey, setRows] of bySet) {
     if (expectedKeys.has(setKey)) continue;
     tiles.push(
-      buildTile(setKey, setKey, setRows[0]?.routine ?? "?", setRows),
+      buildTile(setKey, setKey, setRows[0]?.routine ?? "?", setRows, true, paused),
     );
   }
 

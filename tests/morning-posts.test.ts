@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   EXPECTED_MORNING,
   MORNING_ACCOUNTS,
+  PAUSED_PLATFORMS,
   STATUS_LABEL,
   buildMorningSection,
   coverageFlag,
@@ -323,8 +324,14 @@ describe("status labels and action", () => {
 
   it("a one-surface set needs action even when that surface is healthy", () => {
     expect(tileAction("posted", "facebook").action).toMatch(/Instagram/i);
-    expect(tileAction("scheduled", "instagram").action).toMatch(/Facebook/i);
-    // A hard problem still wins the message.
+    // With no pause in force, an IG-only set wants its Facebook sibling…
+    expect(tileAction("scheduled", "instagram", "", true, []).action).toMatch(
+      /Facebook/i,
+    );
+    // …but while Facebook is paused it is not owed, so no nag.
+    expect(tileAction("scheduled", "instagram").action).toBeNull();
+    expect(tileAction("scheduled", "instagram").severity).toBe("none");
+    // A hard problem still wins the message regardless of the pause.
     expect(tileAction("failed", "instagram").action).toMatch(/failed/i);
   });
 
@@ -458,6 +465,93 @@ describe("buildMorningSection — one tile per set", () => {
     ];
     const t = tileFor(buildMorningSection(rows, EXPECTED_MORNING, DATE), "hannah");
     expect(t.thumbUrl).toBe("https://x/ig.jpg");
+  });
+});
+
+/**
+ * The Facebook pause (2026-08-17 virality audit): the routines produce
+ * Instagram-only rows, so a paused platform must read as not-expected — no
+ * daily red panel for a surface nobody is posting to — while a Facebook row
+ * that DOES exist (pre-pause, or posted anyway) still shows with its real
+ * state. Unpausing is editing PAUSED_PLATFORMS back to [] and nothing else.
+ */
+describe("paused platforms", () => {
+  const igOnlyDay = (post_status = "scheduled") =>
+    DUE.map((e) =>
+      row({
+        set_key: e.setKey,
+        routine: e.routine,
+        platform: "instagram",
+        post_status,
+      }),
+    );
+
+  it("facebook is the currently paused platform", () => {
+    expect(PAUSED_PLATFORMS).toEqual(["facebook"]);
+  });
+
+  it("an Instagram-only morning is complete — no alert, no partial, no missing FB", () => {
+    const s = buildMorningSection(igOnlyDay(), EXPECTED_MORNING, DATE);
+    expect(s.partial).toBe(0);
+    expect(s.missing).toBe(0);
+    expect(s.actionNeeded).toBe(0);
+    expect(s.created).toBe(s.expected);
+    for (const t of s.tiles.filter((x) => x.due)) {
+      expect(t.coverage).toBe("both"); // complete against what is owed
+      expect(t.action).toBeNull();
+      expect(t.state).toBe("scheduled");
+    }
+  });
+
+  it("a Facebook row that exists anyway still displays with its real state", () => {
+    // Never hidden: the pause changes what is owed, not what is shown.
+    const rows = [
+      ...igOnlyDay(),
+      row({ set_key: "hannah", platform: "facebook", post_status: "draft" }),
+    ];
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    const t = tileFor(s, "hannah");
+    expect(t.platforms.map((p) => p.platform)).toEqual([
+      "facebook",
+      "instagram",
+    ]);
+    expect(t.platforms.find((p) => p.platform === "facebook")?.state).toBe(
+      "draft",
+    );
+    // And it still participates in the collapse — a paused-platform draft
+    // cannot be masked by a healthy Instagram sibling.
+    expect(t.state).toBe("draft");
+    expect(t.severity).toBe("alert");
+  });
+
+  it("a pre-pause FB+IG pair still reads as a healthy pair", () => {
+    const rows = [
+      row({ platform: "facebook", post_status: "posted" }),
+      row({ platform: "instagram", post_status: "posted" }),
+    ];
+    const t = tileFor(buildMorningSection(rows, EXPECTED_MORNING, DATE), "hannah");
+    expect(t.coverage).toBe("both");
+    expect(t.state).toBe("posted");
+    expect(t.action).toBeNull();
+  });
+
+  it("the ACTIVE platform going missing still alerts — the pause is FB-only", () => {
+    const rows = [row({ platform: "facebook", post_status: "scheduled" })];
+    const s = buildMorningSection(rows, EXPECTED_MORNING, DATE);
+    const t = tileFor(s, "hannah");
+    expect(t.coverage).toBe("facebook");
+    expect(t.action).toMatch(/Instagram/i);
+    expect(t.severity).toBe("alert");
+    expect(s.partial).toBe(1);
+  });
+
+  it("unpausing is just editing the const — paused=[] restores the old contract", () => {
+    const s = buildMorningSection(igOnlyDay(), EXPECTED_MORNING, DATE, []);
+    expect(s.partial).toBe(DUE.length);
+    expect(s.actionNeeded).toBe(DUE.length);
+    const t = tileFor(s, "hannah");
+    expect(t.coverage).toBe("instagram");
+    expect(t.action).toMatch(/Facebook/i);
   });
 });
 
