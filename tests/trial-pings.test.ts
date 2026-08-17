@@ -49,10 +49,19 @@ describe("trial-pings", () => {
       priceUsd: 9.99,
     };
 
+    it("uses apns-priority 5 ('normal') — priority 10 is an APNs violation for silent pushes", () => {
+      // Apple documents priority 10 as an ERROR for a payload containing only
+      // content-available; APNs may throttle or drop those. Expo maps
+      // "high" → 10 and "normal" → 5. We shipped "high" on 2026-08-16 and it
+      // is the leading suspect for pings that were accepted but never woke a
+      // device. This assertion must never be relaxed back to "high".
+      const [m] = buildTrialPingMessages([target]);
+      expect(m.priority).toBe("normal");
+    });
+
     it("is a SILENT push: content-available, no title/body/sound", () => {
       const [m] = buildTrialPingMessages([target]);
       expect(m._contentAvailable).toBe(true);
-      expect(m.priority).toBe("high");
       // A visible notification field would turn the wake-up into a user-facing
       // push — assert the message has exactly the keys we intend.
       expect(Object.keys(m).sort()).toEqual([

@@ -23,6 +23,7 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import {
+  fetchPushReceipts,
   sendTrialPings,
   type TrialPingTarget,
 } from "@/lib/vendors/expo-push";
@@ -255,5 +256,88 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...counts });
+  // ── Second pass: resolve RECEIPTS for earlier sends ──────────────────────
+  // A ticket means Expo accepted the message; only the receipt says whether
+  // APNs delivered it. Expo asks for a ~15 min wait and keeps receipts ~24h,
+  // so poll rows sent between 15 min and 23h ago. Anything older than 24h
+  // that never resolved is marked so it stops being retried forever.
+  const receipts = { checked: 0, ok: 0, errors: 0, expired: 0 };
+  try {
+    const nowMs = Date.now();
+    const pendingRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/trial_ping_log?select=original_transaction_id,ping_type,expo_detail,claimed_at&expo_status=eq.ok&receipt_status=is.null&claimed_at=lt.${new Date(nowMs - 15 * 60_000).toISOString()}&order=claimed_at.asc&limit=300`,
+      { headers: internalHeaders, cache: "no-store" },
+    );
+    if (pendingRes.ok) {
+      const pending = (await pendingRes.json()) as Array<{
+        original_transaction_id: string;
+        ping_type: string;
+        expo_detail: string | null;
+        claimed_at: string;
+      }>;
+      const fresh = pending.filter(
+        (p) => p.expo_detail && nowMs - Date.parse(p.claimed_at) < 23 * 3_600_000,
+      );
+      const stale = pending.filter(
+        (p) => !p.expo_detail || nowMs - Date.parse(p.claimed_at) >= 23 * 3_600_000,
+      );
+
+      const patchReceipt = async (
+        tx: string,
+        pingType: string,
+        status: string,
+        detail?: string,
+      ) => {
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/trial_ping_log?original_transaction_id=eq.${encodeURIComponent(tx)}&ping_type=eq.${pingType}`,
+          {
+            method: "PATCH",
+            headers: { ...internalHeaders, Prefer: "return=minimal" },
+            body: JSON.stringify({
+              receipt_status: status,
+              receipt_detail: detail ?? null,
+              receipt_checked_at: new Date().toISOString(),
+            }),
+          },
+        );
+      };
+
+      for (const p of stale) {
+        receipts.expired++;
+        await patchReceipt(
+          p.original_transaction_id,
+          p.ping_type,
+          "unresolved_expired",
+          "receipt window (24h) passed without resolution",
+        );
+      }
+
+      if (fresh.length) {
+        const byTicket = new Map(fresh.map((p) => [p.expo_detail as string, p]));
+        const resolved = await fetchPushReceipts([...byTicket.keys()]);
+        for (const [ticketId, receipt] of resolved) {
+          const row = byTicket.get(ticketId);
+          if (!row) continue;
+          receipts.checked++;
+          if (receipt.status === "ok") {
+            receipts.ok++;
+            await patchReceipt(row.original_transaction_id, row.ping_type, "ok");
+          } else {
+            receipts.errors++;
+            await patchReceipt(
+              row.original_transaction_id,
+              row.ping_type,
+              `error:${receipt.details?.error ?? "unknown"}`,
+              receipt.message?.slice(0, 300),
+            );
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Receipt resolution is diagnostic, never a reason to fail the send pass.
+    console.warn("[trial-pings] receipt pass failed:", (e as Error).message);
+  }
+
+  return NextResponse.json({ ok: true, ...counts, receipts });
 }

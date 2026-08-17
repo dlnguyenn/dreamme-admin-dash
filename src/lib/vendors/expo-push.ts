@@ -40,7 +40,12 @@ export interface TrialPingTarget {
 export interface ExpoPushMessage {
   to: string;
   _contentAvailable: true;
-  priority: "high";
+  // MUST be "normal", never "high". Expo maps high → apns-priority 10, and
+  // Apple documents priority 10 as an ERROR for a payload containing only
+  // content-available: APNs may throttle or silently drop those pushes.
+  // Background/silent pushes require apns-priority 5, which is Expo "normal".
+  // We shipped "high" on 2026-08-16 and corrected it on 08-17.
+  priority: "normal";
   data: {
     type: TrialPingType;
     originalTransactionId: string;
@@ -63,7 +68,7 @@ export function buildTrialPingMessages(
   return targets.map((t) => ({
     to: t.expoPushToken,
     _contentAvailable: true,
-    priority: "high",
+    priority: "normal",
     data: {
       type: t.pingType,
       originalTransactionId: t.originalTransactionId,
@@ -131,6 +136,70 @@ export async function sendTrialPings(
   const out: ExpoTicket[] = [];
   for (let i = 0; i < messages.length; i += CHUNK) {
     out.push(...(await postChunk(messages.slice(i, i + CHUNK), maxRetries)));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Receipts — where delivery truth actually lives
+// ---------------------------------------------------------------------------
+
+const RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts";
+// Expo accepts up to 1000 ids per receipts call.
+const RECEIPT_CHUNK = 300;
+
+export interface ExpoReceipt {
+  status: "ok" | "error";
+  message?: string;
+  details?: { error?: string };
+}
+
+/**
+ * A ticket only means EXPO ACCEPTED the message — it says nothing about
+ * whether APNs delivered it. Real failures (DeviceNotRegistered, bad
+ * credentials, MessageRateExceeded, MismatchSenderId) appear ONLY here.
+ * Expo keeps receipts ~24h and asks that you wait ~15 min after send.
+ *
+ * Returns a map of ticketId → receipt. Ids absent from the response are not
+ * ready yet; leave them unresolved and re-check on a later run.
+ */
+export async function fetchPushReceipts(
+  ticketIds: string[],
+  maxRetries = 4,
+): Promise<Map<string, ExpoReceipt>> {
+  const out = new Map<string, ExpoReceipt>();
+  for (let i = 0; i < ticketIds.length; i += RECEIPT_CHUNK) {
+    const ids = ticketIds.slice(i, i + RECEIPT_CHUNK);
+    let attempt = 0;
+    while (true) {
+      const res = await fetch(RECEIPTS_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ ids }),
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const body = (await res.json()) as {
+          data?: Record<string, ExpoReceipt>;
+        };
+        for (const [id, receipt] of Object.entries(body.data ?? {})) {
+          out.set(id, receipt);
+        }
+        break;
+      }
+      const text = await res.text();
+      if (!RETRYABLE_STATUSES.has(res.status) || attempt >= maxRetries) {
+        throw new Error(
+          `Expo receipts error: ${res.status} ${text.slice(0, 200)}`,
+        );
+      }
+      const backoff = Math.min(32_000, 1000 * Math.pow(2, attempt));
+      await sleep(backoff + Math.floor(Math.random() * 250));
+      attempt++;
+    }
   }
   return out;
 }
