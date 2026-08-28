@@ -14,8 +14,11 @@ const SERVICE_ROLE =
     process.env.SUPABASE_SERVICE_ROLE_KEY) ??
   "";
 
+// `||` not `??`: prod once had this env var set to an EMPTY string, which
+// made the expected password "" — and the !admin guard rejects empty input,
+// so every login 401'd. Empty means unset.
 export const ADMIN_PASSWORD =
-  process.env.MCP_OAUTH_ADMIN_PASSWORD ?? "dreammeAdmin";
+  process.env.MCP_OAUTH_ADMIN_PASSWORD || "dreammeAdmin";
 
 export const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24; // 24h
 export const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30d
