@@ -23,9 +23,31 @@
  * at creation.
  */
 
-export type MorningPlatform = "facebook" | "instagram";
+export type MorningPlatform = "facebook" | "instagram" | "tiktok";
 
-export const MORNING_PLATFORMS: MorningPlatform[] = ["facebook", "instagram"];
+/**
+ * Every platform the panel can RECOGNISE. This is not the list a set is held
+ * to — see DEFAULT_SET_PLATFORMS and ExpectedSet.platforms.
+ *
+ * The distinction is load-bearing. TikTok was added here on 2026-08-28 for the
+ * bluebro mascot lane, and if "what a set owes" were still read off this
+ * constant, all thirteen FB/IG sets would instantly start demanding a TikTok
+ * post they have never made and the panel would go permanently red.
+ */
+export const MORNING_PLATFORMS: MorningPlatform[] = [
+  "facebook",
+  "instagram",
+  "tiktok",
+];
+
+/**
+ * What a set is held to unless it declares otherwise. Every routine set except
+ * the bluebro mascot lane runs the same creative on Facebook and Instagram.
+ */
+export const DEFAULT_SET_PLATFORMS: MorningPlatform[] = [
+  "facebook",
+  "instagram",
+];
 
 /**
  * Platforms the morning is currently NOT held to.
@@ -52,7 +74,9 @@ export type MorningRoutine =
   | "wall-of-text"
   | "text-card-decks"
   | "single-slide"
-  | "two-beat";
+  | "two-beat"
+  | "mascot-slideshow"
+  | "clipper-decks";
 
 export interface ExpectedSet {
   setKey: string;
@@ -75,14 +99,30 @@ export interface ExpectedSet {
    * It is a property of the SET, not something the REST payload exposes.
    */
   kind: "video" | "carousel";
+  /**
+   * The surfaces this set is held to. Absent = DEFAULT_SET_PLATFORMS (FB+IG),
+   * which is every set except the bluebro mascot lane — that one is a single
+   * TikTok deck on the brand account and owes nothing to FB or IG.
+   *
+   * Declaring this per set rather than globally is what stops adding a
+   * platform to MORNING_PLATFORMS from making every other set look incomplete.
+   */
+  platforms?: MorningPlatform[];
+}
+
+/** The surfaces a set is held to. */
+export function platformsFor(set: ExpectedSet): MorningPlatform[] {
+  return set.platforms ?? DEFAULT_SET_PLATFORMS;
 }
 
 /**
- * Which sets the morning routines should produce daily — 10 sets, each
- * expected on both FB and IG. YouTube rows are stored in morning_posts too
- * but deliberately excluded from this panel (Dan's ask was the FB and IG
- * sets); adding "youtube" to MORNING_PLATFORMS is the only change needed to
- * fold it into the coverage model.
+ * Which sets the morning routines should produce daily. Each is held to
+ * DEFAULT_SET_PLATFORMS (FB+IG) unless it declares its own `platforms` — only
+ * the bluebro mascot lane does, and it is TikTok-only.
+ *
+ * YouTube rows are stored in morning_posts too but deliberately excluded from
+ * this panel (Dan's ask was the FB and IG sets); adding "youtube" to
+ * MorningPlatform + DEFAULT_SET_PLATFORMS is all that folding it in requires.
  */
 /**
  * The lane was added to the SKILL on 2026-08-13, after that morning's run had
@@ -109,6 +149,35 @@ export const EXPECTED_MORNING: ExpectedSet[] = [
   { setKey: "mia", label: "Mia", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
   { setKey: "angela", label: "Angela", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
   { setKey: "brittany", label: "Brittany", routine: "two-beat", kind: "video", from: TWO_BEAT_FROM },
+  // The bluebro mascot deck (Dan, 2026-08-28): the illustrated GLP-1 slideshow
+  // the daily submit/assemble routines build for the brand TikTok. It was the
+  // one daily lane with no tile at all, so a deck sitting in draft — or queued
+  // and about to go out — was invisible on the Overview.
+  //
+  // TikTok ONLY. It is a single deck on one account, not a cross-posted
+  // creative, so `platforms` overrides the FB/IG default and the tile reads
+  // complete on TikTok alone.
+  {
+    setKey: "bluebro",
+    label: "Bluebro",
+    routine: "mascot-slideshow",
+    kind: "carousel",
+    platforms: ["tiktok"],
+  },
+  // clipper-decks (Dan, 2026-08-28): the nine TikTok persona slideshows in the
+  // clipper style (FIRST-PARTY-SLIDESHOWS.md), built each morning by the
+  // daily-clipper-decks scheduled task as DRAFTS. Unlike bluebro these ARE on
+  // the queue roster — the whole point of the lane is that Dan reviews the
+  // tiles here and presses "queue all".
+  { setKey: "cl_rachel", label: "Rachel", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_ava", label: "Ava", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_taylor", label: "Taylor", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_diane", label: "Diane", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_maya", label: "Maya", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_hailey", label: "Hailey", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_jessica", label: "Jessica", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_max", label: "Max", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
+  { setKey: "cl_alex", label: "Alex", routine: "clipper-decks", kind: "carousel", platforms: ["tiktok"], from: "2026-08-29" },
 ];
 
 export interface MorningAccount {
@@ -167,6 +236,24 @@ export const MORNING_ACCOUNTS: MorningAccount[] = [
   { username: "angelaglp1", platform: "instagram", setKey: "angela" },
   { username: "brittanyglp1", platform: "facebook", setKey: "brittany" },
   { username: "brittanyglp1_", platform: "instagram", setKey: "brittany" },
+  // bluebro mascot lane — the brand TikTok, and the only TikTok account on
+  // this roster. Deliberately NOT added to morningQueue.QUEUE_ACCOUNTS: this
+  // entry makes the deck VISIBLE, it must not make it publishable by the
+  // "queue all" button. See the note there.
+  { username: "dreammeglp1app", platform: "tiktok", setKey: "bluebro" },
+  // clipper-decks lane: the nine persona TikTok accounts. Handles verified
+  // against data/accounts/account-identities.json — five carry "glp1with",
+  // four are "<name>...glp1" with no rule predicting which (haileyy doubles
+  // the y). These ARE queueable, unlike bluebro.
+  { username: "rachelonglp1", platform: "tiktok", setKey: "cl_rachel" },
+  { username: "glp1withava", platform: "tiktok", setKey: "cl_ava" },
+  { username: "taylorglp1", platform: "tiktok", setKey: "cl_taylor" },
+  { username: "dianeglp1", platform: "tiktok", setKey: "cl_diane" },
+  { username: "mayawithglp1", platform: "tiktok", setKey: "cl_maya" },
+  { username: "haileyyonglp1", platform: "tiktok", setKey: "cl_hailey" },
+  { username: "glp1withjessica", platform: "tiktok", setKey: "cl_jessica" },
+  { username: "glp1withmax", platform: "tiktok", setKey: "cl_max" },
+  { username: "glp1withalex", platform: "tiktok", setKey: "cl_alex" },
 ];
 
 /** Is this set one the routine should have built on `date`? */
@@ -197,8 +284,19 @@ export type MorningTileState =
   | "missing"
   | "unknown";
 
-/** Which of the two surfaces actually got a post. */
-export type MorningCoverage = "both" | "facebook" | "instagram" | "none";
+/**
+ * Which of the set's owed surfaces actually got a post.
+ *
+ * "both" means COMPLETE, not literally two — a single-platform set (bluebro)
+ * reads "both" once its one surface is present. The name predates per-set
+ * platforms and is kept because it is on the wire to the UI and the tests.
+ */
+export type MorningCoverage =
+  | "both"
+  | "facebook"
+  | "instagram"
+  | "tiktok"
+  | "none";
 
 export interface MorningPostRow {
   batch_date: string;
@@ -332,6 +430,7 @@ export function tileAction(
   routine = "",
   due = true,
   paused: MorningPlatform[] = PAUSED_PLATFORMS,
+  owed: MorningPlatform[] = DEFAULT_SET_PLATFORMS,
 ): { action: string | null; severity: MorningSeverity } {
   switch (state) {
     case "missing": {
@@ -355,14 +454,27 @@ export function tileAction(
         severity: "alert",
       };
   }
-  // A one-surface set only asks for the OTHER surface when that surface is
-  // actually owed — a paused platform's absence is not a problem to fix.
-  if (coverage === "facebook" && !paused.includes("instagram"))
-    return { action: "No Instagram post for this set", severity: "alert" };
-  if (coverage === "instagram" && !paused.includes("facebook"))
-    return { action: "No Facebook post for this set", severity: "alert" };
+  // An incomplete set only asks for the surfaces it actually owes — a paused
+  // platform's absence is not a problem to fix, and neither is a platform this
+  // set was never held to (bluebro owes TikTok and nothing else).
+  if (coverage !== "both" && coverage !== "none") {
+    const absent = owed.filter((p) => p !== coverage && !paused.includes(p));
+    if (absent.length > 0) {
+      return {
+        action: `No ${PLATFORM_NAME[absent[0]]} post for this set`,
+        severity: "alert",
+      };
+    }
+  }
   return { action: null, severity: "none" };
 }
+
+/** Display names for the surfaces, used in the action wording. */
+const PLATFORM_NAME: Record<MorningPlatform, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+};
 
 /**
  * Severity order for collapsing several platforms into one tile. Anything
@@ -440,6 +552,22 @@ const ROUTINE_MISSING: Record<
     action: "Two-beat routine did not create this",
     severity: "alert",
   },
+  // The mascot deck is built by the 04:45 submit + 08:00 assemble pair, so for
+  // the first hours of every Eastern morning "absent" is simply "not yet" —
+  // same shape as text-card-decks, and the same reason it must not be red:
+  // a number that goes red every single morning stops meaning anything.
+  "mascot-slideshow": {
+    label: "NOT BUILT",
+    action: "Mascot deck not built yet",
+    severity: "pending",
+  },
+  // Built by the ~05:50 daily-clipper-decks task; early-morning absence is
+  // "not yet", so pending rather than a standing red.
+  "clipper-decks": {
+    label: "NOT BUILT",
+    action: "Clipper deck not built yet",
+    severity: "pending",
+  },
 };
 
 const UNKNOWN_ROUTINE_MISSING = {
@@ -456,6 +584,9 @@ export function missingMeta(routine: string) {
 export function coverageFlag(coverage: MorningCoverage): string | null {
   if (coverage === "facebook") return "FB ONLY";
   if (coverage === "instagram") return "IG ONLY";
+  // Unreachable for the single-platform bluebro set (one surface present is
+  // complete, so it reads "both"), but kept so the union stays exhaustive.
+  if (coverage === "tiktok") return "TIKTOK ONLY";
   return null;
 }
 
@@ -464,14 +595,16 @@ const isMorningPlatform = (p: string): p is MorningPlatform =>
 
 function coverageOf(
   present: MorningPlatform[],
+  owed: MorningPlatform[] = DEFAULT_SET_PLATFORMS,
   paused: MorningPlatform[] = PAUSED_PLATFORMS,
 ): MorningCoverage {
   if (present.length === 0) return "none";
-  // Coverage is judged against the platforms actually owed: an absent PAUSED
-  // platform is not a gap, so an Instagram-only set during the Facebook pause
-  // reads as complete. A paused row that exists anyway is still in `present`
-  // and still renders — the pause only stops us demanding it.
-  const owedButAbsent = MORNING_PLATFORMS.filter(
+  // Coverage is judged against the platforms this SET actually owes: an absent
+  // PAUSED platform is not a gap, so an Instagram-only set during the Facebook
+  // pause reads as complete, and a TikTok-only set is complete on TikTok. A
+  // paused row that exists anyway is still in `present` and still renders —
+  // the pause only stops us demanding it.
+  const owedButAbsent = owed.filter(
     (p) => !paused.includes(p) && !present.includes(p),
   );
   if (owedButAbsent.length === 0) return "both";
@@ -485,9 +618,17 @@ function buildTile(
   setRows: MorningPostRow[],
   due = true,
   paused: MorningPlatform[] = PAUSED_PLATFORMS,
+  owed: MorningPlatform[] = DEFAULT_SET_PLATFORMS,
 ): MorningTile {
+  // Show every surface this set owes, plus any it posted to without being
+  // held to it. Same principle as PAUSED_PLATFORMS: what a set is measured
+  // against is a separate question from what actually exists, and an
+  // unexpected post must never be silently swallowed.
+  const shown = MORNING_PLATFORMS.filter(
+    (p) => owed.includes(p) || setRows.some((r) => r.platform === p),
+  );
   const platforms: MorningPlatformEntry[] = [];
-  for (const platform of MORNING_PLATFORMS) {
+  for (const platform of shown) {
     const row = setRows.find((r) => r.platform === platform);
     if (!row) continue;
     platforms.push({
@@ -507,10 +648,17 @@ function buildTile(
   // row that actually carries them rather than assuming FB exists.
   const withThumb = setRows.find((r) => isMorningPlatform(r.platform) && r.thumb_url);
   const any = setRows.find((r) => isMorningPlatform(r.platform));
-  const coverage = coverageOf(platforms.map((p) => p.platform), paused);
+  const coverage = coverageOf(platforms.map((p) => p.platform), owed, paused);
   const state: MorningTileState =
     coverage === "none" ? "missing" : worstState(platforms.map((p) => p.state));
-  const { action, severity } = tileAction(state, coverage, routine, due, paused);
+  const { action, severity } = tileAction(
+    state,
+    coverage,
+    routine,
+    due,
+    paused,
+    owed,
+  );
 
   return {
     setKey,
@@ -569,6 +717,7 @@ export function buildMorningSection(
       bySet.get(e.setKey) ?? [],
       isDueOn(e, date),
       paused,
+      platformsFor(e),
     ),
   );
   for (const [setKey, setRows] of bySet) {
