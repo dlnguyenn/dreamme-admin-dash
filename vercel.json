@@ -18,6 +18,8 @@
     { "path": "/api/cron/cull-variants", "schedule": "0 14 * * *" },
     { "path": "/api/cron/sync-post-views", "schedule": "45 8 * * *" },
     { "path": "/api/cron/sync-clipper-views", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/support-poll", "schedule": "0 10 * * *" }
+    { "path": "/api/cron/support-poll", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/refresh-meta-tokens", "schedule": "0 9 * * 1" },
+    { "path": "/api/cron/drain-tiktok-events", "schedule": "*/5 * * * *" }
   ]
 }
