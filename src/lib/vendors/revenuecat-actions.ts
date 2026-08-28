@@ -1,8 +1,11 @@
 /**
  * RevenueCat v2 API — subscription ACTIONS (refund/revoke) for support.
  *
- * Uses the same v2 secret key as the metrics client (REVENUECAT_API_KEY) —
- * carries customer_information:subscriptions:read_write.
+ * Uses the same v2 secret key as the metrics client (REVENUECAT_API_KEY).
+ * The key MUST carry customer_information:subscriptions:read_write — RC
+ * returns 403 with a clear message if it only has read (as it did until
+ * 2026-08-28; grant the scope on the key in the RC dashboard, it applies
+ * instantly with no redeploy).
  *
  * Play Store refunds are TRANSACTION-scoped in v2:
  *   GET  /v2/projects/{p}/subscriptions/{sub}/transactions   → latest txn id
