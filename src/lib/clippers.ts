@@ -119,20 +119,28 @@ export async function sbGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** POST insert; pass onConflict for merge-duplicates upsert. Returns rows. */
+/**
+ * POST insert; pass onConflict for merge-duplicates upsert. Returns rows.
+ * Pass ignoreDuplicates to keep the existing row instead of overwriting it —
+ * needed where a re-delivered row must not reset mutable state (e.g. an outbox
+ * row already marked sent).
+ */
 export async function sbPost<T>(
   table: string,
   rows: unknown,
-  opts?: { onConflict?: string },
+  opts?: { onConflict?: string; ignoreDuplicates?: boolean },
 ): Promise<T[]> {
   if (!clippersDbConfigured()) throw new Error("Supabase env missing");
   const qs = opts?.onConflict ? `?on_conflict=${opts.onConflict}` : "";
+  const resolution = opts?.ignoreDuplicates
+    ? "resolution=ignore-duplicates"
+    : "resolution=merge-duplicates";
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`, {
     method: "POST",
     headers: {
       ...sbHeaders(),
       Prefer: opts?.onConflict
-        ? "resolution=merge-duplicates,return=representation"
+        ? `${resolution},return=representation`
         : "return=representation",
     },
     body: JSON.stringify(rows),
