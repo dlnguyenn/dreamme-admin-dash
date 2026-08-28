@@ -11,8 +11,9 @@
  *   stripe_cancel_at_period_end  — { subscriptionId }
  *   stripe_cancel_now            — { subscriptionId }
  *   stripe_refund                — { paymentIntentId, amountCents? }
- *   rc_play_refund_revoke        — { productId } (refunds latest Play charge
- *                                  AND revokes access, via RevenueCat v1)
+ *   rc_play_refund_revoke        — { productId } (refunds the latest Play
+ *                                  transaction AND revokes access, via the
+ *                                  RevenueCat v2 transaction refund action)
  *   trello_create_card           — files the thread as a Trello card, plus
  *                                  the same ticket as a row in the dash's
  *                                  own Feature Requests tab
