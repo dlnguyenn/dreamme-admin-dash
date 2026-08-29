@@ -61,6 +61,18 @@ const START_TRIAL_ACTION_TYPES = new Set([
   "app_custom_event.fb_mobile_complete_registration",
 ]);
 
+// Meta's STANDARD start-trial action types. As of the 2026-05-01 validation
+// these were zero for DreamMe (hence the registration proxy above) — but a
+// RevenueCat→Meta server integration or SDK update would light them up.
+// Persisted separately (strict_trial_starts) so the proxy can be audited and
+// retired the moment a real trial event exists.
+const STRICT_TRIAL_ACTION_TYPES = new Set([
+  "start_trial_total",
+  "start_trial_mobile_app",
+  "start_trial_website",
+  "app_custom_event.fb_mobile_start_trial",
+]);
+
 const INSTALL_ACTION_TYPES = new Set([
   "mobile_app_install",
   "app_install",
@@ -235,6 +247,8 @@ export interface AdInsightRowWithCreative extends AdInsightRow {
   status: string;
   effective_status: string;
   unique_clicks: number;
+  /** Meta STANDARD start-trial actions — audit twin of the proxy-based startTrials. */
+  strictTrials: number;
   purchases: number;
   purchase_value: number;
   creative_id: string;
@@ -396,6 +410,7 @@ export async function fetchAdInsightsWithCreative(params: {
         unique_clicks: Number(row.unique_clicks ?? 0),
         installs: sumActions(actions, INSTALL_ACTION_TYPES),
         startTrials: sumActions(actions, START_TRIAL_ACTION_TYPES),
+        strictTrials: sumActions(actions, STRICT_TRIAL_ACTION_TYPES),
         purchases: sumActions(actions, PURCHASE_ACTION_TYPES),
         purchase_value: sumActions(actionValues, PURCHASE_ACTION_TYPES),
         storeVisits: sumActions(actions, STORE_VISIT_ACTION_TYPES),

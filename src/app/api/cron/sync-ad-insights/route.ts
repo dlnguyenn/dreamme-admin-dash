@@ -94,6 +94,8 @@ export async function GET(req: Request) {
       cpm: safeDiv(r.spend * 1000, r.impressions),
       installs: r.installs,
       trial_starts: r.startTrials,
+      strict_trial_starts: r.strictTrials,
+      raw_actions: r.raw_actions,
       purchases: r.purchases,
       purchase_value: r.purchase_value,
       creative_id: r.creative_id || null,
