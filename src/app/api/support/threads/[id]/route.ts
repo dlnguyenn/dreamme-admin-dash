@@ -60,7 +60,15 @@ export async function GET(
       await patchThread(id, { unread: false }).catch(() => {});
       thread.unread = false;
     }
-    return NextResponse.json({ ok: true, thread, messages, drafts, actions });
+    return NextResponse.json({
+      ok: true,
+      thread,
+      messages,
+      drafts,
+      actions,
+      // Lets the sidebar link straight to the customer in RevenueCat.
+      revenueCatProjectId: process.env.REVENUECAT_PROJECT_ID ?? null,
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },

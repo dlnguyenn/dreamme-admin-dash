@@ -42,6 +42,7 @@ import {
   isStripeRetrying,
   type ActionLock,
 } from "@/lib/support/action-effects";
+import { revenueCatCustomerUrl } from "@/lib/support/revenuecat-link";
 
 const APPLE_CANCEL_TEMPLATE = `Hi there! Thanks so much for reaching out.
 
@@ -93,16 +94,25 @@ function shortDate(iso: string): string {
 export function UserSidebar({
   thread,
   actions,
+  rcProjectId,
   onInsertTemplate,
   onActionDone,
 }: {
   thread: SupportThreadRow;
   actions: SupportActionRow[];
+  /** REVENUECAT_PROJECT_ID from the detail payload; null when unconfigured */
+  rcProjectId: string | null;
   onInsertTemplate: (text: string) => void;
   onActionDone: () => void;
 }) {
   const ctx = thread.user_context;
   const subs = ctx?.subscriptions ?? [];
+  // public.users.id == RC app_user_id, so a resolved thread can open the
+  // customer's live RevenueCat record in one click.
+  const rcUrl = revenueCatCustomerUrl(
+    rcProjectId,
+    ctx?.appUserId ?? thread.resolved_app_user_id,
+  );
   // Apple refunds only ever happen at reportaproblem.apple.com — surface
   // that reply for confirmed Apple users AND for senders we couldn't match
   // anywhere (usually Hide My Email).
@@ -161,6 +171,7 @@ export function UserSidebar({
                 sandbox only
               </Chip>
             )}
+            {rcUrl && <RevenueCatLink href={rcUrl} />}
           </div>
         )}
       </Card>
@@ -1057,6 +1068,35 @@ function PendingSummary({
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Opens the customer's RevenueCat profile in a new tab — the fastest way to
+ * see entitlements, every transaction, and the store receipt behind a
+ * refund request without retyping the app user id into RC's search.
+ */
+function RevenueCatLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title="Opens this customer in the RevenueCat dashboard"
+      style={{
+        font: "600 12px var(--font-ui)",
+        color: "var(--accent)",
+        textDecoration: "none",
+        alignSelf: "flex-start",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        marginTop: 4,
+      }}
+    >
+      <Icons.Link size={13} strokeWidth={2} />
+      Open in RevenueCat
+    </a>
+  );
+}
 
 function Card({
   title,

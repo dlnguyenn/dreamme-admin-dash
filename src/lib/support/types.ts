@@ -195,4 +195,9 @@ export interface ThreadDetailPayload {
   messages: SupportMessageRow[];
   drafts: SupportDraftRow[];
   actions: SupportActionRow[];
+  /**
+   * REVENUECAT_PROJECT_ID, so the sidebar can build the dashboard deep link
+   * for this customer. Null when RevenueCat isn't configured.
+   */
+  revenueCatProjectId: string | null;
 }

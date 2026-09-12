@@ -380,6 +380,7 @@ export function ThreadDetail({
         <UserSidebar
           thread={thread}
           actions={detail?.actions ?? []}
+          rcProjectId={detail?.revenueCatProjectId ?? null}
           onInsertTemplate={(text) => setCompose(text)}
           onActionDone={async () => {
             await load();
