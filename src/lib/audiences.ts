@@ -373,8 +373,8 @@ export async function runAudienceSync(opts: {
       continue;
     }
     try {
-      await setExcludedAudiencesOnAdSet({ adsetId: ad.id, excludedAudienceIds: [suppressionId], accessToken: token });
-      attach.push({ adsetId: ad.id, name: ad.name, action: "attached" });
+      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: ad.id, excludedAudienceIds: [suppressionId], accessToken: token });
+      attach.push({ adsetId: ad.id, name: ad.name, action: changed ? "attached" : "already_attached" });
     } catch (e) {
       attach.push({ adsetId: ad.id, name: ad.name, action: "error", error: (e as Error).message.slice(0, 160) });
     }
@@ -419,8 +419,8 @@ export async function attachSuppression(opts: {
       continue;
     }
     try {
-      await setExcludedAudiencesOnAdSet({ adsetId: t.id, excludedAudienceIds: [suppressionId], accessToken: meta.token });
-      attach.push({ adsetId: t.id, name: t.name, action: "attached" });
+      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: t.id, excludedAudienceIds: [suppressionId], accessToken: meta.token });
+      attach.push({ adsetId: t.id, name: t.name, action: changed ? "attached" : "already_attached" });
     } catch (e) {
       attach.push({ adsetId: t.id, name: t.name, action: "error", error: (e as Error).message.slice(0, 160) });
     }

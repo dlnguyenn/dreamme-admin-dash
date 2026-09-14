@@ -1263,7 +1263,7 @@ export async function setExcludedAudiencesOnAdSet(params: {
   adsetId: string;
   excludedAudienceIds: string[];
   accessToken?: string;
-}): Promise<{ success: true }> {
+}): Promise<{ success: true; changed: boolean }> {
   const API_VERSION = getApiVersion();
   const existing = await metaFetchJson<{
     targeting?: Record<string, unknown> & {
@@ -1278,6 +1278,14 @@ export async function setExcludedAudiencesOnAdSet(params: {
   const current = Array.isArray(targeting.excluded_custom_audiences)
     ? targeting.excluded_custom_audiences
     : [];
+  // Skip the write when every requested audience is already excluded. Any
+  // targeting POST resets the ad set to IN_PROCESS and restarts learning, so
+  // an unconditional re-save from the weekly refresh cron reset every
+  // prospecting ad set each Monday.
+  const currentIds = new Set(current.map((a) => String(a.id)));
+  if (params.excludedAudienceIds.every((id) => currentIds.has(String(id)))) {
+    return { success: true, changed: false };
+  }
   targeting.excluded_custom_audiences = [
     ...current.filter((a) => !params.excludedAudienceIds.includes(a.id)),
     ...params.excludedAudienceIds.map((id) => ({ id })),
@@ -1288,7 +1296,7 @@ export async function setExcludedAudiencesOnAdSet(params: {
     4,
     params.accessToken,
   );
-  return { success: true };
+  return { success: true, changed: true };
 }
 
 export interface ProspectingAdSet {
