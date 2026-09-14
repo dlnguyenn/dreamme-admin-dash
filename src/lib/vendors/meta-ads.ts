@@ -40,7 +40,14 @@ export interface AdInsightRow {
   impressions: number;
   clicks: number;
   installs: number;
+  /** Meta StartTrial standard event (insights `conversions.start_trial_total`). */
   startTrials: number;
+  /** Meta Subscribe standard event (`conversions.subscribe_total`) — paid starts. */
+  subscribes: number;
+  /** Meta-reported value on Subscribe (`conversion_values`) — partial, not revenue truth. */
+  subscribeValue: number;
+  /** fb_mobile_complete_registration — the pre-2026-09-14 "trial" proxy. */
+  registrations: number;
   storeVisits: number;
   raw_actions: AdInsightAction[];
 }
@@ -51,26 +58,22 @@ interface InsightsResponse {
   error?: { message?: string; code?: number; type?: string };
 }
 
-// DreamMe-specific: the iOS FB SDK auto-logs trial-start as
-// `fb_mobile_complete_registration` (not `fb_mobile_subscription_start_trial`).
-// Verified 2026-05-01 against 30d data: 230 complete_registration events vs
-// 117 n8n trial_qualified (50.9% qualified rate, matches expected ~half).
-// If a future SDK update changes this, the script's diagnostic will surface
-// zero counts and dump action-type volumes — re-pick by count and update here.
-const START_TRIAL_ACTION_TYPES = new Set([
-  "app_custom_event.fb_mobile_complete_registration",
-]);
+// WHY (2026-09-14): Meta reports the StartTrial / Subscribe STANDARD events
+// in the insights `conversions` field, NOT in `actions`. The 2026-05-01
+// validation only requested `actions`, found no trial event there, and fell
+// back to the registration proxy below — but `conversions` has carried
+// start_trial_total since at least March 2026 (Sep 7–13: 372 trials vs 79
+// registrations; Ads Manager's "In-app start trials" column is this field).
+// `*_total` already rolls up the per-channel types (mobile_app, website), so
+// sum ONLY the total — adding the channel keys would double count.
+const START_TRIAL_CONVERSION_TYPES = new Set(["start_trial_total"]);
+const SUBSCRIBE_CONVERSION_TYPES = new Set(["subscribe_total"]);
 
-// Meta's STANDARD start-trial action types. As of the 2026-05-01 validation
-// these were zero for DreamMe (hence the registration proxy above) — but a
-// RevenueCat→Meta server integration or SDK update would light them up.
-// Persisted separately (strict_trial_starts) so the proxy can be audited and
-// retired the moment a real trial event exists.
-const STRICT_TRIAL_ACTION_TYPES = new Set([
-  "start_trial_total",
-  "start_trial_mobile_app",
-  "start_trial_website",
-  "app_custom_event.fb_mobile_start_trial",
+// The registration proxy the sync used as "trials" from 2026-05-01 until the
+// fix above. Kept as its own column (registrations) so history stays
+// auditable — it is NOT a trial.
+const REGISTRATION_ACTION_TYPES = new Set([
+  "app_custom_event.fb_mobile_complete_registration",
 ]);
 
 const INSTALL_ACTION_TYPES = new Set([
@@ -167,6 +170,8 @@ export async function fetchAdInsights(params: {
     "impressions",
     "clicks",
     "actions",
+    "conversions",
+    "conversion_values",
   ].join(",");
 
   const qs = new URLSearchParams({
@@ -218,6 +223,8 @@ export async function fetchAdInsights(params: {
 
     for (const row of body?.data ?? []) {
       const actions = (row.actions as AdInsightAction[] | undefined) ?? [];
+      const conversions = (row.conversions as AdInsightAction[] | undefined) ?? [];
+      const conversionValues = (row.conversion_values as AdInsightAction[] | undefined) ?? [];
       out.push({
         ad_id: String(row.ad_id ?? ""),
         ad_name: String(row.ad_name ?? ""),
@@ -229,7 +236,10 @@ export async function fetchAdInsights(params: {
         impressions: Number(row.impressions ?? 0),
         clicks: Number(row.clicks ?? 0),
         installs: sumActions(actions, INSTALL_ACTION_TYPES),
-        startTrials: sumActions(actions, START_TRIAL_ACTION_TYPES),
+        startTrials: sumActions(conversions, START_TRIAL_CONVERSION_TYPES),
+        subscribes: sumActions(conversions, SUBSCRIBE_CONVERSION_TYPES),
+        subscribeValue: sumActions(conversionValues, SUBSCRIBE_CONVERSION_TYPES),
+        registrations: sumActions(actions, REGISTRATION_ACTION_TYPES),
         storeVisits: sumActions(actions, STORE_VISIT_ACTION_TYPES),
         raw_actions: actions,
       });
@@ -247,7 +257,8 @@ export interface AdInsightRowWithCreative extends AdInsightRow {
   status: string;
   effective_status: string;
   unique_clicks: number;
-  /** Meta STANDARD start-trial actions — audit twin of the proxy-based startTrials. */
+  /** Same as startTrials since 2026-09-14 (both read conversions.start_trial_total);
+   *  kept so the strict_trial_starts audit column keeps being written. */
   strictTrials: number;
   purchases: number;
   purchase_value: number;
@@ -301,6 +312,8 @@ interface InsightsDailyRow {
   unique_clicks?: string | number;
   actions?: AdInsightAction[];
   action_values?: AdInsightAction[];
+  conversions?: AdInsightAction[];
+  conversion_values?: AdInsightAction[];
   video_thruplay_watched_actions?: AdInsightAction[];
 }
 
@@ -337,6 +350,8 @@ export async function fetchAdInsightsWithCreative(params: {
     "unique_clicks",
     "actions",
     "action_values",
+    "conversions",
+    "conversion_values",
     "video_thruplay_watched_actions",
     "date_start",
     "date_stop",
@@ -383,6 +398,8 @@ export async function fetchAdInsightsWithCreative(params: {
       if (!adId) continue;
       const actions = row.actions ?? [];
       const actionValues = row.action_values ?? [];
+      const conversions = row.conversions ?? [];
+      const conversionValues = row.conversion_values ?? [];
       const meta = adMetaMap.get(adId);
       const creative = meta?.creative;
       const oss = creative?.object_story_spec;
@@ -409,8 +426,11 @@ export async function fetchAdInsightsWithCreative(params: {
         clicks: Number(row.clicks ?? 0),
         unique_clicks: Number(row.unique_clicks ?? 0),
         installs: sumActions(actions, INSTALL_ACTION_TYPES),
-        startTrials: sumActions(actions, START_TRIAL_ACTION_TYPES),
-        strictTrials: sumActions(actions, STRICT_TRIAL_ACTION_TYPES),
+        startTrials: sumActions(conversions, START_TRIAL_CONVERSION_TYPES),
+        strictTrials: sumActions(conversions, START_TRIAL_CONVERSION_TYPES),
+        subscribes: sumActions(conversions, SUBSCRIBE_CONVERSION_TYPES),
+        subscribeValue: sumActions(conversionValues, SUBSCRIBE_CONVERSION_TYPES),
+        registrations: sumActions(actions, REGISTRATION_ACTION_TYPES),
         purchases: sumActions(actions, PURCHASE_ACTION_TYPES),
         purchase_value: sumActions(actionValues, PURCHASE_ACTION_TYPES),
         storeVisits: sumActions(actions, STORE_VISIT_ACTION_TYPES),

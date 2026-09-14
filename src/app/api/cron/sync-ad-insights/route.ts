@@ -52,7 +52,8 @@ export async function GET(req: Request) {
   // one-shot backfills.
   const url = new URL(req.url);
   const daysParam = Number(url.searchParams.get("days") ?? "35");
-  const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 90) : 35;
+  // Cap 400: the 2026-09-14 trial-event fix needed a backfill to March.
+  const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 400) : 35;
   const today = new Date();
   const since = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
   const sinceDate = utcDate(since);
@@ -95,6 +96,9 @@ export async function GET(req: Request) {
       installs: r.installs,
       trial_starts: r.startTrials,
       strict_trial_starts: r.strictTrials,
+      registrations: r.registrations,
+      subscribes: r.subscribes,
+      subscribe_value: r.subscribeValue,
       raw_actions: r.raw_actions,
       purchases: r.purchases,
       purchase_value: r.purchase_value,
