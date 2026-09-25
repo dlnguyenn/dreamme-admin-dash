@@ -16,13 +16,19 @@ export const maxDuration = 30;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_ROLE =
   (process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "";
-const MAX_BYTES = 250 * 1024 * 1024;
+/** Supabase Storage rejects larger objects with a bare 400 (a 114 MB master
+ *  hit it on 2026-09-25; 28 MB went through), so refuse early with a hint. */
+const MAX_BYTES = 50 * 1024 * 1024;
 const EXT: Record<string, string> = { "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm" };
 
 const Body = z.object({
   filename: z.string().min(1).max(200),
   content_type: z.string().min(1),
-  size: z.number().int().positive().max(MAX_BYTES),
+  size: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_BYTES, { message: "Storage takes files up to 50 MB; export a 720p proxy for anything larger" }),
 });
 
 export async function POST(req: Request) {
@@ -32,7 +38,8 @@ export async function POST(req: Request) {
   try {
     body = Body.parse(await req.json().catch(() => ({})));
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "invalid body" }, { status: 400 });
+    const msg = e instanceof z.ZodError ? (e.issues[0]?.message ?? "invalid body") : e instanceof Error ? e.message : "invalid body";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
   const ext = EXT[body.content_type];
   if (!ext) return NextResponse.json({ error: "upload an mp4, mov or webm" }, { status: 400 });

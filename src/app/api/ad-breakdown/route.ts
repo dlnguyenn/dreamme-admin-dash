@@ -32,7 +32,8 @@ export async function POST(req: Request) {
   try {
     body = Body.parse(await req.json().catch(() => ({})));
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "invalid body" }, { status: 400 });
+    const msg = e instanceof z.ZodError ? (e.issues[0]?.message ?? "invalid body") : e instanceof Error ? e.message : "invalid body";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
   try {
     const row = await runBreakdown({
