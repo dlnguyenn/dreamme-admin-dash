@@ -3,6 +3,9 @@
 import * as React from "react";
 import { PageHeader } from "./Shell";
 import { Button } from "./ui";
+import { SideDrawer } from "./SideDrawer";
+import { BreakdownPanel, DrawerFrame } from "./breakdown/BreakdownPanel";
+import { PreflightUpload } from "./breakdown/PreflightUpload";
 import {
   ErrorBanner,
   FilterPill,
@@ -322,6 +325,9 @@ export function CreativeAnalytics() {
   >([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  // Ad breakdown drawer (per ad) and the pre-flight drawer (uploads).
+  const [breakdownAd, setBreakdownAd] = React.useState<{ id: string; name: string } | null>(null);
+  const [preflightOpen, setPreflightOpen] = React.useState(false);
 
   // Reset campaign filter when switching platform — campaign IDs don't cross.
   React.useEffect(() => {
@@ -541,16 +547,39 @@ export function CreativeAnalytics() {
         title="Creatives"
         subtitle={`Live ads from ${ACCOUNT_ID}. Joined with the n8n trial-qualified bridge. Window: ${since} → ${until} (UTC).`}
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setSortBy(sortBy === "spend" ? "hook" : "spend")}
-            title="Toggle sort order"
-          >
-            Sort: {sortBy === "spend" ? "Spend" : "Hook rate"} ▾
-          </Button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPreflightOpen(true)}
+              title="Grade an unaired cut against Motion's winning-ad formula"
+            >
+              ✦ Pre-flight a video
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setSortBy(sortBy === "spend" ? "hook" : "spend")}
+              title="Toggle sort order"
+            >
+              Sort: {sortBy === "spend" ? "Spend" : "Hook rate"} ▾
+            </Button>
+          </div>
         }
       />
+
+      <SideDrawer open={!!breakdownAd} onClose={() => setBreakdownAd(null)} desktopWidth={780} ariaLabel="Ad breakdown">
+        {breakdownAd && (
+          <DrawerFrame title={breakdownAd.name} onClose={() => setBreakdownAd(null)}>
+            <BreakdownPanel adId={breakdownAd.id} name={breakdownAd.name} />
+          </DrawerFrame>
+        )}
+      </SideDrawer>
+      <SideDrawer open={preflightOpen} onClose={() => setPreflightOpen(false)} desktopWidth={780} ariaLabel="Pre-flight a video">
+        <DrawerFrame title="Pre-flight a video" onClose={() => setPreflightOpen(false)}>
+          <PreflightUpload />
+        </DrawerFrame>
+      </SideDrawer>
 
       <div
         style={{
@@ -836,6 +865,11 @@ export function CreativeAnalytics() {
             accountRevenue={accountRevenue}
             accountLtv30d={accountLtv30d}
             rcAd={rcAdMap.get(a.ad_id) ?? null}
+            onBreakdown={
+              a.platform === "meta" && a.video_id
+                ? () => setBreakdownAd({ id: a.ad_id, name: a.ad_name })
+                : undefined
+            }
           />
         ))}
       </div>
@@ -872,6 +906,7 @@ function AdCard({
   accountRevenue,
   accountLtv30d,
   rcAd,
+  onBreakdown,
 }: {
   ad: AdAgg;
   accountId: string;
@@ -879,6 +914,8 @@ function AdCard({
   accountRevenue: number;
   accountLtv30d: number;
   rcAd: { revenue: number; ltv: number; trialStarts: number } | null;
+  /** Opens the frames + transcript + Motion-rubric breakdown (video ads). */
+  onBreakdown?: () => void;
 }) {
   const ctr = safeDiv(ad.clicks, ad.impressions);
   const hookRate = safeDiv(ad.video_3sec_views, ad.impressions);
@@ -1120,28 +1157,53 @@ function AdCard({
           )}
         </div>
 
-        <a
-          href={adsManager}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            marginTop: "auto",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            padding: "8px 12px",
-            font: "600 12px var(--font-ui)",
-            borderRadius: 10,
-            border: "1px solid var(--line-2)",
-            background: "var(--surface)",
-            color: "var(--ink)",
-            boxShadow: "var(--shadow-xs)",
-            textDecoration: "none",
-          }}
-        >
-          {adsManagerLabel} ↗
-        </a>
+        <div style={{ marginTop: "auto", display: "flex", gap: 8 }}>
+          {onBreakdown && (
+            <button
+              onClick={onBreakdown}
+              title="Frames, transcript, Motion rubric, aligned to Meta retention"
+              style={{
+                flex: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                padding: "8px 12px",
+                font: "600 12px var(--font-ui)",
+                borderRadius: 10,
+                border: "1px solid var(--ink)",
+                background: "var(--ink)",
+                color: "var(--surface)",
+                cursor: "pointer",
+              }}
+            >
+              ✦ Break down
+            </button>
+          )}
+          <a
+            href={adsManager}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              flex: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "8px 12px",
+              font: "600 12px var(--font-ui)",
+              borderRadius: 10,
+              border: "1px solid var(--line-2)",
+              background: "var(--surface)",
+              color: "var(--ink)",
+              boxShadow: "var(--shadow-xs)",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {onBreakdown ? "Ads Manager" : adsManagerLabel} ↗
+          </a>
+        </div>
       </div>
     </article>
   );

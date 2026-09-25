@@ -33,6 +33,7 @@ import {
   adsManagerAdUrl,
 } from "./shared";
 import { VISUAL_FORMAT_LABELS } from "@/lib/growth-tagging-shared";
+import { BreakdownPanel } from "../breakdown/BreakdownPanel";
 
 export function AdDrawer({
   data,
@@ -220,6 +221,14 @@ export function AdDrawer({
                 {copy.message}
               </div>
             )}
+          </div>
+        )}
+
+        {/* breakdown: frames + transcript + Motion rubric, aligned to retention */}
+        {ad.is_video && (
+          <div>
+            <DrawerLabel>Breakdown · frames, transcript, Motion rubric</DrawerLabel>
+            <BreakdownPanel adId={ad.ad_id} name={ad.ad_name} compact />
           </div>
         )}
 
