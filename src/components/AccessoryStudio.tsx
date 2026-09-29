@@ -175,8 +175,8 @@ function StageCard({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ font: "650 13px var(--font-ui)", color: "var(--ink)" }}>{title}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", minHeight: 30 }}>
+        <div style={{ font: "650 13px var(--font-ui)", color: "var(--ink)", whiteSpace: "nowrap" }}>{title}</div>
         {onRedo && (
           <Button size="sm" variant="ghost" onClick={onRedo} disabled={!canRedo} icon={<Icons.Refresh />}>
             Redo
@@ -190,9 +190,27 @@ function StageCard({
   );
 }
 
+/** Width of the element, tracked with a ResizeObserver. */
+function useElementWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = React.useRef<T>(null);
+  const [width, setWidth] = React.useState(0);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
 export function AccessoryStudio() {
   const isMobile = useIsMobile();
   const toast = useToast();
+  // The sidebar eats ~240px, so the viewport breakpoint alone leaves the
+  // two-column layout crushed on mid-size windows. Stack on content width.
+  const [rootRef, rootWidth] = useElementWidth<HTMLDivElement>();
+  const narrow = isMobile || (rootWidth > 0 && rootWidth < 900);
 
   const [mode, setModeState] = React.useState<Mode>("fish");
   const [item, setItem] = React.useState("");
@@ -388,14 +406,14 @@ export function AccessoryStudio() {
   const firstStage: Stage = mode === "fish" ? "onfish" : "match";
 
   return (
-    <div>
+    <div ref={rootRef}>
       <PageHeader
         eyebrow="Product"
         title="Accessory Studio"
         subtitle="New fish accessories in the lootbox 1-3 style: Gemini draws it, Recraft vectorizes it, and it comes out as an SVG on the same 1920x1080 frame as the shipped ones."
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "340px 1fr", gap: 20, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "340px minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
         {/* ---- Composer ---- */}
         <Card>
           <div style={{ marginBottom: 16 }}>
