@@ -14,7 +14,9 @@
 import type { AccessoryRow, AccessorySlot } from "./accessory-studio-shared";
 import { SERVICE_ROLE, SUPABASE_ANON, SUPABASE_URL } from "./image-generation";
 
-export const RECRAFT_API_KEY = process.env.RECRAFT_API_KEY ?? "";
+// Trimmed: keys pasted or piped into Vercel can pick up a trailing newline,
+// which makes the Authorization header invalid.
+export const RECRAFT_API_KEY = (process.env.RECRAFT_API_KEY ?? "").trim();
 const RECRAFT_API = "https://external.api.recraft.ai/v1";
 
 // Dan's Gemini prompt, verbatim, with the "how it sits on the head"
