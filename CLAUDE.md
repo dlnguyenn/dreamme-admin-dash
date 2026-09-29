@@ -360,6 +360,36 @@ Tool list changes propagate to active Claude Code sessions automatically
   full OAuth 2.1 with PKCE, which is why `src/lib/mcp-oauth.ts` exists.
   Claude Code is fine with the env-var bearer.
 
+## Accessory Studio
+
+Admin-only section (`src/components/AccessoryStudio.tsx`) that makes new
+companion-fish accessories (hats, glasses, neckwear, plushies) as SVGs in
+the lootbox 1-3 art style, on the same 1920x1080 frame as the shipped
+assets. Lootbox 4 art was rejected; never use it as a reference.
+
+- **On Sushi** (default): Gemini draws the item on Sushi with Dan's prompt
+  (verbatim in `src/lib/accessory-studio.ts`, one "fit" sentence swapped
+  per slot) → a second Gemini call *edits* the fish out ("delete the fish",
+  not "output only the hat", which keeps the fish) → Recraft vectorize.
+- **Match existing**: Gemini draws the item standalone, copying the
+  silhouette of a shipped accessory (`public/accessory-studio/refs/`) or
+  a saved one. Use it for licensed characters: Gemini draws them on Sushi
+  but refuses the edit step with `PROHIBITED_CONTENT`.
+- Normalizing onto the frame runs in the browser (`normalizeSvg`, needs
+  `getBBox`); the server only strips Recraft's c2pa metadata and white
+  background (`cleanRecraftSvg`).
+- Routes: `/api/accessory-studio/{generate,vectorize,items}`. Raster steps
+  go through `generateImage` (so they share Image Studio's rate limit,
+  show in its gallery, and log to Spend); `model` picks flash or
+  `gemini-3-pro-image`.
+- Saved SVGs: `accessories/{slug}-{id}.svg` in the public
+  `mcp-image-generations` bucket + `accessory_generations` table (0080).
+- Env: `RECRAFT_API_KEY` (Recraft API units, ~$0.01 per vectorize; not
+  logged to Spend because `ai_usage_events.vendor` doesn't allow it).
+- Getting an accessory into the app is still manual: add it to
+  `DreamMe-app/lib/itemPreviews.ts` and import it into the fish Rive file
+  under a `rive_asset_key`.
+
 ## Things that have bitten us
 
 - **Shell cwd resets between Bash calls.** Wrap commands in

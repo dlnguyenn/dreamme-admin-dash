@@ -342,6 +342,7 @@ async function callGemini(
   imageSize: ImageSize,
   referenceImages: ReferenceImage[],
   signal: AbortSignal,
+  model: string = MODEL,
 ): Promise<{ bytes: Buffer; mimeType: string; usage: GeminiResponse["usageMetadata"] }> {
   const parts: Part[] = [];
   for (const ref of referenceImages) {
@@ -375,7 +376,7 @@ async function callGemini(
   while (true) {
     let res: Response;
     try {
-      res = await fetch(ENDPOINT(MODEL), {
+      res = await fetch(ENDPOINT(model), {
         method: "POST",
         headers: {
           "x-goog-api-key": GOOGLE_API_KEY,
@@ -412,10 +413,11 @@ async function callGemini(
         }
       }
       const textFallback = parts.map((p) => p.text ?? "").join(" ").trim();
+      const finish = data.candidates?.[0]?.finishReason;
       throw new Error(
         textFallback
           ? `Gemini returned no image — ${textFallback.slice(0, 200)}`
-          : "Gemini returned no image — the prompt may have been filtered.",
+          : `Gemini returned no image — the prompt may have been filtered${finish ? ` (${finish})` : ""}.`,
       );
     }
     const text = await res.text();
@@ -559,6 +561,10 @@ export async function generateImage(params: {
   /** Pose reference slug used, persisted for download naming. */
   pose?: string | null;
   source: "mcp" | "dashboard";
+  /** Gemini image model override. Defaults to MODEL. */
+  model?: string;
+  /** Route recorded on the ai_usage_events row. Defaults by `source`. */
+  usageRoute?: string;
   /** Per-attempt timeout in ms. Default 60s — Gemini image gen is usually 5-25s. */
   timeoutMs?: number;
   /** Internal: skip the rate-limit check (used by batch mode where the
@@ -589,6 +595,7 @@ export async function generateImage(params: {
   // call isn't cancelled by the first attempt's already-fired timer.
   const totalTimeoutMs = params.timeoutMs ?? 60_000;
   const imageSize = params.imageSize ?? DEFAULT_IMAGE_SIZE;
+  const model = params.model ?? MODEL;
   const startedAt = Date.now();
   const runOnce = async (budgetMs: number) => {
     const controller = new AbortController();
@@ -600,6 +607,7 @@ export async function generateImage(params: {
         imageSize,
         referenceImages,
         controller.signal,
+        model,
       );
     } finally {
       clearTimeout(timer);
@@ -644,7 +652,7 @@ export async function generateImage(params: {
     prompt,
     aspect_ratio: params.aspectRatio ?? null,
     image_url: imageUrl,
-    gemini_model: MODEL,
+    gemini_model: model,
     source: params.source,
     reference_urls: referenceUrls.length > 0 ? referenceUrls : null,
     avatar: params.avatar ?? null,
@@ -654,13 +662,15 @@ export async function generateImage(params: {
   const usage = gen.usage ?? {};
   void logAiUsageEvent({
     vendor: "google",
-    model: MODEL,
-    route: params.source === "mcp" ? "/api/mcp/image" : "/api/image-studio/generate",
+    model,
+    route:
+      params.usageRoute ??
+      (params.source === "mcp" ? "/api/mcp/image" : "/api/image-studio/generate"),
     inputTokens: usage.promptTokenCount ?? 0,
     outputTokens: usage.candidatesTokenCount ?? 0,
     imageCount: 1,
     computedUsd: priceGeminiUsage({
-      model: MODEL,
+      model,
       inputTokens: usage.promptTokenCount ?? 0,
       outputTokens: usage.candidatesTokenCount ?? 0,
       imageCount: 1,
@@ -678,7 +688,7 @@ export async function generateImage(params: {
     imageUrl,
     prompt,
     aspectRatio: params.aspectRatio ?? null,
-    geminiModel: MODEL,
+    geminiModel: model,
     createdAt: inserted.created_at,
     referenceImageUrl: referenceUrls[0] ?? null,
     referenceImageUrls: referenceUrls,
