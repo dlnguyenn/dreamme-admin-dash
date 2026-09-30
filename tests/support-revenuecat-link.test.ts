@@ -3,8 +3,8 @@ import { revenueCatCustomerUrl } from "@/lib/support/revenuecat-link";
 
 /**
  * The sidebar link is only useful if it lands on the right customer. App
- * user ids are not always tidy uuids â€” anonymous ids carry "$" and ":", and
- * merged accounts can carry an email â€” so the path segment has to be encoded
+ * user ids are not always tidy uuids — anonymous ids carry "$" and ":", and
+ * merged accounts can carry an email — so the path segment has to be encoded
  * or RC serves a 404 on a customer who is actually there.
  */
 describe("revenueCatCustomerUrl", () => {
