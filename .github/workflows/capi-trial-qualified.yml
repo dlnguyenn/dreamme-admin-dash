@@ -1,0 +1,44 @@
+# trial_qualified → Meta CAPI — every 15 minutes.
+#
+# Triggers /api/cron/capi-trial-qualified on the deployed dash, which checks
+# RevenueCat 2h after each trial start and sends trial_qualified server-side
+# for trials still set to renew. Replaces the n8n workflow that died silently
+# on 2026-07-06; a failing run here is red in the Actions tab and emails the
+# repo owner. The route is idempotent (capi_trial_qualified_log), so
+# overlapping or retried runs cannot double-send.
+#
+# Requires the CRON_SECRET repository secret (same value as the Vercel env).
+
+name: capi-trial-qualified
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: capi-trial-qualified
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Trigger capi-trial-qualified route
+        run: |
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set — the route cannot be authenticated. Add it in Settings > Secrets and variables > Actions (same value as the Vercel CRON_SECRET env)."
+            exit 1
+          fi
+          resp=$(curl -sS -w '\n%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://dreamme-admin-dash.vercel.app/api/cron/capi-trial-qualified")
+          code=$(printf '%s' "$resp" | tail -n1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "status: $code"
+          echo "body: $body"
+          [ "$code" = "200" ] || exit 1
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
