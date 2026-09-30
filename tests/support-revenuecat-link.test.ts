@@ -3,8 +3,8 @@ import { revenueCatCustomerUrl } from "@/lib/support/revenuecat-link";
 
 /**
  * The sidebar link is only useful if it lands on the right customer. App
- * user ids are not always tidy uuids — anonymous ids carry "$" and ":", and
- * merged accounts can carry an email — so the path segment has to be encoded
+ * user ids are not always tidy uuids â€” anonymous ids carry "$" and ":", and
+ * merged accounts can carry an email â€” so the path segment has to be encoded
  * or RC serves a 404 on a customer who is actually there.
  */
 describe("revenueCatCustomerUrl", () => {
@@ -12,16 +12,16 @@ describe("revenueCatCustomerUrl", () => {
     expect(
       revenueCatCustomerUrl("projc9e74a6c", "6f1c0a2e-9d4b-4a11-8c33-51f0b7a9e102"),
     ).toBe(
-      "https://app.revenuecat.com/customers/projc9e74a6c/6f1c0a2e-9d4b-4a11-8c33-51f0b7a9e102",
+      "https://app.revenuecat.com/projects/projc9e74a6c/customers/6f1c0a2e-9d4b-4a11-8c33-51f0b7a9e102",
     );
   });
 
   it("encodes anonymous ids and emails", () => {
     expect(revenueCatCustomerUrl("projc9e74a6c", "$RCAnonymousID:ab12cd")).toBe(
-      "https://app.revenuecat.com/customers/projc9e74a6c/%24RCAnonymousID%3Aab12cd",
+      "https://app.revenuecat.com/projects/projc9e74a6c/customers/%24RCAnonymousID%3Aab12cd",
     );
     expect(revenueCatCustomerUrl("projc9e74a6c", "dan+test@dreamme.app")).toBe(
-      "https://app.revenuecat.com/customers/projc9e74a6c/dan%2Btest%40dreamme.app",
+      "https://app.revenuecat.com/projects/projc9e74a6c/customers/dan%2Btest%40dreamme.app",
     );
   });
 

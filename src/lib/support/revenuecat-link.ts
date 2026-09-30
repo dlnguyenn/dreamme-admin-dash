@@ -2,7 +2,9 @@
  * Support Inbox — deep link from a resolved thread into the customer's
  * RevenueCat profile.
  *
- * RC's dashboard customer page is /customers/<project id>/<app user id>,
+ * RC's dashboard customer page is /projects/<project id>/customers/<app user id>
+ * (the old /customers/<project>/<user> path now only shows a "page has moved"
+ * notice),
  * and public.users.id IS the RC app_user_id (see resolve-user.ts), so the
  * sidebar can link straight to the live subscription record instead of
  * making you paste the id into RC's search box.
@@ -22,5 +24,5 @@ export function revenueCatCustomerUrl(
   // need encoding to survive the path segment.
   const user = appUserId?.trim();
   if (!project || !user) return null;
-  return `${RC_DASHBOARD}/customers/${encodeURIComponent(project)}/${encodeURIComponent(user)}`;
+  return `${RC_DASHBOARD}/projects/${encodeURIComponent(project)}/customers/${encodeURIComponent(user)}`;
 }
