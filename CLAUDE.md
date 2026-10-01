@@ -13,7 +13,7 @@ AI captions, curate references, and track spend.
 - **Anthropic Claude** for caption generation (Sonnet 4.6 + Opus 4.7 — see
   `src/lib/models.ts`). Apify `clockworks/tiktok-scraper` for slideshow
   scraping. Gemini for image work (`src/lib/gemini.ts`).
-- Node `>=20.0.0 <21.0.0`.
+- Node `24.x` (Vercel discontinued Node 20; builds failed from 2026-10-01 until this was bumped).
 
 ## Branching & shipping
 
