@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest";
+import {
+  REPLY_VARIANTS,
+  commenterKey,
+  decide,
+  isTrivial,
+  parseClassifications,
+  pickVariant,
+  type AdComment,
+} from "@/lib/price-comment-replies";
+
+const comment = (over: Partial<AdComment> = {}): AdComment => ({
+  platform: "fb",
+  commentId: "111_222",
+  adId: "ad1",
+  adName: "T0930_meme_ord002-07",
+  objectId: "page_post",
+  authorKey: "user1",
+  authorIsUs: false,
+  alreadyRepliedByUs: false,
+  text: "how much is it?",
+  createdTime: "2026-10-01T00:00:00+0000",
+  ...over,
+});
+
+describe("pickVariant", () => {
+  it("is deterministic per comment and always a known variant", () => {
+    expect(pickVariant("abc")).toBe(pickVariant("abc"));
+    for (const id of ["1", "2", "17841_99", "x".repeat(40)]) expect(REPLY_VARIANTS).toContain(pickVariant(id));
+  });
+  it("spreads across variants", () => {
+    const seen = new Set(Array.from({ length: 200 }, (_, i) => pickVariant(`c${i}`)));
+    expect(seen.size).toBe(REPLY_VARIANTS.length);
+  });
+  it("never uses em dashes (house rule)", () => {
+    for (const v of REPLY_VARIANTS) expect(v).not.toContain("—");
+  });
+});
+
+describe("isTrivial", () => {
+  it("flags empty, mention-only and emoji-only comments", () => {
+    expect(isTrivial("")).toBe(true);
+    expect(isTrivial("@jess.m @amy_r")).toBe(true);
+    expect(isTrivial("😂😂🔥")).toBe(true);
+  });
+  it("keeps text and money emoji", () => {
+    expect(isTrivial("price?")).toBe(false);
+    expect(isTrivial("💸💸")).toBe(false);
+    expect(isTrivial("$$$")).toBe(false);
+  });
+});
+
+describe("parseClassifications", () => {
+  it("keeps only requested ids, normalises intent and clamps confidence", () => {
+    const m = parseClassifications(
+      [
+        { id: "a", intent: "price", confidence: 0.93 },
+        { id: "b", intent: "PRICE", confidence: "2" },
+        { id: "zzz", intent: "price", confidence: 1 },
+        null,
+        { intent: "price" },
+      ],
+      ["a", "b", "c"],
+    );
+    expect(m.get("a")).toEqual({ intent: "price", confidence: 0.93 });
+    expect(m.get("b")).toEqual({ intent: "other", confidence: 1 });
+    expect(m.has("c")).toBe(false);
+    expect(m.has("zzz")).toBe(false);
+  });
+  it("returns empty for non-arrays", () => {
+    expect(parseClassifications({ id: "a" }, ["a"]).size).toBe(0);
+  });
+});
+
+describe("decide", () => {
+  const price = { intent: "price" as const, confidence: 0.9 };
+  it("replies to a confident price comment with a variant", () => {
+    const d = decide(comment(), price, new Set());
+    expect(d?.status).toBe("replied");
+    expect(REPLY_VARIANTS).toContain(d?.reply);
+  });
+  it("never replies to our own comments or already-answered ones", () => {
+    expect(decide(comment({ authorIsUs: true }), price, new Set())?.status).toBe("own_comment");
+    expect(decide(comment({ alreadyRepliedByUs: true }), price, new Set())?.status).toBe("already_answered");
+  });
+  it("skips low-confidence and non-price", () => {
+    expect(decide(comment(), { intent: "price", confidence: 0.6 }, new Set())?.status).toBe("not_price");
+    expect(decide(comment(), { intent: "other", confidence: 0.99 }, new Set())?.status).toBe("not_price");
+  });
+  it("leaves unclassified comments open", () => {
+    expect(decide(comment(), undefined, new Set())).toBeNull();
+  });
+  it("replies once per person per ad, including within one run", () => {
+    const seen = new Set<string>();
+    expect(decide(comment({ commentId: "c1" }), price, seen)?.status).toBe("replied");
+    expect(decide(comment({ commentId: "c2" }), price, seen)?.status).toBe("dup_commenter");
+    expect(decide(comment({ commentId: "c3", adId: "ad2" }), price, seen)?.status).toBe("replied");
+    expect(seen.has(commenterKey("ad1", "user1"))).toBe(true);
+  });
+  it("still replies when Meta withholds the author", () => {
+    const seen = new Set<string>();
+    expect(decide(comment({ authorKey: null }), price, seen)?.status).toBe("replied");
+    expect(seen.size).toBe(0);
+  });
+});

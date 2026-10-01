@@ -29,7 +29,13 @@ function apiVersion(): string {
   return process.env.META_API_VERSION ?? "v22.0";
 }
 export function defaultScopes(): string {
-  return process.env.META_OAUTH_SCOPES ?? "ads_read,ads_management,business_management";
+  // Page + Instagram comment scopes power /api/cron/price-comment-replies.
+  return (
+    process.env.META_OAUTH_SCOPES ??
+    "ads_read,ads_management,business_management," +
+      "pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_engagement," +
+      "instagram_basic,instagram_manage_comments"
+  );
 }
 
 export function metaOAuthConfigured(): boolean {

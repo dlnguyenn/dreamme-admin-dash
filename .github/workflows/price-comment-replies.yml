@@ -1,0 +1,45 @@
+# Price-comment auto-replier on live Meta ads, every 15 minutes.
+#
+# Triggers /api/cron/price-comment-replies on the deployed dash. It classifies
+# new ad comments with Claude Haiku and, only when the Vercel env
+# PRICE_REPLIES_LIVE is "true", replies to price objections with "there's a
+# free version". Otherwise it logs what it would have posted (dry run).
+# Idempotent via the ad_comment_replies table, so overlapping or retried runs
+# cannot double-reply. Returns 200 with waiting_for while the Meta connection
+# lacks Page + Instagram comment scopes, so this stays green until then.
+#
+# Requires the CRON_SECRET repository secret (same value as the Vercel env).
+
+name: price-comment-replies
+on:
+  schedule:
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: price-comment-replies
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Trigger price-comment-replies route
+        run: |
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set. Add it in Settings > Secrets and variables > Actions (same value as the Vercel CRON_SECRET env)."
+            exit 1
+          fi
+          resp=$(curl -sS -w '\n%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://dreamme-admin-dash.vercel.app/api/cron/price-comment-replies")
+          code=$(printf '%s' "$resp" | tail -n1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "status: $code"
+          echo "body: $body"
+          [ "$code" = "200" ] || exit 1
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
