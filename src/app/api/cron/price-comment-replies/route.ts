@@ -10,9 +10,12 @@
  *   4. price + confidence >= 0.8 -> reply once as the DreamMe Page saying there
  *      is a free version; one reply per person per ad, at most `max` per run
  *
- * Posting is OFF unless the Vercel env PRICE_REPLIES_LIVE is "true"; otherwise
- * the run is a dry run that logs the reply it would have posted (status dry_run)
- * and returns them for review. ?dry_run=1 forces a dry run either way.
+ *   5. a comment that names a competing app is hidden (never deleted; the
+ *      commenter still sees it), status hidden
+ *
+ * Posting and hiding are OFF unless the Vercel env PRICE_REPLIES_LIVE is "true";
+ * otherwise the run is a dry run that logs what it would have done (status
+ * dry_run / would_hide) and returns it for review. ?dry_run=1 forces a dry run.
  *
  * Needs a Meta connection with Page + Instagram comment scopes (pages_show_list,
  * pages_read_engagement, pages_read_user_content, pages_manage_engagement,
@@ -20,26 +23,39 @@
  * the run returns 200 with waiting_for, so the cron stays green instead of
  * emailing every 15 minutes.
  *
- * Query params: ?dry_run=1, ?hours=N (1..2160; above 168 is always a dry run,
- * for reviewing older comments), ?max=N replies per run (1..100).
+ * Query params (the last three are for deliberate manual runs):
+ *   ?dry_run=1, ?max=N replies per run (1..100)
+ *   ?hours=N     lookback, 1..2160. Above 168 is a dry run unless ?backlog=1.
+ *   ?backlog=1   allow acting on a long lookback: old price comments get the
+ *                "update" wording, at most MAX_BACKLOG_PER_POST per post.
+ *   ?announce=1  post the free-version announcement once, as a top-level Page
+ *                comment, on every post that has comments (pin it by hand).
+ *   ?reclassify=1  re-label comments decided by an older classifier (never
+ *                ones already replied to or hidden).
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import { resolveMeta } from "@/lib/meta-resolve";
 import { anthropicConfigured, callClaude, firstJson } from "@/lib/anthropic";
 import {
+  ANNOUNCEMENT,
   CLASSIFIER_SYSTEM,
   CLASSIFY_BATCH,
+  INTENTS,
+  IRREVERSIBLE,
+  MAX_BACKLOG_PER_POST,
   MAX_LOOKBACK_HOURS,
   TERMINAL,
   classifierInput,
   commenterKey,
   decide,
   isLive,
+  isOld,
   isTrivial,
   parseClassifications,
   type AdComment,
   type Classification,
+  type Intent,
   type ReplyStatus,
 } from "@/lib/price-comment-replies";
 
@@ -81,11 +97,11 @@ async function gGetAll<T>(path: string, token: string, params: Record<string, st
   return out;
 }
 
-async function gPost(path: string, token: string, message: string): Promise<{ id?: string }> {
+async function gPost(path: string, token: string, params: Record<string, string>): Promise<{ id?: string }> {
   const res = await fetch(`https://graph.facebook.com/${API}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ message, access_token: token }),
+    body: new URLSearchParams({ ...params, access_token: token }),
   });
   const body = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
   if (!res.ok || body.error) throw new GraphError(`${path}: ${body.error?.message ?? res.status}`);
@@ -154,6 +170,7 @@ interface FbComment {
   id: string;
   message?: string;
   created_time: string;
+  is_hidden?: boolean;
   from?: { id: string };
   comments?: { data?: Array<{ from?: { id: string } }> };
 }
@@ -161,6 +178,7 @@ interface IgComment {
   id: string;
   text?: string;
   timestamp: string;
+  hidden?: boolean;
   username?: string;
   replies?: { data?: Array<{ username?: string }> };
 }
@@ -182,7 +200,11 @@ export async function GET(req: Request) {
     return Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : d;
   };
   const hours = num("hours", 72, 1, MAX_LOOKBACK_HOURS);
-  const live = isLive(process.env.PRICE_REPLIES_LIVE, url.searchParams.get("dry_run"), hours);
+  const flag = (k: string) => url.searchParams.get(k) === "1";
+  const backlog = flag("backlog");
+  const announce = flag("announce");
+  const reclassify = flag("reclassify");
+  const live = isLive(process.env.PRICE_REPLIES_LIVE, url.searchParams.get("dry_run"), hours, backlog);
   const maxReplies = num("max", 30, 1, 100);
   const since = Date.now() - hours * 3_600_000;
 
@@ -228,19 +250,25 @@ export async function GET(req: Request) {
       if (m && !igObjects.has(m) && !igError) igObjects.set(m, ad);
     }
 
-    // 2. Recent comments.
+    // 2. Recent comments. Also note which posts have comments from other people
+    // and which already carry our announcement (for ?announce=1).
     const comments: AdComment[] = [];
     const fetchErrors: string[] = [];
+    const hasOthers = new Set<string>();
+    const announced = new Set<string>();
     for (const [objectId, ad] of fbObjects) {
       try {
         const rows = await gGetAll<FbComment>(`${objectId}/comments`, pageToken, {
-          fields: "id,message,created_time,from{id},comments.limit(25){from{id}}",
+          fields: "id,message,created_time,is_hidden,from{id},comments.limit(25){from{id}}",
           filter: "stream",
           order: "reverse_chronological",
           limit: "100",
         }, 300);
         for (const c of rows) {
-          if (Date.parse(c.created_time) < since) continue;
+          const ours = c.from?.id === PAGE_ID;
+          if (ours && c.message === ANNOUNCEMENT) announced.add(objectId);
+          if (!ours) hasOthers.add(objectId);
+          if (c.is_hidden || Date.parse(c.created_time) < since) continue;
           comments.push({
             platform: "fb",
             commentId: c.id,
@@ -261,11 +289,14 @@ export async function GET(req: Request) {
     for (const [objectId, ad] of igObjects) {
       try {
         const rows = await gGetAll<IgComment>(`${objectId}/comments`, pageToken, {
-          fields: "id,text,timestamp,username,replies.limit(25){username}",
+          fields: "id,text,timestamp,username,hidden,replies.limit(25){username}",
           limit: "100",
         }, 300);
         for (const c of rows) {
-          if (Date.parse(c.timestamp) < since) continue;
+          const ours = !!igUsername && c.username === igUsername;
+          if (ours && c.text === ANNOUNCEMENT) announced.add(objectId);
+          if (!ours) hasOthers.add(objectId);
+          if (c.hidden || Date.parse(c.timestamp) < since) continue;
           comments.push({
             platform: "ig",
             commentId: c.id,
@@ -290,7 +321,9 @@ export async function GET(req: Request) {
       (list) => `ad_comment_replies?select=comment_id,status,intent,confidence&comment_id=${list}`,
     );
     const priorById = new Map(prior.map((p) => [p.comment_id, p]));
-    const open = comments.filter((c) => !TERMINAL.has(priorById.get(c.commentId)?.status as ReplyStatus));
+    // ?reclassify=1 reopens everything we have not already acted on.
+    const closed = reclassify ? IRREVERSIBLE : TERMINAL;
+    const open = comments.filter((c) => !closed.has(priorById.get(c.commentId)?.status as ReplyStatus));
 
     const repliedRows = await sbGetIn<{ ad_id: string; author_key: string | null }>(
       ads.map((a) => a.id),
@@ -301,10 +334,12 @@ export async function GET(req: Request) {
     const cls = new Map<string, Classification>();
     for (const c of open) {
       const p = priorById.get(c.commentId);
-      if (p?.intent) cls.set(c.commentId, { intent: p.intent === "price" ? "price" : "other", confidence: p.confidence ?? 0 });
+      if (p?.intent && !reclassify && (INTENTS as readonly string[]).includes(p.intent)) {
+        cls.set(c.commentId, { intent: p.intent as Intent, confidence: p.confidence ?? 0 });
+      }
       else if (isTrivial(c.text)) cls.set(c.commentId, { intent: "other", confidence: 1 });
     }
-    const toClassify = open.filter((c) => !cls.has(c.commentId) && !c.authorIsUs && !c.alreadyRepliedByUs);
+    const toClassify = open.filter((c) => !cls.has(c.commentId) && !c.authorIsUs);
     for (let i = 0; i < toClassify.length; i += CLASSIFY_BATCH) {
       const batch = toClassify.slice(i, i + CLASSIFY_BATCH).map((c) => ({ id: c.commentId, text: c.text }));
       const text = await callClaude({
@@ -316,16 +351,24 @@ export async function GET(req: Request) {
       for (const [id, v] of parseClassifications(firstJson(text), batch.map((b) => b.id))) cls.set(id, v);
     }
 
-    // 4. Decide and (live only) reply, oldest first, capped per run.
-    open.sort((a, b) => Date.parse(a.createdTime) - Date.parse(b.createdTime));
-    const now = new Date().toISOString();
+    // 4. Decide, then (live only) reply or hide. Oldest first, capped per run;
+    // a backlog run goes newest first and answers a few old comments per post.
+    const nowMs = Date.now();
+    open.sort((a, b) => (Date.parse(a.createdTime) - Date.parse(b.createdTime)) * (backlog ? -1 : 1));
+    const now = new Date(nowMs).toISOString();
     const rows: LogRow[] = [];
+    const backlogPerPost = new Map<string, number>();
     let posted = 0;
+    let hidden = 0;
     let deferred = 0;
+    let held = 0;
     for (const c of open) {
       const k = cls.get(c.commentId);
-      const d = decide(c, k, repliedCommenters);
+      const d = decide(c, k, repliedCommenters, nowMs);
       if (!d) continue; // unclassified (Claude skipped it): retry next tick
+      const release = () => {
+        if (c.authorKey) repliedCommenters.delete(commenterKey(c.adId, c.authorKey));
+      };
       const base = {
         comment_id: c.commentId,
         platform: c.platform,
@@ -342,9 +385,38 @@ export async function GET(req: Request) {
         error: null as string | null,
         processed_at: now,
       };
+      if (d.status === "hidden") {
+        if (!live) {
+          rows.push({ ...base, status: "would_hide" });
+          continue;
+        }
+        if (hidden >= maxReplies) {
+          deferred++;
+          continue;
+        }
+        try {
+          await gPost(c.commentId, pageToken, c.platform === "fb" ? { is_hidden: "true" } : { hide: "true" });
+          hidden++;
+          rows.push({ ...base, status: "hidden" });
+        } catch (e) {
+          rows.push({ ...base, status: "error", error: e instanceof Error ? e.message : String(e) });
+        }
+        continue;
+      }
       if (d.status !== "replied") {
         rows.push({ ...base, status: d.status });
         continue;
+      }
+      // Old comments: a few per post, so one thread never fills with our replies.
+      if (backlog && isOld(c, nowMs)) {
+        const n = backlogPerPost.get(c.objectId) ?? 0;
+        if (n >= MAX_BACKLOG_PER_POST) {
+          held++;
+          release();
+          rows.push({ ...base, status: "dry_run" }); // no reply_text = held back
+          continue;
+        }
+        backlogPerPost.set(c.objectId, n + 1);
       }
       if (!live) {
         rows.push({ ...base, status: "dry_run", reply_text: d.reply ?? null });
@@ -352,20 +424,67 @@ export async function GET(req: Request) {
       }
       if (posted >= maxReplies) {
         deferred++;
-        if (c.authorKey) repliedCommenters.delete(commenterKey(c.adId, c.authorKey));
+        release();
         continue;
       }
       try {
         const res = await gPost(
           c.platform === "fb" ? `${c.commentId}/comments` : `${c.commentId}/replies`,
           pageToken,
-          d.reply ?? "",
+          { message: d.reply ?? "" },
         );
         posted++;
         rows.push({ ...base, status: "replied", reply_text: d.reply ?? null, reply_id: res.id ?? null });
       } catch (e) {
-        if (c.authorKey) repliedCommenters.delete(commenterKey(c.adId, c.authorKey));
+        release();
         rows.push({ ...base, status: "error", reply_text: d.reply ?? null, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // 5. ?announce=1: one top-level comment from the Page on each post that has
+    // comments from other people. Skipped where the text is already there or a
+    // previous run logged it, so re-running never posts it twice.
+    let announcedNow = 0;
+    if (announce) {
+      const targets = [
+        ...[...fbObjects].map(([objectId, ad]) => ({ platform: "fb" as const, objectId, ad })),
+        ...[...igObjects].map(([objectId, ad]) => ({ platform: "ig" as const, objectId, ad })),
+      ].filter((t) => hasOthers.has(t.objectId) && !announced.has(t.objectId));
+      const done = await sbGetIn<{ comment_id: string }>(
+        targets.map((t) => `announce:${t.objectId}`),
+        (list) => `ad_comment_replies?select=comment_id&status=eq.replied&comment_id=${list}`,
+      );
+      const doneIds = new Set(done.map((r) => r.comment_id));
+      for (const t of targets) {
+        const id = `announce:${t.objectId}`;
+        if (doneIds.has(id)) continue;
+        const base = {
+          comment_id: id,
+          platform: t.platform,
+          ad_id: t.ad.id,
+          ad_name: t.ad.name,
+          object_id: t.objectId,
+          author_key: null,
+          comment_text: "",
+          comment_created_at: now,
+          intent: "announcement",
+          confidence: null,
+          reply_text: ANNOUNCEMENT,
+          reply_id: null as string | null,
+          error: null as string | null,
+          processed_at: now,
+        };
+        if (!live) {
+          rows.push({ ...base, status: "dry_run" });
+          continue;
+        }
+        try {
+          const res = await gPost(`${t.objectId}/comments`, pageToken, { message: ANNOUNCEMENT });
+          announcedNow++;
+          rows.push({ ...base, status: "replied", reply_id: res.id ?? null });
+        } catch (e) {
+          rows.push({ ...base, status: "error", error: e instanceof Error ? e.message : String(e) });
+        }
       }
     }
     await upsertLog(rows);
@@ -373,8 +492,8 @@ export async function GET(req: Request) {
     const tally: Record<string, number> = {};
     for (const r of rows) tally[r.status] = (tally[r.status] ?? 0) + 1;
     const review = rows
-      .filter((r) => r.intent === "price" || r.status === "dry_run" || r.status === "replied")
-      .slice(0, 50)
+      .filter((r) => r.intent === "price" || ["dry_run", "replied", "would_hide", "hidden"].includes(r.status))
+      .slice(0, 80)
       .map((r) => ({
         platform: r.platform,
         ad: r.ad_name,
@@ -396,8 +515,13 @@ export async function GET(req: Request) {
       comments_seen: comments.length,
       open: open.length,
       classified_now: toClassify.length,
+      ...(backlog ? { backlog } : {}),
+      ...(reclassify ? { reclassify } : {}),
       posted,
+      hidden,
+      ...(announce ? { announced_now: announcedNow } : {}),
       deferred_by_cap: deferred,
+      held_by_backlog_cap: held,
       statuses: tally,
       ...(fetchErrors.length ? { fetch_errors: fetchErrors.slice(0, 10) } : {}),
       review,

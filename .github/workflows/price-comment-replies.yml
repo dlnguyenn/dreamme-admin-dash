@@ -3,7 +3,9 @@
 # Triggers /api/cron/price-comment-replies on the deployed dash. It classifies
 # new ad comments with Claude Haiku and, only when the Vercel env
 # PRICE_REPLIES_LIVE is "true", replies to price objections with "there's a
-# free version". Otherwise it logs what it would have posted (dry run).
+# free version" and hides comments that name a competing app. Otherwise it
+# logs what it would have done (dry run). The manual inputs are for one-off
+# runs: a long lookback, the backlog, the announcement comment.
 # Idempotent via the ad_comment_replies table, so overlapping or retried runs
 # cannot double-reply. Returns 200 with waiting_for while the Meta connection
 # lacks Page + Instagram comment scopes, so this stays green until then.
@@ -17,9 +19,25 @@ on:
   workflow_dispatch:
     inputs:
       hours:
-        description: "Look back this many hours (default 72, max 2160). Above 168 is always a dry run."
+        description: "Look back this many hours (default 72, max 2160). Above 168 is a dry run unless backlog is on."
         required: false
         default: ""
+      dry_run:
+        description: "Force a dry run: log what would happen, post and hide nothing."
+        type: boolean
+        default: false
+      backlog:
+        description: "Act on a long lookback: answer a few old price comments per post, hide old competitor mentions."
+        type: boolean
+        default: false
+      announce:
+        description: "Post the free-version announcement once on every post that has comments."
+        type: boolean
+        default: false
+      reclassify:
+        description: "Re-label comments decided by an older classifier."
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -39,11 +57,17 @@ jobs:
             exit 1
           fi
           url="https://dreamme-admin-dash.vercel.app/api/cron/price-comment-replies"
+          qs=""
           case "${HOURS}" in
             "") ;;
             *[!0-9]*) echo "::error::hours must be a whole number"; exit 1 ;;
-            *) url="${url}?hours=${HOURS}" ;;
+            *) qs="hours=${HOURS}" ;;
           esac
+          if [ "${DRY_RUN}" = "true" ]; then qs="${qs:+$qs&}dry_run=1"; fi
+          if [ "${BACKLOG}" = "true" ]; then qs="${qs:+$qs&}backlog=1"; fi
+          if [ "${ANNOUNCE}" = "true" ]; then qs="${qs:+$qs&}announce=1"; fi
+          if [ "${RECLASSIFY}" = "true" ]; then qs="${qs:+$qs&}reclassify=1"; fi
+          url="${url}${qs:+?$qs}"
           resp=$(curl -sS -w '\n%{http_code}' \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             "$url")
@@ -55,3 +79,7 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           HOURS: ${{ inputs.hours }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          BACKLOG: ${{ inputs.backlog }}
+          ANNOUNCE: ${{ inputs.announce }}
+          RECLASSIFY: ${{ inputs.reclassify }}
