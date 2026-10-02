@@ -35,6 +35,16 @@ describe("pickVariant", () => {
     expect(pickVariant("abc")).toBe(pickVariant("abc"));
     for (const id of ["1", "2", "17841_99", "x".repeat(40)]) expect(REPLY_VARIANTS).toContain(pickVariant(id));
   });
+  it("steps past wording already used on the same post", () => {
+    for (const id of ["c1", "c2", "c3", "17841_99"]) {
+      const used = new Set<string>();
+      for (let i = 0; i < UPDATE_VARIANTS.length; i++) used.add(pickVariant(`${id}-${i}`, UPDATE_VARIANTS, used));
+      expect(used.size).toBe(UPDATE_VARIANTS.length);
+    }
+  });
+  it("falls back to the plain pick once every variant is used", () => {
+    expect(pickVariant("abc", REPLY_VARIANTS, new Set(REPLY_VARIANTS))).toBe(pickVariant("abc"));
+  });
   it("spreads across variants", () => {
     const seen = new Set(Array.from({ length: 200 }, (_, i) => pickVariant(`c${i}`)));
     expect(seen.size).toBe(REPLY_VARIANTS.length);

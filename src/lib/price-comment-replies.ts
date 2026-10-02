@@ -102,10 +102,22 @@ export const TERMINAL: ReadonlySet<ReplyStatus> = new Set<ReplyStatus>([
 /** We acted on Meta: not even ?reclassify=1 reopens these. */
 export const IRREVERSIBLE: ReadonlySet<ReplyStatus> = new Set<ReplyStatus>(["replied", "hidden"]);
 
-/** Deterministic variant per comment, so a retry never posts different text. */
-export function pickVariant(commentId: string, variants: readonly string[] = REPLY_VARIANTS): string {
+/**
+ * Deterministic variant per comment, so a retry never posts different text.
+ * `avoid` holds wording already used on the same post: the pick steps past
+ * those so one thread never shows the same reply twice (until all are used).
+ */
+export function pickVariant(
+  commentId: string,
+  variants: readonly string[] = REPLY_VARIANTS,
+  avoid?: ReadonlySet<string>,
+): string {
   let h = 0;
   for (const ch of commentId) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0;
+  for (let i = 0; avoid && i < variants.length; i++) {
+    const v = variants[(h + i) % variants.length];
+    if (!avoid.has(v)) return v;
+  }
   return variants[h % variants.length];
 }
 

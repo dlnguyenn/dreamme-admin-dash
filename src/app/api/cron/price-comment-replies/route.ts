@@ -40,6 +40,8 @@ import { anthropicConfigured, callClaude, firstJson } from "@/lib/anthropic";
 import {
   ANNOUNCEMENT,
   CLASSIFIER_SYSTEM,
+  REPLY_VARIANTS,
+  UPDATE_VARIANTS,
   CLASSIFY_BATCH,
   INTENTS,
   IRREVERSIBLE,
@@ -53,6 +55,7 @@ import {
   isOld,
   isTrivial,
   parseClassifications,
+  pickVariant,
   type AdComment,
   type Classification,
   type Intent,
@@ -325,11 +328,21 @@ export async function GET(req: Request) {
     const closed = reclassify ? IRREVERSIBLE : TERMINAL;
     const open = comments.filter((c) => !closed.has(priorById.get(c.commentId)?.status as ReplyStatus));
 
-    const repliedRows = await sbGetIn<{ ad_id: string; author_key: string | null }>(
+    const repliedRows = await sbGetIn<{ ad_id: string; author_key: string | null; object_id: string; reply_text: string | null }>(
       ads.map((a) => a.id),
-      (list) => `ad_comment_replies?select=ad_id,author_key&status=eq.replied&author_key=not.is.null&ad_id=${list}`,
+      (list) => `ad_comment_replies?select=ad_id,author_key,object_id,reply_text&status=eq.replied&ad_id=${list}`,
     );
-    const repliedCommenters = new Set(repliedRows.map((r) => commenterKey(r.ad_id, r.author_key as string)));
+    const repliedCommenters = new Set(
+      repliedRows.filter((r) => r.author_key).map((r) => commenterKey(r.ad_id, r.author_key as string)),
+    );
+    // Wording already used per post, so one thread never shows the same reply twice.
+    const usedOnPost = new Map<string, Set<string>>();
+    const usedFor = (objectId: string) => {
+      let set = usedOnPost.get(objectId);
+      if (!set) usedOnPost.set(objectId, (set = new Set()));
+      return set;
+    };
+    for (const r of repliedRows) if (r.reply_text) usedFor(r.object_id).add(r.reply_text);
 
     const cls = new Map<string, Classification>();
     for (const c of open) {
@@ -418,26 +431,30 @@ export async function GET(req: Request) {
         }
         backlogPerPost.set(c.objectId, n + 1);
       }
-      if (!live) {
-        rows.push({ ...base, status: "dry_run", reply_text: d.reply ?? null });
-        continue;
-      }
-      if (posted >= maxReplies) {
+      if (live && posted >= maxReplies) {
         deferred++;
         release();
+        continue;
+      }
+      const used = usedFor(c.objectId);
+      const reply = pickVariant(c.commentId, isOld(c, nowMs) ? UPDATE_VARIANTS : REPLY_VARIANTS, used);
+      if (!live) {
+        used.add(reply);
+        rows.push({ ...base, status: "dry_run", reply_text: reply });
         continue;
       }
       try {
         const res = await gPost(
           c.platform === "fb" ? `${c.commentId}/comments` : `${c.commentId}/replies`,
           pageToken,
-          { message: d.reply ?? "" },
+          { message: reply },
         );
         posted++;
-        rows.push({ ...base, status: "replied", reply_text: d.reply ?? null, reply_id: res.id ?? null });
+        used.add(reply);
+        rows.push({ ...base, status: "replied", reply_text: reply, reply_id: res.id ?? null });
       } catch (e) {
         release();
-        rows.push({ ...base, status: "error", reply_text: d.reply ?? null, error: e instanceof Error ? e.message : String(e) });
+        rows.push({ ...base, status: "error", reply_text: reply, error: e instanceof Error ? e.message : String(e) });
       }
     }
 
