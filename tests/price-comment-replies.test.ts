@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { COMMENT_SCOPES, defaultScopes } from "@/lib/meta-oauth";
 import {
   CLASSIFIER_SYSTEM,
+  LIVE_MAX_HOURS,
   REPLY_VARIANTS,
   commenterKey,
   decide,
+  isLive,
   isTrivial,
   parseClassifications,
   pickVariant,
@@ -130,5 +132,21 @@ describe("defaultScopes", () => {
 describe("CLASSIFIER_SYSTEM", () => {
   it("keeps medication cost out of the price intent", () => {
     expect(CLASSIFIER_SYSTEM).toMatch(/cost of medication/);
+  });
+});
+
+describe("isLive", () => {
+  it("posts only with the env switch on", () => {
+    expect(isLive("true", null, 72)).toBe(true);
+    expect(isLive(undefined, null, 72)).toBe(false);
+    expect(isLive("TRUE", null, 72)).toBe(false);
+  });
+  it("?dry_run=1 wins over the env switch", () => {
+    expect(isLive("true", "1", 72)).toBe(false);
+  });
+  it("a long lookback is review-only, even when live", () => {
+    expect(isLive("true", null, LIVE_MAX_HOURS)).toBe(true);
+    expect(isLive("true", null, LIVE_MAX_HOURS + 1)).toBe(false);
+    expect(isLive("true", null, 2160)).toBe(false);
   });
 });

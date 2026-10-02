@@ -19,6 +19,16 @@ export const REPLY_VARIANTS: readonly string[] = [
 export const MIN_CONFIDENCE = 0.8;
 export const CLASSIFY_BATCH = 40;
 
+/** Longest lookback a run may use (?hours=N). */
+export const MAX_LOOKBACK_HOURS = 2160; // 90 days
+/** Beyond this a run is review-only: nobody wants a reply to a month-old comment. */
+export const LIVE_MAX_HOURS = 168;
+
+/** Posting needs the env switch on, no ?dry_run=1, and a normal lookback. */
+export function isLive(envFlag: string | undefined, dryRunParam: string | null, hours: number): boolean {
+  return envFlag === "true" && dryRunParam !== "1" && hours <= LIVE_MAX_HOURS;
+}
+
 export type Platform = "fb" | "ig";
 export type Intent = "price" | "other";
 

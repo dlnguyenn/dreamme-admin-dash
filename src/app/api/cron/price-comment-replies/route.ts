@@ -20,7 +20,8 @@
  * the run returns 200 with waiting_for, so the cron stays green instead of
  * emailing every 15 minutes.
  *
- * Query params: ?dry_run=1, ?hours=N (1..168), ?max=N replies per run (1..100).
+ * Query params: ?dry_run=1, ?hours=N (1..2160; above 168 is always a dry run,
+ * for reviewing older comments), ?max=N replies per run (1..100).
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
@@ -29,10 +30,12 @@ import { anthropicConfigured, callClaude, firstJson } from "@/lib/anthropic";
 import {
   CLASSIFIER_SYSTEM,
   CLASSIFY_BATCH,
+  MAX_LOOKBACK_HOURS,
   TERMINAL,
   classifierInput,
   commenterKey,
   decide,
+  isLive,
   isTrivial,
   parseClassifications,
   type AdComment,
@@ -174,12 +177,12 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const live = process.env.PRICE_REPLIES_LIVE === "true" && url.searchParams.get("dry_run") !== "1";
   const num = (k: string, d: number, lo: number, hi: number) => {
     const v = Number(url.searchParams.get(k) ?? d);
     return Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : d;
   };
-  const hours = num("hours", 72, 1, 168);
+  const hours = num("hours", 72, 1, MAX_LOOKBACK_HOURS);
+  const live = isLive(process.env.PRICE_REPLIES_LIVE, url.searchParams.get("dry_run"), hours);
   const maxReplies = num("max", 30, 1, 100);
   const since = Date.now() - hours * 3_600_000;
 
