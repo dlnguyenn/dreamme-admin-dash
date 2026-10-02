@@ -9,6 +9,7 @@ import {
   exchangeCodeForToken,
   exchangeForLongLived,
   fetchIdentityAndAdAccounts,
+  fetchGrantedScopes,
   saveConnection,
   defaultScopes,
 } from "@/lib/meta-oauth";
@@ -48,7 +49,10 @@ export async function GET(req: NextRequest) {
     const shortToken = await exchangeCodeForToken({ code, redirectUri });
     const { token, expiresInSec } = await exchangeForLongLived(shortToken);
     const identity = await fetchIdentityAndAdAccounts(token);
-    await saveConnection({ token, expiresInSec, identity, scopes: defaultScopes() });
+    // Store what was granted, not what was asked for (people can untick scopes).
+    const granted = await fetchGrantedScopes(token).catch(() => null);
+    const scopes = granted?.length ? granted.join(",") : defaultScopes();
+    await saveConnection({ token, expiresInSec, identity, scopes });
     return back(o, { meta: "connected" });
   } catch (e) {
     return back(o, { meta: "error", reason: (e instanceof Error ? e.message : String(e)).slice(0, 140) });

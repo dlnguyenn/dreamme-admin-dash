@@ -28,14 +28,27 @@ function stateSecret(): string {
 function apiVersion(): string {
   return process.env.META_API_VERSION ?? "v22.0";
 }
+/** Page + Instagram comment scopes; /api/cron/price-comment-replies needs all of them. */
+export const COMMENT_SCOPES = [
+  "pages_show_list",
+  "pages_read_engagement",
+  "pages_read_user_content",
+  "pages_manage_engagement",
+  "instagram_basic",
+  "instagram_manage_comments",
+] as const;
+
+/**
+ * Scopes requested at Facebook Login. META_OAUTH_SCOPES overrides the ads base
+ * but can't drop the comment scopes: an older override would otherwise make a
+ * reconnect silently skip them.
+ */
 export function defaultScopes(): string {
-  // Page + Instagram comment scopes power /api/cron/price-comment-replies.
-  return (
-    process.env.META_OAUTH_SCOPES ??
-    "ads_read,ads_management,business_management," +
-      "pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_engagement," +
-      "instagram_basic,instagram_manage_comments"
-  );
+  const base = (process.env.META_OAUTH_SCOPES ?? "ads_read,ads_management,business_management")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...new Set([...base, ...COMMENT_SCOPES])].join(",");
 }
 
 export function metaOAuthConfigured(): boolean {
@@ -138,6 +151,21 @@ export async function exchangeForLongLived(
   });
   if (!body.access_token) throw new Error("No access_token in long-lived exchange response.");
   return { token: body.access_token, expiresInSec: body.expires_in ?? null };
+}
+
+interface PermissionsResponse {
+  data?: Array<{ permission?: string; status?: string }>;
+}
+
+/**
+ * What the user actually granted. Facebook Login lets people untick
+ * permissions, so the requested list can overstate what the token can do.
+ */
+export async function fetchGrantedScopes(token: string): Promise<string[]> {
+  const body = await graphGet<PermissionsResponse>("me/permissions", { access_token: token });
+  return (body.data ?? [])
+    .filter((p) => p.status === "granted" && p.permission)
+    .map((p) => p.permission as string);
 }
 
 interface MeResponse {

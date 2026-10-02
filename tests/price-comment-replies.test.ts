@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { COMMENT_SCOPES, defaultScopes } from "@/lib/meta-oauth";
 import {
+  CLASSIFIER_SYSTEM,
   REPLY_VARIANTS,
   commenterKey,
   decide,
@@ -101,5 +103,32 @@ describe("decide", () => {
     const seen = new Set<string>();
     expect(decide(comment({ authorKey: null }), price, seen)?.status).toBe("replied");
     expect(seen.size).toBe(0);
+  });
+});
+
+describe("defaultScopes", () => {
+  const prev = process.env.META_OAUTH_SCOPES;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.META_OAUTH_SCOPES;
+    else process.env.META_OAUTH_SCOPES = prev;
+  });
+  it("requests the comment scopes by default", () => {
+    delete process.env.META_OAUTH_SCOPES;
+    const s = defaultScopes().split(",");
+    for (const c of COMMENT_SCOPES) expect(s).toContain(c);
+    expect(s).toContain("ads_management");
+  });
+  it("keeps the comment scopes when META_OAUTH_SCOPES overrides the base", () => {
+    process.env.META_OAUTH_SCOPES = "ads_read, ads_management,business_management";
+    const s = defaultScopes().split(",");
+    for (const c of COMMENT_SCOPES) expect(s).toContain(c);
+    expect(s).toContain("ads_management");
+    expect(new Set(s).size).toBe(s.length);
+  });
+});
+
+describe("CLASSIFIER_SYSTEM", () => {
+  it("keeps medication cost out of the price intent", () => {
+    expect(CLASSIFIER_SYSTEM).toMatch(/cost of medication/);
   });
 });
