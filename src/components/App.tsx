@@ -27,6 +27,7 @@ import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
 import { AccessoryStudio } from "./AccessoryStudio";
+import { BackgroundStudio } from "./BackgroundStudio";
 import { Integrations } from "./Integrations";
 import { ClipperAdmin } from "./ClipperAdmin";
 import { SupportInbox } from "./SupportInbox";
@@ -344,6 +345,10 @@ export function App() {
   } else if (current === "accessory-studio") {
     screen = role === "admin"
       ? <AccessoryStudio />
+      : <ComingSoon item={currentItem} />;
+  } else if (current === "backgrounds") {
+    screen = role === "admin"
+      ? <BackgroundStudio />
       : <ComingSoon item={currentItem} />;
   } else if (current === "integrations") {
     screen = role === "admin"

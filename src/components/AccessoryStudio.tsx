@@ -19,6 +19,7 @@ import { Icons } from "./Icons";
 import { Card, ErrorBanner, InfoWell, Segmented } from "./porcelain";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useElementWidth } from "@/lib/useElementWidth";
 import {
   ACCESSORY_SLOTS,
   BUILTIN_REFS,
@@ -188,20 +189,6 @@ function StageCard({
       </Frame>
     </div>
   );
-}
-
-/** Width of the element, tracked with a ResizeObserver. */
-function useElementWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
-  const ref = React.useRef<T>(null);
-  const [width, setWidth] = React.useState(0);
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, width];
 }
 
 export function AccessoryStudio() {

@@ -390,6 +390,27 @@ assets. Lootbox 4 art was rejected; never use it as a reference.
   `DreamMe-app/lib/itemPreviews.ts` and import it into the fish Rive file
   under a `rive_asset_key`.
 
+## Backgrounds
+
+Admin-only section (`src/components/BackgroundStudio.tsx`) for the shop's
+home-screen backgrounds for Sushi. **The rule every background must pass:**
+Sushi swims to wherever the user taps, so any point on the screen must be
+somewhere a fish can be: fully underwater top to bottom (no sky, no
+waterline, no air pocket), a side-on view into an open space, scenery at the
+walls / back / floor. The prompt in `src/lib/background-studio.ts` encodes
+it, and the phone preview lets you tap to move Sushi to check.
+
+- Generate (`/api/background-studio/generate`, mode `new`): name + theme →
+  Gemini (pro by default), 9:16 at 2K, with 4 references from the public
+  bucket at `mcp-image-generations/backgrounds/refs/` (2 style, 2 that pass
+  the rule). Mode `edit` revises an image with a one-line instruction.
+- Never mention UI elements ("a card sits at the top") in prompts: Gemini
+  draws them into the art.
+- Library: `shop_backgrounds` table (0084). Grid and preview use Supabase
+  image transformations (`resizedUrl`) because the 2K originals are ~3 MB
+  and next/image's optimizer times out on them.
+- Seeded from `claude/tools/import_backgrounds.py` in the claude workspace.
+
 ## Things that have bitten us
 
 - **Shell cwd resets between Bash calls.** Wrap commands in

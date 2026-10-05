@@ -24,6 +24,7 @@ export type DashId =
   | "synthid-research"
   | "image-studio"
   | "accessory-studio"
+  | "backgrounds"
   | "integrations"
   | "clippers"
   | "support";
@@ -62,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "synthid-research", label: "SynthID Research", icon: "Flask", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Aperture", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "accessory-studio", label: "Accessory Studio", icon: "Star", status: "live", desc: "New fish accessories as lootbox-style SVGs", adminOnly: true },
+  { id: "backgrounds", label: "Backgrounds", icon: "Moon", status: "live", desc: "Shop home-screen backgrounds for Sushi", adminOnly: true },
   { id: "integrations", label: "Integrations", icon: "Grid", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
   { id: "clippers", label: "Clippers", icon: "Scissors", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
   { id: "support", label: "Support Inbox", icon: "Inbox", status: "live", desc: "help@ email + in-app feedback triage", adminOnly: true, group: "Support" },
