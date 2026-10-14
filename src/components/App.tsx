@@ -21,6 +21,7 @@ import { OurSlideshows } from "./OurSlideshows";
 import { SpendDashboard } from "./SpendDashboard";
 import { GrowthAI } from "./GrowthAI";
 import { MarketingEfficiency } from "./MarketingEfficiency";
+import { StepDownTest } from "./StepDownTest";
 import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
@@ -330,6 +331,8 @@ export function App() {
     screen = role === "admin" ? <GrowthAI /> : <ComingSoon item={currentItem} />;
   } else if (current === "marketing") {
     screen = <MarketingEfficiency />;
+  } else if (current === "stepdown") {
+    screen = role === "admin" ? <StepDownTest /> : <ComingSoon item={currentItem} />;
   } else if (current === "creatives") {
     screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {

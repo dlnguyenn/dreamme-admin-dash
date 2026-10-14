@@ -120,7 +120,50 @@ export async function dailyUniques(
   return out;
 }
 
+const segCache = new Map<string, { at: number; value: Map<string, Map<string, number>> }>();
+
+/**
+ * Unique users per day for one event, split by a property expression
+ * (`on`, e.g. `user["referral_source"]`) and optionally filtered (`where`,
+ * e.g. `properties["platform"]=="ios"`). Returns segment -> date -> count.
+ * Used by the step-down test to split trials by the onboarding answer.
+ */
+export async function segmentationOn(
+  event: string,
+  fromDate: string,
+  toDate: string,
+  on: string,
+  where?: string,
+): Promise<Map<string, Map<string, number>>> {
+  const key = `${event}|${fromDate}|${toDate}|${on}|${where ?? ""}`;
+  const hit = segCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+
+  const body = await query<SegmentationResponse>("/api/query/segmentation", {
+    event,
+    from_date: fromDate,
+    to_date: toDate,
+    unit: "day",
+    type: "unique",
+    on,
+    ...(where ? { where } : {}),
+  });
+
+  const out = new Map<string, Map<string, number>>();
+  for (const [segment, days] of Object.entries(body.data?.values ?? {})) {
+    const m = new Map<string, number>();
+    for (const [date, n] of Object.entries(days)) {
+      const parsed = Number(n);
+      if (Number.isFinite(parsed)) m.set(date.slice(0, 10), parsed);
+    }
+    out.set(segment, m);
+  }
+  segCache.set(key, { at: Date.now(), value: out });
+  return out;
+}
+
 /** Exposed for tests — module-level cache would otherwise leak between them. */
 export function clearMixpanelCache(): void {
   cache.clear();
+  segCache.clear();
 }

@@ -20,6 +20,7 @@
     { "path": "/api/cron/sync-clipper-views", "schedule": "0 9 * * *" },
     { "path": "/api/cron/support-poll", "schedule": "0 10 * * *" },
     { "path": "/api/cron/refresh-meta-tokens", "schedule": "0 9 * * 1" },
-    { "path": "/api/cron/drain-tiktok-events", "schedule": "30 10 * * *" }
+    { "path": "/api/cron/drain-tiktok-events", "schedule": "30 10 * * *" },
+    { "path": "/api/cron/step-down-report", "schedule": "0 13 * * *" }
   ]
 }

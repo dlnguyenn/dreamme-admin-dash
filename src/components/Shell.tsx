@@ -19,6 +19,7 @@ export type DashId =
   | "spend"
   | "growth"
   | "marketing"
+  | "stepdown"
   | "creatives"
   | "requests"
   | "synthid-research"
@@ -58,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "spend", label: "Spend", icon: "Dollar", status: "live", desc: "AI + business expenses", adminOnly: true, group: "Growth" },
   { id: "growth", label: "Growth AI", icon: "Spark", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
   { id: "marketing", label: "Marketing Efficiency", icon: "Trend", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
+  { id: "stepdown", label: "Step-down Test", icon: "Flask", status: "live", desc: "Is Meta driving trials? iOS spend cut test", adminOnly: true },
   { id: "creatives", label: "Creatives", icon: "Image", status: "live", desc: "Meta ad performance + qualified CPA", adminOnly: true },
   { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true, group: "Product" },
   { id: "synthid-research", label: "SynthID Research", icon: "Flask", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
