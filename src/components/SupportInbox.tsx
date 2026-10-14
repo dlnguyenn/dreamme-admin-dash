@@ -15,13 +15,19 @@ import {
   CategoryTag,
   ErrorBanner,
   FilterPill,
+  fam,
   hueFromName,
   InitialsAvatar,
   SourceTag,
   type Family,
 } from "./porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
-import type { SupportThreadRow, ThreadStatus } from "@/lib/support/types";
+import {
+  isFeatureRequest,
+  needsAttention,
+  type SupportThreadRow,
+  type ThreadStatus,
+} from "@/lib/support/types";
 import { fetchThreads, pollNow, timeAgo } from "./support/api";
 import { ThreadDetail } from "./support/ThreadDetail";
 
@@ -54,8 +60,11 @@ const STORE_LABEL: Record<string, string> = {
 
 export function SupportInbox({
   onUnreadChange,
+  onAttentionChange,
 }: {
   onUnreadChange?: (n: number) => void;
+  /** threads unanswered >24h — drives the sidebar "!" */
+  onAttentionChange?: (n: number) => void;
 }) {
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -105,10 +114,12 @@ export function SupportInbox({
     async (f: Filter = filter, q: string = search) => {
       try {
         setError(null);
-        const { threads, unreadCount, health } = await fetchThreads(f, q);
+        const { threads, unreadCount, needsAttentionCount, health } =
+          await fetchThreads(f, q);
         setThreads(threads);
         setHealth(health ?? null);
         onUnreadChange?.(unreadCount);
+        onAttentionChange?.(needsAttentionCount);
         if (f === "open" && !q.trim()) {
           const c: Partial<Record<Filter, number>> = { open: threads.length };
           for (const t of threads) {
@@ -122,8 +133,17 @@ export function SupportInbox({
         setLoading(false);
       }
     },
-    [filter, search, onUnreadChange],
+    [filter, search, onUnreadChange, onAttentionChange],
   );
+
+  // Overdue threads float to the top; everything else keeps the server's
+  // newest-first order (Array.prototype.sort is stable).
+  const ordered = React.useMemo(() => {
+    const now = Date.now();
+    return [...threads].sort(
+      (a, b) => Number(needsAttention(b, now)) - Number(needsAttention(a, now)),
+    );
+  }, [threads]);
 
   React.useEffect(() => {
     setLoading(true);
@@ -143,7 +163,8 @@ export function SupportInbox({
       toast(
         report.healthAlert
           ? `Polled, but ingestion looks stalled: ${report.healthAlert}`
-          : `Polled: ${report.emailsInserted} email, ${report.feedbackInserted} feedback, ${report.threadsTriaged} triaged`,
+          : `Polled: ${report.emailsInserted} email, ${report.feedbackInserted} feedback, ${report.threadsTriaged} triaged` +
+            (report.threadsAutoClosed ? `, ${report.threadsAutoClosed} auto-closed` : ""),
       );
       await load();
     } catch (e) {
@@ -347,7 +368,7 @@ export function SupportInbox({
                   overflow: "hidden",
                 }}
               >
-                {threads.map((t, i) => (
+                {ordered.map((t, i) => (
                   <ThreadListItem
                     key={t.id}
                     thread={t}
@@ -398,6 +419,31 @@ export function SupportInbox({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Solid red rather than the soft category fill: this is the one tag that
+ * should be impossible to miss when scanning the list.
+ */
+function NeedsAttentionTag() {
+  const f = fam("danger");
+  return (
+    <span
+      title="No reply for more than 24 hours"
+      style={{
+        font: "700 9.5px var(--font-ui)",
+        letterSpacing: "0.04em",
+        background: f.solid,
+        color: f.onSolid,
+        border: "1px solid transparent",
+        padding: "3px 8px",
+        borderRadius: 7,
+        whiteSpace: "nowrap",
+      }}
+    >
+      NEEDS ATTENTION!
+    </span>
   );
 }
 
@@ -513,6 +559,7 @@ function ThreadListItem({
           </div>
         )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {needsAttention(thread) && <NeedsAttentionTag />}
           {showStatus && (
             <SourceTag size={9.5}>
               {thread.status.replace("_", " ").toUpperCase()}
@@ -526,6 +573,11 @@ function ThreadListItem({
           {thread.category && !cat && (
             <CategoryTag family="neutral" size={9.5}>
               {thread.category.toUpperCase()}
+            </CategoryTag>
+          )}
+          {isFeatureRequest(thread) && (
+            <CategoryTag family="accent" size={9.5}>
+              FEATURE REQUEST
             </CategoryTag>
           )}
           {thread.resolved_store && (

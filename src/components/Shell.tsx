@@ -105,6 +105,7 @@ export function Sidebar({
   viewAs,
   setViewAs,
   badges,
+  alerts,
 }: {
   current: DashId;
   setCurrent: (id: DashId) => void;
@@ -116,9 +117,18 @@ export function Sidebar({
   setViewAs: (v: "admin" | "user") => void;
   /** optional per-tab count pills (e.g. unread support threads) */
   badges?: Partial<Record<DashId, number>>;
+  /**
+   * Tabs that need action now (e.g. a support thread unanswered >24h).
+   * They get a red "!" and jump to the top of the nav until cleared.
+   */
+  alerts?: Partial<Record<DashId, boolean>>;
 }) {
   const w = collapsed ? 76 : 236;
-  const items = visibleNavItems(viewAs);
+  const visible = visibleNavItems(viewAs);
+  const items = [
+    ...visible.filter((n) => alerts?.[n.id]),
+    ...visible.filter((n) => !alerts?.[n.id]),
+  ];
   return (
     <aside
       style={{
@@ -244,6 +254,26 @@ export function Sidebar({
                     >
                       {item.label}
                     </span>
+                    {alerts?.[item.id] && (
+                      <span
+                        aria-label="Needs attention"
+                        title="A thread has gone more than 24h without a reply"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          background: "var(--danger)",
+                          color: "var(--on-solid)",
+                          font: "800 11.5px var(--font-ui)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        !
+                      </span>
+                    )}
                     {!!badges?.[item.id] && (
                       <span
                         style={{
@@ -280,7 +310,7 @@ export function Sidebar({
                     )}
                   </>
                 )}
-                {collapsed && !!badges?.[item.id] && (
+                {collapsed && (alerts?.[item.id] || !!badges?.[item.id]) && (
                   <span
                     style={{
                       position: "absolute",
@@ -289,7 +319,7 @@ export function Sidebar({
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: "var(--accent)",
+                      background: alerts?.[item.id] ? "var(--danger)" : "var(--accent)",
                     }}
                   />
                 )}

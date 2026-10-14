@@ -35,10 +35,12 @@ import {
 import { resolveUser } from "./resolve-user";
 import { refreshStripeNameIndex } from "./stripe-names";
 import { isFeedbackMirror, triageThread } from "./triage";
-import type {
-  SupportDraftRow,
-  SupportMessageRow,
-  SupportThreadRow,
+import {
+  AUTO_CLOSE_WAITING_AFTER_MS,
+  shouldAutoClose,
+  type SupportDraftRow,
+  type SupportMessageRow,
+  type SupportThreadRow,
 } from "./types";
 
 const EMAIL_CURSOR_ID = "gmail-inbox";       // IMAP transport (uid cursor)
@@ -68,6 +70,8 @@ export interface IngestReport {
   feedbackFetched: number;
   feedbackInserted: number;
   threadsTriaged: number;
+  /** Waiting threads closed after 24h with no customer reply */
+  threadsAutoClosed: number;
   /** Stripe billing-name index (powers "Maybe this user?") */
   namesScanned: number;
   namesIndexed: number;
@@ -611,6 +615,30 @@ async function triageNewThreads(report: IngestReport): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Leg 4 — auto-close
+//
+// A thread we replied to that has sat in Waiting for 24h is done. Runs after
+// the email and sent legs so a customer reply or a fresh Gmail reply that
+// landed this tick is seen first. The PATCH re-checks the status, so a
+// thread that left Waiting in the meantime is never closed.
+
+async function autoCloseWaiting(report: IngestReport): Promise<void> {
+  const cutoff = new Date(Date.now() - AUTO_CLOSE_WAITING_AFTER_MS).toISOString();
+  const stale = await spGet<SupportThreadRow[]>(
+    `support_threads?select=id,status,last_message_at,snoozed_until&status=eq.waiting_user&last_message_at=lt.${encodeURIComponent(cutoff)}&limit=200`,
+  );
+  const now = Date.now();
+  for (const t of stale) {
+    if (!shouldAutoClose(t, now)) continue;
+    const closed = await spPatch<{ id: string }>(
+      `support_threads?id=eq.${encodeURIComponent(t.id)}&status=eq.waiting_user`,
+      { status: "closed", unread: false, updated_at: new Date().toISOString() },
+    );
+    report.threadsAutoClosed += closed.length;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Run serialization
 //
 // Pub/Sub push made concurrent runs routine (every inbound message is a
@@ -694,6 +722,7 @@ function emptyReport(): IngestReport {
     feedbackFetched: 0,
     feedbackInserted: 0,
     threadsTriaged: 0,
+    threadsAutoClosed: 0,
     namesScanned: 0,
     namesIndexed: 0,
     triageErrors: [],
@@ -803,6 +832,13 @@ async function runIngestLegs(report: IngestReport): Promise<void> {
   } catch (e) {
     report.legErrors.push(
       `triage leg failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  try {
+    await autoCloseWaiting(report);
+  } catch (e) {
+    report.legErrors.push(
+      `auto-close leg failed: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
   // Keep the Pub/Sub watch alive — see renewGmailWatch for why this rides

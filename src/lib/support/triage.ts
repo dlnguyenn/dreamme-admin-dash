@@ -317,8 +317,9 @@ This is the target voice, match this energy:
 "Hi Jo! Great news, I've gone ahead and cancelled your trial, so you won't be charged on July 31. Thanks so much for giving DreamMe a try, and if you ever fancy jumping back in you are always welcome!"
 
 Output STRICTLY JSON:
-{"is_spam": boolean, "classification": "refund_request"|"cancel_trial"|"question"|"feedback"|"other", "urgency": "low"|"normal"|"high", "summary": string, "drafts": [string, string]}
+{"is_spam": boolean, "classification": "refund_request"|"cancel_trial"|"question"|"feedback"|"other", "urgency": "low"|"normal"|"high", "feature_request": boolean, "summary": string, "drafts": [string, string]}
 "summary" is one line for Dan's queue. If is_spam is true (vendor pitch, newsletter, automated notification, obvious bot), set drafts to [].
+"feature_request" is true when the user asks for, or their problem clearly points to, something DreamMe could build or change in the app: a new feature, setting, option, integration or piece of content (e.g. "let me edit my shot day", "add a dark mode", "support my medication"). It is false for pure billing, cancel or refund asks, bug reports about something that should already work, and how-to questions where nothing is missing. It can be true alongside any classification.
 IMPORTANT: an email whose body quotes our own billing/trial notification ("Your DreamMe free trial ends…", from billing@dreamme.life) is a REAL customer replying to that notification, never spam — even a one-line "please cancel my subscription" above the quote. Those emails invite replies ("a real person will help").`;
 
   const user = `SOURCE: ${params.source === "feedback" ? "in-app feedback form" : "email to help@dreamme.life"}
@@ -340,6 +341,7 @@ Classify and draft two replies now.`;
     is_spam?: unknown;
     classification?: unknown;
     urgency?: unknown;
+    feature_request?: unknown;
     summary?: unknown;
     drafts?: unknown;
   };
@@ -393,6 +395,7 @@ Classify and draft two replies now.`;
           ? parsed.summary.trim()
           : "(no summary)",
       internal,
+      feature_request: !isSpam && parsed.feature_request === true,
       model: MODEL,
       triaged_at: new Date().toISOString(),
     },

@@ -184,9 +184,71 @@ export interface TriageResult {
   summary: string;
   /** marks Dan's own test emails / internal senders */
   internal?: boolean;
+  /**
+   * The conversation points at something DreamMe could build (a new
+   * capability, setting or option). Absent on threads triaged before the
+   * flag existed; see isFeatureRequest for the fallback.
+   */
+  feature_request?: boolean;
   model?: string;
   error?: string;
   triaged_at?: string;
+}
+
+/** How long a customer can wait on a reply before the thread is flagged. */
+export const NEEDS_ATTENTION_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * True when the customer's latest message has gone unanswered for more than
+ * 24h. "Unanswered" is the status: a reply (dash-sent or matched from the
+ * Sent folder) moves the thread to waiting_user, and a new inbound message
+ * moves it back to new. Snoozed threads were deliberately parked, and
+ * internal ones are Dan's own tests, so neither nags.
+ */
+export function needsAttention(
+  t: Pick<
+    SupportThreadRow,
+    "status" | "last_inbound_at" | "created_at" | "snoozed_until" | "triage"
+  >,
+  now: number = Date.now(),
+): boolean {
+  if (t.status !== "new" && t.status !== "drafts_ready") return false;
+  if (t.snoozed_until && new Date(t.snoozed_until).getTime() > now) return false;
+  if (t.triage?.internal) return false;
+  const waitingSince = new Date(t.last_inbound_at ?? t.created_at).getTime();
+  return now - waitingSince > NEEDS_ATTENTION_AFTER_MS;
+}
+
+/** How long a replied thread sits in Waiting before it closes itself. */
+export const AUTO_CLOSE_WAITING_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * True when a thread has been in Waiting (we replied, the customer hasn't)
+ * for more than 24h. last_message_at is the reply time: both the dash send
+ * and the Sent-folder match stamp it when they move the thread to Waiting.
+ * Closing is safe to do eagerly because a customer reply on a closed thread
+ * reopens it as New (see inboundThreadPatch in ingest.ts).
+ */
+export function shouldAutoClose(
+  t: Pick<SupportThreadRow, "status" | "last_message_at" | "snoozed_until">,
+  now: number = Date.now(),
+): boolean {
+  if (t.status !== "waiting_user") return false;
+  if (t.snoozed_until && new Date(t.snoozed_until).getTime() > now) return false;
+  return now - new Date(t.last_message_at).getTime() > AUTO_CLOSE_WAITING_AFTER_MS;
+}
+
+/**
+ * Whether to show the FEATURE REQUEST tag. Triage sets the flag; in-app
+ * feedback filed under the app's own "feature_request" category counts even
+ * when it was triaged before the flag existed.
+ */
+export function isFeatureRequest(
+  t: Pick<SupportThreadRow, "source" | "subject" | "triage">,
+): boolean {
+  if (t.triage?.is_spam) return false;
+  if (t.triage?.feature_request === true) return true;
+  return t.source === "feedback" && /feature_request/i.test(t.subject ?? "");
 }
 
 /** Shape returned by GET /api/support/threads/[id] */

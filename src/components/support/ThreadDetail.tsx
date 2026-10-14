@@ -10,11 +10,13 @@ import { Button, Chip, useToast } from "../ui";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { hueFromName, InitialsAvatar } from "../porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
-import type {
-  SupportDraftRow,
-  SupportMessageRow,
-  SupportThreadRow,
-  ThreadDetailPayload,
+import {
+  isFeatureRequest,
+  needsAttention,
+  type SupportDraftRow,
+  type SupportMessageRow,
+  type SupportThreadRow,
+  type ThreadDetailPayload,
 } from "@/lib/support/types";
 import {
   fetchThreadDetail,
@@ -187,6 +189,8 @@ export function ThreadDetail({
             </span>
             <Chip>{thread.status.replace("_", " ")}</Chip>
             {thread.urgency === "high" && <Chip tone="danger">urgent</Chip>}
+            {needsAttention(thread) && <Chip tone="danger">needs attention!</Chip>}
+            {isFeatureRequest(thread) && <Chip tone="accent">feature request</Chip>}
           </div>
           <div
             style={{

@@ -26,6 +26,8 @@ export async function fetchThreads(
 ): Promise<{
   threads: SupportThreadRow[];
   unreadCount: number;
+  /** open threads whose customer has waited >24h for a reply */
+  needsAttentionCount: number;
   /** set when ingestion has stalled — see lib/support/health.ts */
   health?: string | null;
 }> {
@@ -180,6 +182,7 @@ export async function pollNow(): Promise<{
     feedbackFetched: number;
     feedbackInserted: number;
     threadsTriaged: number;
+    threadsAutoClosed?: number;
     triageErrors: string[];
     legErrors: string[];
     healthAlert?: string | null;

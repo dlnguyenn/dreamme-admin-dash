@@ -7,7 +7,7 @@
  *   ?q=jane — search counterpart name/email/subject across ALL statuses
  *     (finding a person matters regardless of closed/ignored); overrides
  *     the status filter
- *   ?countOnly=1 — just the unread badge count
+ *   ?countOnly=1 — just the badge counts (unread + needs attention)
  * Snoozed threads (snoozed_until in the future) are excluded unless their
  * status is explicitly requested.
  */
@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import { readIngestHealth } from "@/lib/support/health";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { spGet, supportDbConfigured } from "@/lib/support/db";
-import type { SupportThreadRow } from "@/lib/support/types";
+import { needsAttention, type SupportThreadRow } from "@/lib/support/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,8 +42,14 @@ export async function GET(req: Request) {
       `support_threads?select=id&unread=eq.true&status=not.in.(closed,ignored)&limit=100`,
     );
     const unreadCount = unreadRows.length;
+    // Threads awaiting a reply, narrowed to >24h by the same rule the list
+    // tags use, so the sidebar "!" and the NEEDS ATTENTION tags agree.
+    const awaitingRows = await spGet<SupportThreadRow[]>(
+      `support_threads?select=id,status,last_inbound_at,created_at,snoozed_until,triage&status=in.(new,drafts_ready)&limit=500`,
+    );
+    const needsAttentionCount = awaitingRows.filter((t) => needsAttention(t)).length;
     if (countOnly) {
-      return NextResponse.json({ ok: true, unreadCount });
+      return NextResponse.json({ ok: true, unreadCount, needsAttentionCount });
     }
 
     // Search mode: name/email/subject, every status, newest first.
@@ -52,12 +58,12 @@ export async function GET(req: Request) {
       // Strip characters PostgREST's or=() grammar or ilike patterns treat
       // specially, then wildcard both ends.
       const safe = q.replace(/[,()*%\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
-      if (!safe) return NextResponse.json({ ok: true, threads: [], unreadCount });
+      if (!safe) return NextResponse.json({ ok: true, threads: [], unreadCount, needsAttentionCount });
       const pat = encodeURIComponent(`*${safe}*`);
       const threads = await spGet<SupportThreadRow[]>(
         `support_threads?or=(counterpart_email.ilike.${pat},counterpart_name.ilike.${pat},subject.ilike.${pat})&order=last_message_at.desc&limit=100`,
       );
-      return NextResponse.json({ ok: true, threads, unreadCount, health: await readIngestHealth() });
+      return NextResponse.json({ ok: true, threads, unreadCount, needsAttentionCount, health: await readIngestHealth() });
     }
 
     const filter =
@@ -82,6 +88,7 @@ export async function GET(req: Request) {
       ok: true,
       threads: visible,
       unreadCount,
+      needsAttentionCount,
       // Surfaced passively: the 2026-08-06 stall was invisible precisely
       // because nothing on screen distinguished "quiet" from "broken".
       health: await readIngestHealth(),

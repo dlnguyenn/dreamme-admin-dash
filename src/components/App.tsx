@@ -66,6 +66,8 @@ export function App() {
   >("after");
   // Unread support-thread count for the sidebar badge (admin only).
   const [supportUnread, setSupportUnread] = React.useState(0);
+  // Threads unanswered >24h: red "!" + Support Inbox pinned to the top.
+  const [supportAttention, setSupportAttention] = React.useState(0);
 
   // Hydrate from storage after mount to avoid SSR/CSR mismatch
   React.useEffect(() => {
@@ -196,10 +198,13 @@ export function App() {
           cache: "no-store",
         });
         const body = (await res.json().catch(() => null)) as
-          | { ok?: boolean; unreadCount?: number }
+          | { ok?: boolean; unreadCount?: number; needsAttentionCount?: number }
           | null;
         if (!cancelled && body?.ok && typeof body.unreadCount === "number") {
           setSupportUnread(body.unreadCount);
+        }
+        if (!cancelled && body?.ok && typeof body.needsAttentionCount === "number") {
+          setSupportAttention(body.needsAttentionCount);
         }
       } catch {}
     };
@@ -362,7 +367,10 @@ export function App() {
       : <ComingSoon item={currentItem} />;
   } else if (current === "support") {
     screen = role === "admin"
-      ? <SupportInbox onUnreadChange={setSupportUnread} />
+      ? <SupportInbox
+          onUnreadChange={setSupportUnread}
+          onAttentionChange={setSupportAttention}
+        />
       : <ComingSoon item={currentItem} />;
   } else {
     screen = <ComingSoon item={currentItem} />;
@@ -383,6 +391,7 @@ export function App() {
         mobilePipelineMode={mobilePipelineMode}
         setMobilePipelineMode={setMobilePipelineMode}
         badges={supportUnread > 0 ? { support: supportUnread } : undefined}
+        alerts={supportAttention > 0 ? { support: true } : undefined}
       >
         {screen}
       </AppShell>
@@ -408,6 +417,7 @@ function AppShell({
   mobilePipelineMode,
   setMobilePipelineMode,
   badges,
+  alerts,
   children,
 }: {
   current: DashId;
@@ -421,6 +431,7 @@ function AppShell({
   mobilePipelineMode: "after" | "before";
   setMobilePipelineMode: (v: "after" | "before") => void;
   badges?: Partial<Record<DashId, number>>;
+  alerts?: Partial<Record<DashId, boolean>>;
   children: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -518,6 +529,7 @@ function AppShell({
         viewAs={viewAs}
         setViewAs={setViewAs}
         badges={badges}
+        alerts={alerts}
       />
       <main
         key={current}
