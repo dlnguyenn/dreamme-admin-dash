@@ -77,11 +77,54 @@ export async function callClaude(params: {
   }
 }
 
+/**
+ * Escape raw control characters (newlines, tabs, ...) that appear inside
+ * JSON string literals. Models often put real line breaks in a long string
+ * value (e.g. a support draft with paragraphs), which strict JSON.parse
+ * rejects with "Bad control character in string literal".
+ */
+export function escapeControlCharsInStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of json) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      } else if (ch < " ") {
+        if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+        continue;
+      }
+    } else if (ch === '"') {
+      inString = true;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+function parseLenient(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    const repaired = escapeControlCharsInStrings(raw);
+    if (repaired === raw) throw e;
+    return JSON.parse(repaired);
+  }
+}
+
 export function firstJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = (fenced ? fenced[1] : text).trim();
   try {
-    return JSON.parse(raw);
+    return parseLenient(raw);
   } catch {
     const start = raw.indexOf("{");
     const startArr = raw.indexOf("[");
@@ -91,7 +134,7 @@ export function firstJson(text: string): unknown {
     if (s === -1 || end === -1 || end <= s) {
       throw new Error(`Could not parse JSON from: ${raw.slice(0, 200)}`);
     }
-    return JSON.parse(raw.slice(s, end + 1));
+    return parseLenient(raw.slice(s, end + 1));
   }
 }
 
