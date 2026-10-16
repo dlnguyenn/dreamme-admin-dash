@@ -29,20 +29,37 @@ technically depends on it.
 
 Singular → **Settings → Events**. Add:
 
-| Event | Kind | Notes |
+| Event | Kind | Register when |
 | --- | --- | --- |
-| `sng_start_trial` | standard | the number this whole doc exists for |
-| `sng_subscribe` | standard | fires at trial start in our app, not at paid conversion |
-| `sng_complete_registration` | standard | |
-| `trial_qualified` | **custom** | survived 2h + willRenew |
-| `trial_engaged` | **custom** | logged something in 24h — best trial→paid predictor |
+| `sng_start_trial` | standard | now — the number this whole doc exists for |
+| `sng_subscribe` | standard | now — fires at trial start in our app, not at paid conversion |
+| `sng_complete_registration` | standard | now |
+| `trial_qualified` | **custom** | **only after the app release that fires it** |
+| `trial_engaged` | **custom** | **only after the app release that fires it** |
+
+⚠️ **Do not try to register the two custom events until a production build that
+fires them is live.** Singular's "Add Custom Event" dropdown only lists raw SDK
+events it has *actually received*, so before that build ships there is nothing
+to map them to — and creating the mapping anyway burns two of the 12 slots
+pointing at a nonexistent source.
+
+The exact literal strings the app sends (case-sensitive) are `trial_qualified`
+and `trial_engaged` — see `lib/singular.ts` in `davngu28/DreamMe`. They were
+added in the ATT/SKAN PR (#21); confirm that has merged **and** shipped in a
+released build before touching this page for them.
+
+Nothing else in this runbook depends on those two. They add trial *quality*
+(did the trial survive 2h / did the user log anything in 24h — the best
+trial→paid predictor we have); the headline per-campaign trial count comes from
+`sng_start_trial`, which is a standard event and already flowing.
 
 Three things that bite here:
 
-- **Custom events are never auto-added.** `trial_qualified` / `trial_engaged`
-  are fired by the app but will land only in user-level logs — never in
-  aggregated reports or the Reporting API's `cohort_metrics` — until they are
-  added on this page by hand.
+- **Custom events are never auto-added.** Once `trial_qualified` /
+  `trial_engaged` are shipping, they will land only in user-level logs — never
+  in aggregated reports or the Reporting API's `cohort_metrics` — until they
+  are added on this page by hand. (But see the warning above: they cannot be
+  added at all until a build that fires them is live.)
 - **The page is capped at 12 events** on Free/Growth. We use 5 — but check
   what's already there first: newer Growth accounts get standard SDK events
   auto-added (up to 6 unique + 6 non-unique versions), so `sng_start_trial` /
@@ -69,11 +86,30 @@ rather than assuming it appears. Consequence for our sync: within the 35-day
 window, Meta *cost* for days 8–35 only refreshes weekly, while cohort trial
 counts recompute on every run.
 
-Then in **Meta Events Manager**, set Preferred Connection Method = **MMP**.
+Then map each SDK event to its Meta conversion event in Partner Configuration.
+**Event mapping is not retroactive** — do this before you care about the data,
+not after.
 
-Finally, map each SDK event to its Meta conversion event in Partner
-Configuration. **Event mapping is not retroactive** — do this before you care
-about the data, not after.
+### Preferred Connection Method — LAST, and not required for our goal
+
+Only after the event mapping above is in place: Meta Events Manager → the iOS
+app dataset → set Preferred Connection Method = **MMP**.
+
+**Order matters.** This tells Meta to prefer the MMP as the source of app
+events. Setting it before Singular is actually forwarding mapped events points
+Meta at a source that has nothing to send, and risks disrupting the working
+RC→Meta CAPI path that currently supplies Meta's trial signal for optimization
+(see `docs/attribution-handoff.md` for how hard-won that path was).
+
+**It is also not required for the trial-per-campaign number.** That number is
+read out of Singular's Reporting API, which depends on the partner
+configuration, the data connector, and the registered events — none of which
+care about this setting. Preferred Connection Method governs which source
+*Meta* optimizes on. So if this screen is broken or blocked, it does not block
+the pipeline; carry on and come back.
+
+Treat flipping it as a deliberate decision about whether Meta should optimize
+on Singular's signal instead of RevenueCat's CAPI feed — not as a checkbox.
 
 ## Step 4 — Paste into env
 
