@@ -409,6 +409,10 @@ it, and the phone preview lets you tap to move Sushi to check.
 - Library: `shop_backgrounds` table (0084). Grid and preview use Supabase
   image transformations (`resizedUrl`) because the 2K originals are ~3 MB
   and next/image's optimizer times out on them.
+- Card version: `landscape_url` (0087) is a 16:9 redraw of the same place
+  for the home-screen preview card (`CompanionPreviewCard` in the app: full
+  width x 200pt, pearl badge + shop button on top). Mode `landscape` makes
+  it from the saved tall image and stores it on the row.
 - Seeded from `claude/tools/import_backgrounds.py` in the claude workspace.
 
 ## Things that have bitten us

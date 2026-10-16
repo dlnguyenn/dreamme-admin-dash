@@ -145,6 +145,81 @@ function PhoneMock({ src, width }: { src: string; width: number }) {
   );
 }
 
+/**
+ * Mock of the home-screen preview card (CompanionPreviewCard: full width x
+ * 200pt, radius 24, cover crop, pearl badge + shop button). Tap anywhere and
+ * Sushi swims there. Scales to its container, capped at a 358pt-wide phone.
+ */
+function CardMock({ src }: { src: string }) {
+  const [ref, measured] = useElementWidth<HTMLDivElement>();
+  const width = measured || 358;
+  const height = Math.round((width * 200) / 358);
+  const fish = Math.round(height * 0.43);
+  const home = { x: (width - fish) / 2, y: (height - fish) / 2 };
+  const [pos, setPos] = React.useState({ ...home, flip: false });
+  React.useEffect(() => setPos({ x: (width - fish) / 2, y: (height - fish) / 2, flip: false }), [src, width, height, fish]);
+
+  const onTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(width - fish, e.clientX - r.left - fish / 2));
+    const y = Math.max(0, Math.min(height - fish, e.clientY - r.top - fish / 2));
+    setPos((p) => ({ x, y, flip: x > p.x }));
+  };
+
+  const badge: React.CSSProperties = {
+    position: "absolute",
+    top: 12,
+    background: "rgba(0,0,0,.35)",
+    color: "#fff",
+    font: "600 12px var(--font-ui)",
+    pointerEvents: "none",
+  };
+  return (
+    <div ref={ref} style={{ width: "100%", maxWidth: 358 }}>
+      <div
+        onClick={onTap}
+        title="Tap anywhere: Sushi swims there"
+        style={{
+          position: "relative",
+          width,
+          height,
+          borderRadius: 24,
+          overflow: "hidden",
+          cursor: "pointer",
+          background: "var(--surface-2)",
+          boxShadow: "var(--shadow-card)",
+          userSelect: "none",
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={resizedUrl(src, 720)}
+          alt=""
+          draggable={false}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+        />
+        <div style={{ ...badge, left: 12, padding: "5px 10px", borderRadius: 14 }}>● 1,240</div>
+        <div style={{ ...badge, right: 12, width: 32, height: 32, borderRadius: 16 }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={SUSHI_CUTOUT_PATH}
+          alt="Sushi"
+          draggable={false}
+          style={{
+            position: "absolute",
+            width: fish,
+            left: pos.x,
+            top: pos.y,
+            transform: pos.flip ? "scaleX(-1)" : "none",
+            transition: "left 900ms cubic-bezier(.45,.05,.3,1), top 900ms cubic-bezier(.45,.05,.3,1)",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function BackgroundStudio() {
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -160,7 +235,7 @@ export function BackgroundStudio() {
   const [theme, setTheme] = React.useState("");
   const [model, setModel] = React.useState<BgModelKey>("pro");
   const [instruction, setInstruction] = React.useState("");
-  const [busy, setBusy] = React.useState<"new" | "edit" | "save" | null>(null);
+  const [busy, setBusy] = React.useState<"new" | "edit" | "save" | "landscape" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState<BackgroundRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
@@ -203,6 +278,24 @@ export function BackgroundStudio() {
         model,
       });
       setDraft({ imageUrl: r.imageUrl, name: name.trim(), theme: theme.trim(), model: r.model });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function makeLandscape(row: BackgroundRow) {
+    setBusy("landscape");
+    setError(null);
+    try {
+      const { item } = await postJson<{ item: BackgroundRow }>("/api/background-studio/generate", {
+        mode: "landscape",
+        id: row.id,
+        model,
+      });
+      setItems((l) => l.map((r) => (r.id === item.id ? item : r)));
+      toast("Card version saved");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -339,6 +432,52 @@ export function BackgroundStudio() {
                 />
                 <Button onClick={revise} disabled={!instruction.trim() || busy !== null} icon={<Icons.Edit />}>
                   {busy === "edit" ? "Working…" : "Revise"}
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {selected && !draft && (
+            <Card>
+              <div style={{ font: "650 14px var(--font-ui)", color: "var(--ink)", marginBottom: 4 }}>Home preview card</div>
+              <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", marginBottom: 12 }}>
+                The wide version for the card on the home screen: the same place redrawn at 16:9, not a crop.
+              </div>
+              {selected.landscape_url ? (
+                <CardMock src={selected.landscape_url} />
+              ) : (
+                <div
+                  style={{
+                    maxWidth: 358,
+                    aspectRatio: "358 / 200",
+                    borderRadius: 24,
+                    border: "1px dashed var(--line-2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--ink-4)",
+                    font: "400 13px var(--font-ui)",
+                  }}
+                >
+                  {busy === "landscape" ? "Drawing the wide version… (about a minute)" : "No card version yet"}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                {selected.landscape_url && (
+                  <Button
+                    onClick={() => downloadImage(selected.landscape_url!, `${selected.name} card`)}
+                    icon={<Icons.Download />}
+                  >
+                    Download card PNG
+                  </Button>
+                )}
+                <Button
+                  variant={selected.landscape_url ? "ghost" : "primary"}
+                  onClick={() => makeLandscape(selected)}
+                  disabled={busy !== null}
+                  icon={<Icons.Sparkles />}
+                >
+                  {busy === "landscape" ? "Working…" : selected.landscape_url ? "Redo card version" : "Make card version"}
                 </Button>
               </div>
             </Card>

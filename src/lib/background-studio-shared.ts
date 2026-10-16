@@ -9,6 +9,8 @@ export interface BackgroundRow {
   name: string;
   theme: string;
   image_url: string;
+  /** 16:9 redraw for the home-screen preview card; null until made. */
+  landscape_url: string | null;
   model: string | null;
   source: "generated" | "import";
   created_at: string;
@@ -26,8 +28,9 @@ export function resizedUrl(url: string, width: number): string {
   const marker = "/storage/v1/object/public/";
   if (!url.includes(marker)) return url;
   // Width alone makes Supabase keep the original height and crop a narrow
-  // centre strip (resize defaults to cover). Give a tall box and `contain`
-  // so the whole image scales down with its aspect ratio intact.
+  // centre strip (resize defaults to cover). Give a box at least as tall as
+  // either orientation needs and `contain`, so the whole image scales down
+  // with its aspect ratio intact.
   const height = Math.round(width * 2);
   return `${url.replace(marker, "/storage/v1/render/image/public/")}?width=${width}&height=${height}&resize=contain&quality=75`;
 }

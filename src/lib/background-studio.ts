@@ -32,14 +32,47 @@ export function editBackgroundPrompt(instruction: string): string {
   return `Edit reference image 1: ${instruction}. Keep everything else exactly the same: same art style, grainy texture, colors, composition and every object in the same place. The image must stay fully underwater from the top edge to the bottom edge (no sky, no waterline, no air pocket) and be one continuous seamless scene with no bands, boxes, panels, borders or darkened areas.`;
 }
 
+/**
+ * Wide version for the home-screen preview card (full width x 200pt, pearl
+ * badge top-left, shop button top-right, the fish swims across the whole
+ * card). Redraw the same place at 16:9 rather than cropping the tall one.
+ */
+export function landscapePrompt(): string {
+  return "Reference image 1 is a tall phone background from our app. Recreate the SAME environment as a WIDE landscape image for a short, wide preview card: the same place, the same key objects and landmarks, the same colors, lighting, art style and grainy paper texture, re-composed for a wide frame (extend the scene sideways and rearrange naturally; do NOT stretch, squash or simply crop the original). Rules: the whole image is underwater from the top edge to the bottom edge (no sky, no waterline, no air pocket); a small cartoon fish swims across the ENTIRE card, so keep the middle open and airy and put the scenery at the left and right sides, the back and a low floor; keep the top-left and top-right corners calm; keep important details away from the top and bottom 10 percent (the card may trim them). One continuous seamless scene: no frames, borders, panels, bands, vignettes or text. Do not draw any fish, character or animal.";
+}
+
 // --- shop_backgrounds table --------------------------------------------------
+
+export async function getBackground(id: string): Promise<BackgroundRow | null> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/shop_backgrounds?select=*&id=eq.${encodeURIComponent(id)}`, {
+    headers: headers(),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`shop_backgrounds get failed: ${res.status}`);
+  const rows = (await res.json()) as BackgroundRow[];
+  return rows[0] ?? null;
+}
+
+export async function setLandscape(id: string, landscapeUrl: string): Promise<BackgroundRow> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/shop_backgrounds?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: headers({ "Content-Type": "application/json", Prefer: "return=representation" }),
+    body: JSON.stringify({ landscape_url: landscapeUrl }),
+  });
+  if (!res.ok) throw new Error(`shop_backgrounds update failed: ${res.status} ${await res.text()}`);
+  const rows = (await res.json()) as BackgroundRow[];
+  if (!rows[0]) throw new Error("background not found");
+  return rows[0];
+}
 
 function headers(extra: Record<string, string> = {}) {
   const key = SERVICE_ROLE || SUPABASE_ANON;
   return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
 }
 
-export async function insertBackground(row: Omit<BackgroundRow, "id" | "created_at">): Promise<BackgroundRow> {
+export async function insertBackground(
+  row: Omit<BackgroundRow, "id" | "created_at" | "landscape_url">,
+): Promise<BackgroundRow> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/shop_backgrounds`, {
     method: "POST",
     headers: headers({ "Content-Type": "application/json", Prefer: "return=representation" }),

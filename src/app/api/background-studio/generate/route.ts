@@ -4,12 +4,21 @@
  *          layout references
  *   edit — revise an existing background with a one-line instruction
  *          (e.g. "flood the cabin to the ceiling"), everything else kept
+ *   landscape — redraw a saved background at 16:9 for the home-screen
+ *          preview card and store it on the row's landscape_url
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { RateLimitError, generateImage, imageGenerationConfigured } from "@/lib/image-generation";
-import { editBackgroundPrompt, newBackgroundPrompt, refUrls } from "@/lib/background-studio";
+import {
+  editBackgroundPrompt,
+  getBackground,
+  landscapePrompt,
+  newBackgroundPrompt,
+  refUrls,
+  setLandscape,
+} from "@/lib/background-studio";
 import { BG_MODELS } from "@/lib/background-studio-shared";
 
 export const runtime = "nodejs";
@@ -31,6 +40,12 @@ const Body = z.discriminatedUnion("mode", [
     instruction: z.string().trim().min(1).max(600),
     model: z.enum(["pro", "flash"]).default("pro"),
   }),
+  // Wide card version of a saved background; stored on its row.
+  z.object({
+    mode: z.literal("landscape"),
+    id: z.string().uuid(),
+    model: z.enum(["pro", "flash"]).default("pro"),
+  }),
 ]);
 
 export async function POST(req: Request) {
@@ -47,10 +62,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 400 });
   }
 
-  const prompt = body.mode === "new" ? newBackgroundPrompt(body.name, body.theme) : editBackgroundPrompt(body.instruction);
-  const referenceImages = body.mode === "new" ? refUrls().map((url) => ({ url })) : [{ url: body.sourceUrl }];
-
   try {
+    if (body.mode === "landscape") {
+      const row = await getBackground(body.id);
+      if (!row) return NextResponse.json({ ok: false, error: "background not found" }, { status: 404 });
+      const result = await generateImage({
+        prompt: landscapePrompt(),
+        aspectRatio: "16:9",
+        imageSize: "2K",
+        referenceImages: [{ url: row.image_url }],
+        model: BG_MODELS[body.model],
+        usageRoute: "/api/background-studio/generate",
+        source: "dashboard",
+        timeoutMs: 240_000,
+      });
+      const item = await setLandscape(row.id, result.imageUrl);
+      return NextResponse.json({ ok: true, imageUrl: result.imageUrl, item });
+    }
+
+    const prompt = body.mode === "new" ? newBackgroundPrompt(body.name, body.theme) : editBackgroundPrompt(body.instruction);
+    const referenceImages = body.mode === "new" ? refUrls().map((url) => ({ url })) : [{ url: body.sourceUrl }];
     const result = await generateImage({
       prompt,
       aspectRatio: "9:16",
