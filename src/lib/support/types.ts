@@ -251,6 +251,33 @@ export function isFeatureRequest(
   return t.source === "feedback" && /feature_request/i.test(t.subject ?? "");
 }
 
+/** How long a feature-request thread stays in the main inbox. */
+export const FEATURE_REQUEST_FOLDER_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * True when a thread belongs in the Feature requests folder instead of the
+ * main inbox: tagged FEATURE REQUEST and the customer's latest message is
+ * more than 24h old. Derived, never stored, so there is no cron to run and
+ * a customer reply (which bumps last_inbound_at) brings the thread back to
+ * the inbox for another day. Ignored threads stay in Ignored.
+ */
+export function inFeatureRequestFolder(
+  t: Pick<
+    SupportThreadRow,
+    "status" | "source" | "subject" | "triage" | "last_inbound_at" | "created_at"
+  >,
+  now: number = Date.now(),
+): boolean {
+  if (t.status === "ignored") return false;
+  if (!isFeatureRequest(t)) return false;
+  const since = new Date(t.last_inbound_at ?? t.created_at).getTime();
+  return now - since > FEATURE_REQUEST_FOLDER_AFTER_MS;
+}
+
+/** The Support Inbox list views: a status, the open superset, or the
+ *  Feature requests folder. */
+export type InboxView = "open" | ThreadStatus | "feature_requests";
+
 /** Shape returned by GET /api/support/threads/[id] */
 export interface ThreadDetailPayload {
   thread: SupportThreadRow;

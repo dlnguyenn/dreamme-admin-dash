@@ -25,19 +25,22 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import {
   isFeatureRequest,
   needsAttention,
+  type InboxView,
   type SupportThreadRow,
-  type ThreadStatus,
 } from "@/lib/support/types";
 import { fetchThreads, pollNow, timeAgo } from "./support/api";
 import { ThreadDetail } from "./support/ThreadDetail";
 
-type Filter = "open" | ThreadStatus;
+type Filter = InboxView;
 
+// Feature requests is a folder, not a status: tagged threads move there 24h
+// after the customer's latest message and drop out of every other pill.
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "open", label: "Open" },
   { id: "new", label: "New" },
   { id: "drafts_ready", label: "Drafts ready" },
   { id: "waiting_user", label: "Waiting" },
+  { id: "feature_requests", label: "Feature requests" },
   { id: "closed", label: "Closed" },
   { id: "ignored", label: "Ignored" },
 ];
@@ -114,7 +117,7 @@ export function SupportInbox({
     async (f: Filter = filter, q: string = search) => {
       try {
         setError(null);
-        const { threads, unreadCount, needsAttentionCount, health } =
+        const { threads, unreadCount, needsAttentionCount, featureRequestCount, health } =
           await fetchThreads(f, q);
         setThreads(threads);
         setHealth(health ?? null);
@@ -125,7 +128,12 @@ export function SupportInbox({
           for (const t of threads) {
             c[t.status as Filter] = (c[t.status as Filter] ?? 0) + 1;
           }
+          c.feature_requests = featureRequestCount;
           setCounts(c);
+        } else if (featureRequestCount !== undefined) {
+          // Every non-search load returns the folder size, so its pill stays
+          // right after a thread is closed or moved from inside the folder.
+          setCounts((c) => ({ ...c, feature_requests: featureRequestCount }));
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -356,7 +364,9 @@ export function SupportInbox({
               >
                 {searching
                   ? `No threads match "${search.trim()}"`
-                  : "Nothing here. Inbox zero."}
+                  : filter === "feature_requests"
+                    ? "No feature requests yet. Tagged threads land here 24h after the customer's last message."
+                    : "Nothing here. Inbox zero."}
               </div>
             ) : (
               <div

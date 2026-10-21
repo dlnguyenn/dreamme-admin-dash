@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  inFeatureRequestFolder,
   isFeatureRequest,
   needsAttention,
   shouldAutoClose,
@@ -127,5 +128,44 @@ describe("isFeatureRequest", () => {
         triage: triage({ is_spam: true, feature_request: true }),
       }),
     ).toBe(false);
+  });
+});
+
+describe("inFeatureRequestFolder", () => {
+  const fr = (fields: Partial<SupportThreadRow> = {}) => ({
+    status: "drafts_ready" as SupportThreadRow["status"],
+    source: "feedback" as const,
+    subject: "In-app feedback: feature_request",
+    triage: null,
+    last_inbound_at: hoursAgo(25),
+    created_at: hoursAgo(25),
+    ...fields,
+  });
+
+  it("moves a feature request once the customer's last message is over 24h old", () => {
+    expect(inFeatureRequestFolder(fr(), NOW)).toBe(true);
+    expect(inFeatureRequestFolder(fr({ last_inbound_at: hoursAgo(23) }), NOW)).toBe(false);
+  });
+
+  it("brings it back to the inbox when the customer writes again", () => {
+    expect(inFeatureRequestFolder(fr({ status: "new", last_inbound_at: hoursAgo(1) }), NOW)).toBe(
+      false,
+    );
+  });
+
+  it("keeps closed and waiting feature requests in the folder, but not ignored ones", () => {
+    expect(inFeatureRequestFolder(fr({ status: "closed" }), NOW)).toBe(true);
+    expect(inFeatureRequestFolder(fr({ status: "waiting_user" }), NOW)).toBe(true);
+    expect(inFeatureRequestFolder(fr({ status: "ignored" }), NOW)).toBe(false);
+  });
+
+  it("leaves threads without the tag alone", () => {
+    expect(inFeatureRequestFolder(fr({ subject: "In-app feedback: bug" }), NOW)).toBe(false);
+  });
+
+  it("falls back to created_at when last_inbound_at is missing", () => {
+    expect(inFeatureRequestFolder(fr({ last_inbound_at: null, created_at: hoursAgo(30) }), NOW)).toBe(
+      true,
+    );
   });
 });

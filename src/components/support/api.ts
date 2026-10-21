@@ -3,6 +3,7 @@
  * same-origin calls behind the password gate).
  */
 import type {
+  InboxView,
   SubscriptionInfo,
   SupportDraftRow,
   SupportThreadRow,
@@ -21,13 +22,15 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export async function fetchThreads(
-  status?: ThreadStatus | "open",
+  status?: InboxView,
   q?: string,
 ): Promise<{
   threads: SupportThreadRow[];
   unreadCount: number;
   /** open threads whose customer has waited >24h for a reply */
   needsAttentionCount: number;
+  /** size of the Feature requests folder (absent on search results) */
+  featureRequestCount?: number;
   /** set when ingestion has stalled — see lib/support/health.ts */
   health?: string | null;
 }> {
