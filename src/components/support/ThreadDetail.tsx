@@ -11,6 +11,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { hueFromName, InitialsAvatar } from "../porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
 import {
+  inFeatureRequestFolder,
   isFeatureRequest,
   needsAttention,
   type SupportDraftRow,
@@ -280,6 +281,39 @@ export function ThreadDetail({
             <Button size="sm" variant="ghost" onClick={() => snooze(7)} disabled={busy}>
               7d
             </Button>
+            {/* Ignored threads never enter the folder, so no button there.
+                Back to inbox only undoes a manual move: a thread the 24h
+                rule foldered would stay put after clearing the stamp. */}
+            {thread.status !== "ignored" &&
+              (!inFeatureRequestFolder(thread) ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    doPatch(
+                      { feature_request_moved_at: new Date().toISOString() },
+                      "Moved to Feature requests",
+                    )
+                  }
+                  disabled={busy}
+                >
+                  Move to Feature requests
+                </Button>
+              ) : (
+                thread.feature_request_moved_at &&
+                !inFeatureRequestFolder({ ...thread, feature_request_moved_at: null }) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      doPatch({ feature_request_moved_at: null }, "Moved back to the inbox")
+                    }
+                    disabled={busy}
+                  >
+                    Back to inbox
+                  </Button>
+                )
+              ))}
           </div>
         </div>
 

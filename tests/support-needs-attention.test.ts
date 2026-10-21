@@ -168,4 +168,40 @@ describe("inFeatureRequestFolder", () => {
       true,
     );
   });
+
+  describe("manual move", () => {
+    const email = (fields: Partial<SupportThreadRow> = {}) =>
+      fr({ source: "email", subject: "Idea", last_inbound_at: hoursAgo(2), ...fields });
+
+    it("moves an untagged, fresh thread straight away and tags it", () => {
+      expect(inFeatureRequestFolder(email(), NOW)).toBe(false);
+      const moved = email({ feature_request_moved_at: hoursAgo(1) });
+      expect(inFeatureRequestFolder(moved, NOW)).toBe(true);
+      expect(isFeatureRequest(moved)).toBe(true);
+    });
+
+    it("returns to the inbox when the customer writes after the move", () => {
+      expect(
+        inFeatureRequestFolder(
+          email({ feature_request_moved_at: hoursAgo(3), last_inbound_at: hoursAgo(1) }),
+          NOW,
+        ),
+      ).toBe(false);
+    });
+
+    it("then refolders after 24h like any tagged thread", () => {
+      expect(
+        inFeatureRequestFolder(
+          email({ feature_request_moved_at: hoursAgo(40), last_inbound_at: hoursAgo(30) }),
+          NOW,
+        ),
+      ).toBe(true);
+    });
+
+    it("still never pulls a thread out of Ignored", () => {
+      expect(
+        inFeatureRequestFolder(email({ status: "ignored", feature_request_moved_at: hoursAgo(1) }), NOW),
+      ).toBe(false);
+    });
+  });
 });

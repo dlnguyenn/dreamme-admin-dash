@@ -26,6 +26,8 @@ const Patch = z
       .optional(),
     snoozed_until: z.string().datetime({ offset: true }).nullable().optional(),
     unread: z.boolean().optional(),
+    // "Move to Feature requests" stamps now; "Back to inbox" sends null.
+    feature_request_moved_at: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "empty patch" });
 

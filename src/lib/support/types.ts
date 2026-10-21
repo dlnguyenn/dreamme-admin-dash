@@ -35,6 +35,8 @@ export interface SupportThreadRow {
   user_context: UserContext | null;
   triage: TriageResult | null;
   feedback_id: string | null;
+  /** set by "Move to Feature requests"; see inFeatureRequestFolder */
+  feature_request_moved_at?: string | null;
   last_message_at: string;
   last_inbound_at: string | null;
   created_at: string;
@@ -241,11 +243,14 @@ export function shouldAutoClose(
 /**
  * Whether to show the FEATURE REQUEST tag. Triage sets the flag; in-app
  * feedback filed under the app's own "feature_request" category counts even
- * when it was triaged before the flag existed.
+ * when it was triaged before the flag existed. A thread Dan moved to the
+ * folder by hand always counts, whatever triage said.
  */
 export function isFeatureRequest(
-  t: Pick<SupportThreadRow, "source" | "subject" | "triage">,
+  t: Pick<SupportThreadRow, "source" | "subject" | "triage"> &
+    Partial<Pick<SupportThreadRow, "feature_request_moved_at">>,
 ): boolean {
+  if (t.feature_request_moved_at) return true;
   if (t.triage?.is_spam) return false;
   if (t.triage?.feature_request === true) return true;
   return t.source === "feedback" && /feature_request/i.test(t.subject ?? "");
@@ -257,20 +262,28 @@ export const FEATURE_REQUEST_FOLDER_AFTER_MS = 24 * 60 * 60 * 1000;
 /**
  * True when a thread belongs in the Feature requests folder instead of the
  * main inbox: tagged FEATURE REQUEST and the customer's latest message is
- * more than 24h old. Derived, never stored, so there is no cron to run and
- * a customer reply (which bumps last_inbound_at) brings the thread back to
- * the inbox for another day. Ignored threads stay in Ignored.
+ * more than 24h old, or moved there by hand since the customer last wrote.
+ * Derived, so there is no cron to run, and a customer reply (which bumps
+ * last_inbound_at past both) brings the thread back to the inbox for
+ * another day. Ignored threads stay in Ignored.
  */
 export function inFeatureRequestFolder(
   t: Pick<
     SupportThreadRow,
     "status" | "source" | "subject" | "triage" | "last_inbound_at" | "created_at"
-  >,
+  > &
+    Partial<Pick<SupportThreadRow, "feature_request_moved_at">>,
   now: number = Date.now(),
 ): boolean {
   if (t.status === "ignored") return false;
   if (!isFeatureRequest(t)) return false;
   const since = new Date(t.last_inbound_at ?? t.created_at).getTime();
+  if (
+    t.feature_request_moved_at &&
+    new Date(t.feature_request_moved_at).getTime() >= since
+  ) {
+    return true;
+  }
   return now - since > FEATURE_REQUEST_FOLDER_AFTER_MS;
 }
 

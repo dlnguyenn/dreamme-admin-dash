@@ -32,7 +32,7 @@ const STATUSES = new Set(["new", "drafts_ready", "waiting_user", "closed", "igno
 
 // Columns inFeatureRequestFolder reads, for the badge queries that would
 // otherwise select only ids.
-const FOLDER_COLS = "source,subject,triage,last_inbound_at,created_at";
+const FOLDER_COLS = "source,subject,triage,last_inbound_at,created_at,feature_request_moved_at";
 
 export async function GET(req: Request) {
   if (!checkIngestAuth(req)) {
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
     // any view. The or=() only narrows to possible feature requests;
     // inFeatureRequestFolder applies the exact tag rule and the 24h cutoff.
     const candidates = await spGet<SupportThreadRow[]>(
-      `support_threads?status=neq.ignored&or=(triage->>feature_request.eq.true,subject.ilike.*feature_request*)&order=last_message_at.desc&limit=500`,
+      `support_threads?status=neq.ignored&or=(feature_request_moved_at.not.is.null,triage->>feature_request.eq.true,subject.ilike.*feature_request*)&order=last_message_at.desc&limit=500`,
     );
     const folder = candidates.filter((t) => inFeatureRequestFolder(t, now));
 

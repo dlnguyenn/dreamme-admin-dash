@@ -60,6 +60,7 @@ export async function patchThread(
     status?: ThreadStatus;
     snoozed_until?: string | null;
     unread?: boolean;
+    feature_request_moved_at?: string | null;
   },
 ): Promise<{ thread: SupportThreadRow }> {
   return json(
