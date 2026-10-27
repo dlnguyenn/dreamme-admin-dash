@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
+import { notifyFeatureRequestCreated } from "@/lib/feature-request-notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +73,21 @@ export async function POST(req: Request) {
   }
   const data = await res.json();
   const saved = Array.isArray(data) ? data[0] : data;
-  return NextResponse.json({ ok: true, id: saved?.id, row: saved });
+  // Tell the dev; a failed email never fails the insert.
+  const notifyError = saved?.id
+    ? await notifyFeatureRequestCreated({
+        id: saved.id,
+        title: row.title,
+        details: saved.details ?? null,
+        origin: new URL(req.url).origin,
+      })
+    : null;
+  return NextResponse.json({
+    ok: true,
+    id: saved?.id,
+    row: saved,
+    ...(notifyError ? { notifyError } : {}),
+  });
 }
 
 export async function GET() {

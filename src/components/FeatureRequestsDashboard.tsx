@@ -72,6 +72,33 @@ export function FeatureRequestsDashboard() {
     refresh();
   }, [refresh]);
 
+  // ---- deep links ---------------------------------------------------------
+  // A ticket is addressable as ?tab=requests&request=<id> (the new-request
+  // email links here). Opened once, after the first load brings the row in.
+  const deepLinked = React.useRef(false);
+  React.useEffect(() => {
+    if (loading || deepLinked.current) return;
+    deepLinked.current = true;
+    const id = new URLSearchParams(window.location.search).get("request");
+    const row = id ? rows.find((r) => r.id === id) : undefined;
+    if (row) setSelected(row);
+  }, [loading, rows]);
+
+  // Keep the URL in step with the open ticket so it can be copied and shared.
+  React.useEffect(() => {
+    if (loading) return;
+    try {
+      const url = new URL(window.location.href);
+      if (selected) {
+        url.searchParams.set("tab", "requests");
+        url.searchParams.set("request", selected.id);
+      } else {
+        url.searchParams.delete("request");
+      }
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
+  }, [selected, loading]);
+
   const counts = React.useMemo(() => {
     const c: Record<string, number> = { all: rows.length };
     for (const r of rows) c[r.status] = (c[r.status] ?? 0) + 1;

@@ -62,6 +62,7 @@ import {
   safeGenerateBrief,
   ticketDetails,
 } from "@/lib/support/ticket-brief";
+import { notifyFeatureRequestCreated } from "@/lib/feature-request-notify";
 import { messageText } from "@/lib/support/email-text";
 import type { SupportThreadRow } from "@/lib/support/types";
 
@@ -330,22 +331,30 @@ export async function POST(
         // the operator would retry, and the retry would create a SECOND
         // Trello card for a thread that already has one.
         try {
-          const fr = await createFeatureRequest(
-            buildFeatureRequest({
-              ...ticket,
-              cardUrl: created.shortUrl,
-              details: ticketDetails({
-                thread,
-                messages,
-                quote,
-                brief,
-                threadUrl: ticket.threadUrl,
-                trelloUrl: created.shortUrl,
-                receivedAt: ticket.receivedAt,
-              }),
+          const insert = buildFeatureRequest({
+            ...ticket,
+            cardUrl: created.shortUrl,
+            details: ticketDetails({
+              thread,
+              messages,
+              quote,
+              brief,
+              threadUrl: ticket.threadUrl,
+              trelloUrl: created.shortUrl,
+              receivedAt: ticket.receivedAt,
             }),
-          );
+          });
+          const fr = await createFeatureRequest(insert);
           response.featureRequestId = fr?.id ?? null;
+          if (fr?.id) {
+            const notifyError = await notifyFeatureRequestCreated({
+              id: fr.id,
+              title: insert.title,
+              details: insert.details ?? null,
+              origin,
+            });
+            if (notifyError) response.notifyError = notifyError;
+          }
         } catch (e) {
           response.featureRequestError =
             e instanceof Error ? e.message : String(e);

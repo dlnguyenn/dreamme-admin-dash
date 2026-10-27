@@ -12,6 +12,11 @@ import {
   trelloUrlFromText,
 } from "@/lib/support/ticket-brief";
 import { buildFeatureRequest, buildTrelloCard } from "@/lib/support/trello-card";
+import {
+  buildFeatureRequestEmail,
+  featureRequestUrl,
+  notifyRecipients,
+} from "@/lib/feature-request-notify";
 import type {
   SubscriptionInfo,
   SupportMessageRow,
@@ -292,5 +297,104 @@ describe("ticket content with a brief", () => {
 
   it("renders a markdown brief with kind, area and effort up top", () => {
     expect(briefMarkdown(brief!).split("\n")[0]).toBe("**Bug** · Community · small effort");
+  });
+});
+
+describe("new feature request email", () => {
+  const brief = parseBrief(
+    {
+      kind: "content",
+      area: "Activity",
+      ask: "Add paddle boarding to the activity list.",
+      why: "She can't log it today.",
+      needs: ["Add the activity type"],
+      open_questions: ["Which MET value?"],
+      effort: "small",
+    },
+    "2026-10-27T00:00:00Z",
+  );
+  const details = ticketDetails({
+    thread: thread(),
+    messages: [],
+    quote: "Can paddle boarding be added?",
+    brief,
+    threadUrl: null,
+    trelloUrl: null,
+    receivedAt: null,
+  });
+
+  it("links straight to the ticket in the dash", () => {
+    expect(featureRequestUrl("https://dash.example", "abc-123")).toBe(
+      "https://dash.example/?tab=requests&request=abc-123",
+    );
+    const { bodyText } = buildFeatureRequestEmail({
+      id: "abc-123",
+      title: "Paddle boarding",
+      details,
+      origin: "https://dash.example",
+    });
+    expect(bodyText).toContain("Open the ticket: https://dash.example/?tab=requests&request=abc-123");
+  });
+
+  it("carries the brief so it reads without opening the dash", () => {
+    const { subject, bodyText } = buildFeatureRequestEmail({
+      id: "x",
+      title: "Paddle boarding",
+      details,
+      origin: "https://d",
+    });
+    expect(subject).toBe("New feature request: Add paddle boarding to the activity list.");
+    expect(bodyText).toContain("Content · Activity · small effort");
+    expect(bodyText.split("\n")[0]).toBe("Add paddle boarding to the activity list.");
+    expect(bodyText).not.toContain("Paddle boarding");
+    expect(bodyText).toContain("- Add the activity type");
+    expect(bodyText).toContain("- Which MET value?");
+  });
+
+  it("leaves out anything that identifies the customer", () => {
+    const { bodyText } = buildFeatureRequestEmail({
+      id: "x",
+      title: "Paddle boarding",
+      details,
+      origin: "https://d",
+    });
+    expect(bodyText).not.toContain("t@privaterelay.appleid.com");
+    expect(bodyText).not.toContain("Tiffany");
+    expect(bodyText).not.toContain("Paid monthly");
+    expect(bodyText).not.toContain("Can paddle boarding be added?");
+  });
+
+  it("says bug report for bugs, and still sends a link with no brief", () => {
+    const bug = buildFeatureRequestEmail({
+      id: "x",
+      title: "Filter blocks words",
+      details: { ...details, brief: { ...brief!, kind: "bug" } },
+      origin: "https://d",
+    });
+    expect(bug.subject).toBe("New bug report: Add paddle boarding to the activity list.");
+    const bare = buildFeatureRequestEmail({ id: "y", title: "Dark mode", details: null, origin: "https://d" });
+    expect(bare.subject).toBe("New feature request: Dark mode");
+    expect(bare.bodyText).toContain("https://d/?tab=requests&request=y");
+  });
+
+  it("sends to the dev by default, and the env var overrides or turns it off", () => {
+    expect(notifyRecipients(undefined)).toEqual(["dvnguyennn@gmail.com"]);
+    expect(notifyRecipients("a@x.com, b@y.com")).toEqual(["a@x.com", "b@y.com"]);
+    expect(notifyRecipients("")).toEqual([]);
+  });
+});
+
+describe("new feature request email headline", () => {
+  it("never puts an inbox title (customer name + plan) in the subject when a brief exists", () => {
+    const brief = parseBrief({ ask: "Add vibration plate to activities." }, "2026-10-27T00:00:00Z");
+    const { subject, bodyText } = buildFeatureRequestEmail({
+      id: "x",
+      title: "Jamie (about_to_start, paid monthly) requests two new activities",
+      details: { brief, requester: null, quote: null, screenshots: [], source: "email", receivedAt: null, threadUrl: null, trelloUrl: null },
+      origin: "https://d",
+    });
+    expect(subject).not.toContain("Jamie");
+    expect(bodyText).not.toContain("Jamie");
+    expect(bodyText).not.toContain("paid monthly");
   });
 });

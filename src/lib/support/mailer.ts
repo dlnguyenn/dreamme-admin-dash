@@ -94,6 +94,31 @@ export async function sendOperationalAlert(params: {
   });
 }
 
+/**
+ * Plain-text internal notice to teammates (e.g. new feature request → the
+ * dev). Sent from the dashboard identity, never threaded with a customer.
+ */
+export async function sendTeamNotice(params: {
+  to: string[];
+  subject: string;
+  bodyText: string;
+}): Promise<void> {
+  if (!mailerConfigured()) throw new Error("DREAMME_SMTP_PASS not set");
+  if (params.to.length === 0) return;
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: { name: "DreamMe Dashboard", address: FROM_EMAIL },
+    to: params.to,
+    subject: params.subject,
+    text: params.bodyText,
+  });
+}
+
 /** Prefix a subject with Re: unless it already has one (case-insensitive). */
 export function replySubject(original: string | null): string {
   const base = (original ?? "").trim() || "your message to DreamMe";
