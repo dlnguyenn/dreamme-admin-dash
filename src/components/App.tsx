@@ -25,6 +25,7 @@ import { StepDownTest } from "./StepDownTest";
 import { StoreReviews } from "./StoreReviews";
 import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
+import { Roadmap } from "./Roadmap";
 import { Resources } from "./Resources";
 import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
@@ -336,6 +337,8 @@ export function App() {
     screen = role === "admin" ? <StepDownTest /> : <ComingSoon item={currentItem} />;
   } else if (current === "creatives") {
     screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
+  } else if (current === "roadmap") {
+    screen = role === "admin" ? <Roadmap /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "resources") {

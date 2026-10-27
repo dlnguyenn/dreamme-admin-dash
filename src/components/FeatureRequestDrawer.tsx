@@ -4,6 +4,11 @@ import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, Chip, useToast } from "./ui";
 import { formatDate } from "@/lib/format";
+import {
+  STAGE_LABELS,
+  requestStatusForStage,
+  type RoadmapItem,
+} from "@/lib/roadmap";
 import type {
   FeatureRequest,
   FeatureRequestDetails,
@@ -340,6 +345,11 @@ export function FeatureRequestDrawer({
                 statusDisabled={busy}
                 briefing={briefing}
                 onRegenerate={regenerate}
+                onPlanned={(next) => {
+                  // The roadmap API already moved the ticket's status.
+                  setStatus(next);
+                  onSaved({ ...request, status: next }, { close: false });
+                }}
               />
             )
           )}
@@ -438,6 +448,7 @@ function TicketView({
   statusDisabled,
   briefing,
   onRegenerate,
+  onPlanned,
 }: {
   request: FeatureRequest;
   status: FeatureRequestStatus;
@@ -445,6 +456,7 @@ function TicketView({
   statusDisabled: boolean;
   briefing: boolean;
   onRegenerate: () => void;
+  onPlanned: (status: FeatureRequestStatus) => void;
 }) {
   const d: FeatureRequestDetails | null = request.details;
   const brief = d?.brief ?? null;
@@ -597,6 +609,10 @@ function TicketView({
         </Section>
       )}
 
+      <Section label="Roadmap">
+        <RoadmapLink request={request} onPlanned={onPlanned} />
+      </Section>
+
       <Section label="Requested by">
         <RequesterCard details={d} fallbackEmail={request.submitterEmail} />
       </Section>
@@ -612,6 +628,86 @@ function TicketView({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Shows the roadmap item this ticket became, or a button to put it on the
+ * roadmap (as Next). The roadmap API moves the ticket to "planned".
+ */
+function RoadmapLink({
+  request,
+  onPlanned,
+}: {
+  request: FeatureRequest;
+  onPlanned: (status: FeatureRequestStatus) => void;
+}) {
+  const toast = useToast();
+  const [items, setItems] = React.useState<RoadmapItem[] | null>(null);
+  const [adding, setAdding] = React.useState(false);
+
+  React.useEffect(() => {
+    let live = true;
+    setItems(null);
+    fetch(`/api/roadmap?feature_request_id=${encodeURIComponent(request.id)}`)
+      .then((r) => r.json())
+      .then((j) => live && setItems(j.ok ? j.items : []))
+      .catch(() => live && setItems([]));
+    return () => {
+      live = false;
+    };
+  }, [request.id]);
+
+  const add = async () => {
+    const brief = request.details?.brief;
+    setAdding(true);
+    try {
+      const res = await fetch("/api/roadmap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: (brief?.ask ?? request.title).slice(0, 200),
+          notes: brief?.needs.length
+            ? `What it needs:\n${brief.needs.map((n) => `- ${n}`).join("\n")}`
+            : "",
+          area: request.epic ?? brief?.area ?? null,
+          stage: "next",
+          feature_request_id: request.id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setItems([json.item]);
+      onPlanned(requestStatusForStage("next"));
+      toast("Added to the roadmap as Next");
+    } catch (e) {
+      toast(`Couldn't add: ${(e as Error).message}`);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  if (items === null) {
+    return <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Checking…</div>;
+  }
+  if (items.length > 0) {
+    const it = items[0];
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Chip tone={it.stage === "done" ? "success" : "ink"}>{STAGE_LABELS[it.stage]}</Chip>
+        <span style={{ fontSize: 13 }}>{it.title}</span>
+        <LinkButton href="/?tab=roadmap" newTab={false}>
+          Open roadmap
+        </LinkButton>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Button size="sm" variant="secondary" icon={<Icons.Plus />} onClick={add} disabled={adding}>
+        {adding ? "Adding…" : "Add to roadmap"}
+      </Button>
+    </div>
   );
 }
 

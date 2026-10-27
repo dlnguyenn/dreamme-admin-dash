@@ -21,6 +21,7 @@ export type DashId =
   | "marketing"
   | "stepdown"
   | "creatives"
+  | "roadmap"
   | "requests"
   | "synthid-research"
   | "image-studio"
@@ -62,7 +63,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "marketing", label: "Marketing Efficiency", icon: "Trend", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
   { id: "stepdown", label: "Step-down Test", icon: "Flask", status: "live", desc: "Is Meta driving trials? iOS spend cut test", adminOnly: true },
   { id: "creatives", label: "Creatives", icon: "Image", status: "live", desc: "Meta ad performance + qualified CPA", adminOnly: true },
-  { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true, group: "Product" },
+  { id: "roadmap", label: "Roadmap", icon: "Grid", status: "live", desc: "What we're building now, next and later", adminOnly: true, group: "Product" },
+  { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true },
   { id: "synthid-research", label: "SynthID Research", icon: "Flask", status: "live", desc: "Internal: study Gemini watermark robustness", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Aperture", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "accessory-studio", label: "Accessory Studio", icon: "Star", status: "live", desc: "New fish accessories as lootbox-style SVGs", adminOnly: true },

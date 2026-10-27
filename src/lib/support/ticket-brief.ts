@@ -10,6 +10,7 @@
  * while a failed filing loses the request.
  */
 import { callClaude, firstJson, anthropicConfigured } from "@/lib/anthropic";
+import { APP_AREAS } from "@/lib/app-areas";
 import type {
   FeatureRequestBrief,
   FeatureRequestDetails,
@@ -25,23 +26,7 @@ const KINDS: FeatureRequestBrief["kind"][] = ["feature", "improvement", "bug", "
 const EFFORTS: FeatureRequestBrief["effort"][] = ["small", "medium", "large"];
 
 /** Areas the brief picks from, so the epic filter stays a short list. */
-export const APP_AREAS = [
-  "Medication & shots",
-  "Food logging",
-  "Nutrition targets",
-  "Weight & body",
-  "Activity",
-  "Health integrations",
-  "AI chat",
-  "Community",
-  "Fish companion",
-  "Widgets",
-  "Reports & sharing",
-  "Onboarding",
-  "Subscription & billing",
-  "Settings & account",
-  "Other",
-];
+export { APP_AREAS };
 
 // ---------------------------------------------------------------------------
 // Deterministic parts
