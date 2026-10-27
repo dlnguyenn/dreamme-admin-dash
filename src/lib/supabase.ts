@@ -304,6 +304,7 @@ function mapFeatureRequest(row: FeatureRequestRow): FeatureRequest {
     status: row.status,
     epic: row.epic,
     submitterEmail: row.submitter_email,
+    details: row.details ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

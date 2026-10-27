@@ -423,6 +423,54 @@ export type FeatureRequestStatus =
   | "shipped"
   | "declined";
 
+/**
+ * The AI-written "what does this need" brief on a ticket. Written once when
+ * the ticket is filed (or on Regenerate), never edited by hand: the
+ * editable fields stay title/description/status/epic.
+ */
+export interface FeatureRequestBrief {
+  kind: "feature" | "improvement" | "bug" | "content";
+  /** app area, e.g. "Food logging"; doubles as the epic suggestion */
+  area: string;
+  /** one sentence: what the user is asking for */
+  ask: string;
+  /** the underlying problem / why they want it */
+  why: string;
+  /** concrete pieces of work it would take */
+  needs: string[];
+  /** things to settle before building */
+  openQuestions: string[];
+  effort: "small" | "medium" | "large";
+  model: string;
+  generatedAt: string;
+}
+
+/** Who asked, frozen at filing time so the ticket reads the same later. */
+export interface FeatureRequestRequester {
+  name: string | null;
+  email: string | null;
+  /** e.g. "Paid monthly", "Trial (yearly)", "No subscription" */
+  plan: string | null;
+  store: string | null;
+  active: boolean | null;
+  totalPaidUsd: number | null;
+  memberSince: string | null;
+  journeyStage: string | null;
+}
+
+export interface FeatureRequestDetails {
+  brief: FeatureRequestBrief | null;
+  requester: FeatureRequestRequester | null;
+  /** the user's own words, quoted reply chain stripped */
+  quote: string | null;
+  /** in-app feedback screenshots */
+  screenshots: string[];
+  source: "email" | "feedback" | "manual" | null;
+  receivedAt: string | null;
+  threadUrl: string | null;
+  trelloUrl: string | null;
+}
+
 export interface FeatureRequestRow {
   id: string;
   title: string;
@@ -430,6 +478,7 @@ export interface FeatureRequestRow {
   status: FeatureRequestStatus;
   epic: string | null;
   submitter_email: string | null;
+  details: FeatureRequestDetails | null;
   created_at: string;
   updated_at: string;
 }
@@ -441,6 +490,7 @@ export interface FeatureRequest {
   status: FeatureRequestStatus;
   epic: string | null;
   submitterEmail: string | null;
+  details: FeatureRequestDetails | null;
   createdAt: string;
   updatedAt: string;
 }

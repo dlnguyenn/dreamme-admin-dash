@@ -10,8 +10,10 @@
  * (not a paraphrase — the phrasing is the feature request), and a link back
  * to the conversation.
  */
+import type { FeatureRequestBrief, FeatureRequestDetails } from "@/lib/types";
 import type { SupportThreadRow } from "./types";
 import { splitQuotedText } from "./email-text";
+import { briefMarkdown } from "./ticket-brief";
 
 /** Trello accepts 16k, but a card that long is unreadable on a board. */
 const MAX_BODY = 4000;
@@ -25,6 +27,8 @@ export interface TrelloCardInput {
   threadUrl: string;
   /** when the request came in; passed in to keep this pure */
   receivedAt?: string | null;
+  /** AI brief, when it was generated in time */
+  brief?: FeatureRequestBrief | null;
 }
 
 export interface TrelloCardContent {
@@ -90,6 +94,8 @@ export function buildTrelloCard(input: TrelloCardInput): TrelloCardContent {
 
   const parts = [`**From:** ${senderLabel(thread)}`, meta.join(" · ")];
 
+  if (input.brief) parts.push(briefMarkdown(input.brief), "**In their words:**");
+
   if (quotedBody) {
     // Blockquote every line so multi-paragraph asks stay visually theirs.
     parts.push(
@@ -110,6 +116,8 @@ export interface FeatureRequestInsert {
   description: string;
   submitter_email: string | null;
   status: "new";
+  epic?: string | null;
+  details?: FeatureRequestDetails | null;
 }
 
 /**
@@ -118,7 +126,10 @@ export interface FeatureRequestInsert {
  * field the tab actually filters and displays on.
  */
 export function buildFeatureRequest(
-  input: TrelloCardInput & { cardUrl?: string | null },
+  input: TrelloCardInput & {
+    cardUrl?: string | null;
+    details?: FeatureRequestDetails | null;
+  },
 ): FeatureRequestInsert {
   const { thread, inboundBody, threadUrl } = input;
   const { main } = splitQuotedText(inboundBody ?? "");
@@ -135,5 +146,8 @@ export function buildFeatureRequest(
     description: parts.join("\n\n"),
     submitter_email: thread.counterpart_email?.trim() || null,
     status: "new",
+    // The brief's area seeds the epic so the tab's epic filter fills itself.
+    epic: input.brief?.area ?? null,
+    details: input.details ?? null,
   };
 }

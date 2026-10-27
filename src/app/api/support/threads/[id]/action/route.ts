@@ -54,7 +54,14 @@ import { createCard, getListId, trelloConfigured } from "@/lib/vendors/trello";
 import {
   buildFeatureRequest,
   buildTrelloCard,
+  cardTitle,
 } from "@/lib/support/trello-card";
+import {
+  quoteFrom,
+  requesterSnapshot,
+  safeGenerateBrief,
+  ticketDetails,
+} from "@/lib/support/ticket-brief";
 import { messageText } from "@/lib/support/email-text";
 import type { SupportThreadRow } from "@/lib/support/types";
 
@@ -287,13 +294,23 @@ export async function POST(
         const messages = await getThreadMessages(id);
         const firstInbound = messages.find((m) => m.direction === "inbound");
         const origin = new URL(req.url).origin;
+        const inboundBody = firstInbound
+          ? messageText(firstInbound.body_text, firstInbound.body_html)
+          : null;
+        const quote = quoteFrom(inboundBody);
+        // Written before the card so the card carries it too. A failure
+        // files the ticket without one (Regenerate on the tab fixes it).
+        const { brief, error: briefError } = await safeGenerateBrief({
+          title: cardTitle(thread),
+          quote,
+          requester: requesterSnapshot(thread),
+        });
         const ticket = {
           thread,
-          inboundBody: firstInbound
-            ? messageText(firstInbound.body_text, firstInbound.body_html)
-            : null,
+          inboundBody,
           threadUrl: `${origin}/?tab=support&thread=${encodeURIComponent(id)}`,
           receivedAt: firstInbound?.sent_at ?? thread.last_inbound_at,
+          brief,
         };
 
         const created = await createCard({
@@ -304,6 +321,7 @@ export async function POST(
           cardId: created.id,
           cardUrl: created.shortUrl,
           name: created.name,
+          ...(briefError ? { briefError } : {}),
         };
 
         // Same ticket into the dash's own Feature Requests tab. It runs
@@ -313,7 +331,19 @@ export async function POST(
         // Trello card for a thread that already has one.
         try {
           const fr = await createFeatureRequest(
-            buildFeatureRequest({ ...ticket, cardUrl: created.shortUrl }),
+            buildFeatureRequest({
+              ...ticket,
+              cardUrl: created.shortUrl,
+              details: ticketDetails({
+                thread,
+                messages,
+                quote,
+                brief,
+                threadUrl: ticket.threadUrl,
+                trelloUrl: created.shortUrl,
+                receivedAt: ticket.receivedAt,
+              }),
+            }),
           );
           response.featureRequestId = fr?.id ?? null;
         } catch (e) {

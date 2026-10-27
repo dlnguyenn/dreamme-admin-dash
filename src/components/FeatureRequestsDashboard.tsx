@@ -26,6 +26,14 @@ const STATUS_LABELS: Record<FeatureRequestStatus, string> = {
   declined: "Declined",
 };
 
+const oneLine: React.CSSProperties = {
+  display: "block",
+  minWidth: 0,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
 const STATUS_TONES: Record<
   FeatureRequestStatus,
   "neutral" | "ink" | "accent" | "success"
@@ -84,7 +92,7 @@ export function FeatureRequestsDashboard() {
     });
   }, [rows, filter, epicFilter]);
 
-  const onSaved = (saved: FeatureRequest) => {
+  const onSaved = (saved: FeatureRequest, opts?: { close?: boolean }) => {
     setRows((prev) => {
       const idx = prev.findIndex((r) => r.id === saved.id);
       if (idx === -1) return [saved, ...prev];
@@ -92,6 +100,10 @@ export function FeatureRequestsDashboard() {
       next[idx] = saved;
       return next;
     });
+    if (opts?.close === false) {
+      setSelected(saved);
+      return;
+    }
     setSelected(null);
     setCreating(false);
   };
@@ -106,7 +118,7 @@ export function FeatureRequestsDashboard() {
       <PageHeader
         eyebrow="Admin · Triage"
         title={<em>Feature Requests</em>}
-        subtitle="User-submitted product asks from the DreamMe app. Edit status, epic, and details inline."
+        subtitle="User-submitted product asks from the DreamMe app. Open one for the brief: what they want, what it needs, and who asked."
         tint="color-mix(in oklab, var(--p-emma) 45%, transparent)"
         actions={
           <Button
@@ -319,31 +331,36 @@ export function FeatureRequestsDashboard() {
               >
                 {formatRelative(r.createdAt)}
               </div>
-              <div
-                style={{
-                  fontWeight: 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  paddingRight: 12,
-                }}
-              >
-                {r.title}
+              <div style={{ minWidth: 0, paddingRight: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  {r.details?.brief?.kind === "bug" && (
+                    <Chip tone="accent">Bug</Chip>
+                  )}
+                  <span style={{ ...oneLine, fontWeight: 500 }}>{r.title}</span>
+                </div>
+                {r.details?.brief?.ask && (
+                  <div style={{ ...oneLine, fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>
+                    {r.details.brief.ask}
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
                 {r.epic ?? "—"}
+                {r.details?.brief?.effort && (
+                  <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3 }}>
+                    {r.details.brief.effort} effort
+                  </div>
+                )}
               </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--ink-3)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  paddingRight: 12,
-                }}
-              >
-                {r.submitterEmail ?? "—"}
+              <div style={{ minWidth: 0, paddingRight: 12 }}>
+                <div style={{ ...oneLine, fontSize: 12, color: "var(--ink-2)" }}>
+                  {r.details?.requester?.name ?? r.submitterEmail ?? "—"}
+                </div>
+                {r.details?.requester?.plan && (
+                  <div style={{ ...oneLine, fontSize: 11, color: "var(--ink-4)", marginTop: 3 }}>
+                    {r.details.requester.plan}
+                  </div>
+                )}
               </div>
               <div>
                 <Chip tone={STATUS_TONES[r.status]}>
