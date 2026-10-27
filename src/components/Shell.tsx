@@ -28,7 +28,8 @@ export type DashId =
   | "backgrounds"
   | "integrations"
   | "clippers"
-  | "support";
+  | "support"
+  | "reviews";
 
 export interface NavItem {
   id: DashId;
@@ -69,6 +70,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "integrations", label: "Integrations", icon: "Grid", status: "live", desc: "Connect Meta (Login with Facebook) for the Ads MCP", adminOnly: true },
   { id: "clippers", label: "Clippers", icon: "Scissors", status: "live", desc: "Rev-share: videos, conversions, payouts", adminOnly: true },
   { id: "support", label: "Support Inbox", icon: "Inbox", status: "live", desc: "help@ email + in-app feedback triage", adminOnly: true, group: "Support" },
+  { id: "reviews", label: "Store Reviews", icon: "Star", status: "live", desc: "App Store + Google Play reviews that need a reply", adminOnly: true },
 ];
 
 export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {

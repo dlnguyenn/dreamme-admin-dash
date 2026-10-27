@@ -22,6 +22,7 @@ import { SpendDashboard } from "./SpendDashboard";
 import { GrowthAI } from "./GrowthAI";
 import { MarketingEfficiency } from "./MarketingEfficiency";
 import { StepDownTest } from "./StepDownTest";
+import { StoreReviews } from "./StoreReviews";
 import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Resources } from "./Resources";
@@ -368,6 +369,8 @@ export function App() {
     screen = role === "admin"
       ? <ClipperAdmin />
       : <ComingSoon item={currentItem} />;
+  } else if (current === "reviews") {
+    screen = role === "admin" ? <StoreReviews isAdmin /> : <ComingSoon item={currentItem} />;
   } else if (current === "support") {
     screen = role === "admin"
       ? <SupportInbox
