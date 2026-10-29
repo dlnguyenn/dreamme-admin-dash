@@ -310,6 +310,6 @@ export interface ThreadDetailPayload {
    * for this customer. Null when RevenueCat isn't configured.
    */
   revenueCatProjectId: string | null;
-  /** Yearly Special code already handed to this thread, if any */
-  offerCode?: OfferCodeRow | null;
+  /** App Store codes already handed to this thread, one per offer at most */
+  offerCodes?: OfferCodeRow[];
 }

@@ -10,7 +10,7 @@ import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   getActionsForUserOrThread,
   getThread,
-  getThreadOfferCode,
+  getThreadOfferCodes,
   getThreadDrafts,
   getThreadMessages,
   patchThread,
@@ -53,13 +53,13 @@ export async function GET(
     if (!thread) {
       return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     }
-    const [messages, drafts, actions, offerCode] = await Promise.all([
+    const [messages, drafts, actions, offerCodes] = await Promise.all([
       getThreadMessages(id),
       getThreadDrafts(id),
       // User-scoped: a repeat emailer must not get refunded twice.
       getActionsForUserOrThread(id, thread.resolved_app_user_id),
       // A missing table (deploy before migration) must not break the thread.
-      getThreadOfferCode(id).catch(() => null),
+      getThreadOfferCodes(id).catch(() => []),
     ]);
     if (thread.unread) {
       await patchThread(id, { unread: false }).catch(() => {});
@@ -73,7 +73,7 @@ export async function GET(
       actions,
       // Lets the sidebar link straight to the customer in RevenueCat.
       revenueCatProjectId: process.env.REVENUECAT_PROJECT_ID ?? null,
-      offerCode,
+      offerCodes,
     });
   } catch (e) {
     return NextResponse.json(

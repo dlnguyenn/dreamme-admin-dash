@@ -1,17 +1,32 @@
 "use client";
 
 /**
- * Support Inbox — "Offer codes" sub tab: the pool of one-time App Store
- * Yearly Special codes ($39.99/yr). Codes are handed out from a thread with
- * one click (see OfferCodeCard in ThreadDetail); this tab is the ledger:
+ * Support Inbox — "Offer codes" sub tab: the pools of one-time App Store
+ * codes, one per offer (Yearly Special $39.99/yr, Pearl Pack of 550
+ * pearls). Codes are handed out from a thread with one click (see
+ * OfferCodeCard in ThreadDetail); this tab is the ledger:
  * who got which code, how many are left, and a manual used/free toggle for
  * codes sent outside the dash.
  */
 import * as React from "react";
 import { Button, useCopy, useToast } from "../ui";
-import { CategoryTag, ErrorBanner, FilterPill, SourceTag, StatStrip } from "../porcelain";
+import {
+  CategoryTag,
+  ErrorBanner,
+  FilterPill,
+  Segmented,
+  SourceTag,
+  StatStrip,
+} from "../porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
-import type { OfferCodeCounts, OfferCodeRow } from "@/lib/support/offer-codes";
+import {
+  PEARL_PACK,
+  PEARL_PACK_PEARLS,
+  YEARLY_SPECIAL,
+  YEARLY_SPECIAL_PRICE,
+  type OfferCodeRow,
+  type OfferName,
+} from "@/lib/support/offer-codes";
 import { fetchOfferCodes, markOfferCode, timeAgo } from "./api";
 
 type CodeFilter = "free" | "used" | "all";
@@ -19,11 +34,32 @@ type CodeFilter = "free" | "used" | "all";
 /** Don't render 480 free rows at once; the next free ones are what matter. */
 const PAGE = 60;
 
+const OFFER_BLURB: Record<OfferName, { stat: string; how: React.ReactNode }> = {
+  [YEARLY_SPECIAL]: {
+    stat: `Yearly Special, ${YEARLY_SPECIAL_PRICE}/yr`,
+    how: (
+      <>
+        Hand one out from a thread with <strong>Insert Yearly Special code</strong> (shown
+        when an iPhone user asks for a discount).
+      </>
+    ),
+  },
+  [PEARL_PACK]: {
+    stat: `${PEARL_PACK_PEARLS} pearls, free`,
+    how: (
+      <>
+        Thank someone for their feedback from a thread with <strong>Add Pearl Pack</strong>,
+        which adds the code to the reply you are writing.
+      </>
+    ),
+  },
+};
+
 export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => void }) {
   const isMobile = useIsMobile();
   const toast = useToast();
-  const [codes, setCodes] = React.useState<OfferCodeRow[]>([]);
-  const [counts, setCounts] = React.useState<OfferCodeCounts | null>(null);
+  const [allCodes, setAllCodes] = React.useState<OfferCodeRow[] | null>(null);
+  const [offer, setOffer] = React.useState<OfferName>(YEARLY_SPECIAL);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<CodeFilter>("used");
@@ -35,8 +71,7 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
     try {
       setError(null);
       const r = await fetchOfferCodes();
-      setCodes(r.codes);
-      setCounts(r.counts);
+      setAllCodes(r.codes);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -47,6 +82,16 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
   React.useEffect(() => {
     load();
   }, [load]);
+
+  const codes = React.useMemo(
+    () => (allCodes ?? []).filter((c) => c.offer_name === offer),
+    [allCodes, offer],
+  );
+  const counts = React.useMemo(() => {
+    if (!allCodes) return null;
+    const used = codes.filter((c) => c.used_at).length;
+    return { total: codes.length, used, free: codes.length - used };
+  }, [allCodes, codes]);
 
   const visible = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -84,6 +129,18 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {error && <ErrorBanner>{error}</ErrorBanner>}
 
+      <div>
+        <Segmented
+          size="sm"
+          options={[YEARLY_SPECIAL, PEARL_PACK].map((o) => ({ value: o, label: o }))}
+          value={offer}
+          onChange={(v) => {
+            setOffer(v as OfferName);
+            setShown(PAGE);
+          }}
+        />
+      </div>
+
       <StatStrip
         minColWidth={isMobile ? 100 : 150}
         stats={[
@@ -93,14 +150,13 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
             note: nextFree ? `next up: #${nextFree.position}` : counts ? "pool is empty" : undefined,
           },
           { label: "Used", value: counts ? counts.used : "…" },
-          { label: "Total", value: counts ? counts.total : "…", note: "Yearly Special, $39.99/yr" },
+          { label: "Total", value: counts ? counts.total : "…", note: OFFER_BLURB[offer].stat },
         ]}
       />
 
       <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-        One-time App Store codes. Hand one out from a thread with{" "}
-        <strong>Insert Yearly Special code</strong> (shown when an iPhone user asks for a
-        discount). A code counts as used the moment it is assigned to a thread.
+        One-time App Store codes. {OFFER_BLURB[offer].how} A code counts as used the moment
+        it is assigned to a thread.
       </div>
 
       <div

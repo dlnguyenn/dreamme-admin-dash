@@ -1,9 +1,11 @@
 /**
- * POST   /api/support/threads/[id]/offer-code — hand this thread the next
- *        free Yearly Special code (idempotent: a thread that already has one
- *        gets the same code back). Returns { code, created }.
- * DELETE /api/support/threads/[id]/offer-code — put the thread's code back
- *        in the pool (for a code claimed by mistake and never sent).
+ * POST   /api/support/threads/[id]/offer-code?offer=<name> — hand this
+ *        thread the next free code of that offer ("Yearly Special" by
+ *        default, or "Pearl Pack"). Idempotent: a thread that already has
+ *        one gets the same code back. Returns { code, created }.
+ * DELETE /api/support/threads/[id]/offer-code?offer=<name> — put the
+ *        thread's code back in the pool (for one claimed by mistake and
+ *        never sent).
  *
  * Claiming marks the code used immediately rather than on send: a code that
  * has been shown on screen can be copied and sent from Gmail, and handing it
@@ -19,6 +21,7 @@ import {
   setOfferCodeUsed,
   supportDbConfigured,
 } from "@/lib/support/db";
+import { isOfferName, YEARLY_SPECIAL, type OfferName } from "@/lib/support/offer-codes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,24 +30,32 @@ function fail(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+function offerFrom(req: Request): OfferName | null {
+  const raw = new URL(req.url).searchParams.get("offer") ?? YEARLY_SPECIAL;
+  return isOfferName(raw) ? raw : null;
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   if (!checkIngestAuth(req)) return fail("unauthorized", 401);
   if (!supportDbConfigured()) return fail("Supabase not configured", 500);
+  const offer = offerFrom(req);
+  if (!offer) return fail("unknown offer", 400);
   const { id } = await params;
   try {
     const thread = await getThread(id);
     if (!thread) return fail("not found", 404);
-    const before = await getThreadOfferCode(id);
+    const before = await getThreadOfferCode(id, offer);
     const code = await claimOfferCode({
       threadId: id,
+      offerName: offer,
       email: thread.counterpart_email,
       name: thread.counterpart_name,
     });
     if (!code) {
-      return fail("No Yearly Special codes left. Import a new batch from App Store Connect.", 409);
+      return fail(`No ${offer} codes left. Import a new batch from App Store Connect.`, 409);
     }
     const created = !before || before.code !== code.code;
     if (created) {
@@ -71,10 +82,12 @@ export async function DELETE(
 ) {
   if (!checkIngestAuth(req)) return fail("unauthorized", 401);
   if (!supportDbConfigured()) return fail("Supabase not configured", 500);
+  const offer = offerFrom(req);
+  if (!offer) return fail("unknown offer", 400);
   const { id } = await params;
   try {
-    const code = await getThreadOfferCode(id);
-    if (!code) return fail("this thread has no code", 404);
+    const code = await getThreadOfferCode(id, offer);
+    if (!code) return fail(`this thread has no ${offer} code`, 404);
     await setOfferCodeUsed(code.code, false);
     const thread = await getThread(id);
     await logAction({
@@ -82,7 +95,7 @@ export async function DELETE(
       app_user_id: thread?.resolved_app_user_id ?? null,
       store: "APP_STORE",
       action_type: "offer_code_release",
-      request: null,
+      request: { offer },
       response: { code: code.code },
       status: "success",
       error: null,

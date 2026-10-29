@@ -1,6 +1,9 @@
 /**
- * Support Inbox — one-time App Store offer codes (the Yearly Special,
- * $39.99/yr) that Dan hands to iPhone users who ask for a discount.
+ * Support Inbox — one-time App Store offer codes. Two offers share one
+ * table, told apart by offer_name:
+ *  - Yearly Special ($39.99/yr) for iPhone users who ask for a discount.
+ *  - Pearl Pack (550 pearls, com.dreamme.pearls.550) as a thank-you for
+ *    feedback, added to whatever reply Dan is writing.
  *
  * Two questions decide whether a thread gets the "Send a Yearly Special
  * code" card:
@@ -23,6 +26,24 @@ import type { SupportMessageRow, SupportThreadRow, UserContext } from "./types";
 
 export const YEARLY_SPECIAL = "Yearly Special";
 export const YEARLY_SPECIAL_PRICE = "$39.99";
+export const PEARL_PACK = "Pearl Pack";
+export const PEARL_PACK_PEARLS = 550;
+
+export type OfferName = typeof YEARLY_SPECIAL | typeof PEARL_PACK;
+export const OFFER_NAMES: OfferName[] = [YEARLY_SPECIAL, PEARL_PACK];
+
+export function isOfferName(v: unknown): v is OfferName {
+  return OFFER_NAMES.includes(v as OfferName);
+}
+
+/**
+ * As of 2026-10-30 the app credits pearls only inside its own buy button
+ * (PearlPackModal -> earnPearls after purchasePackage). A pack redeemed
+ * from an App Store code is a real transaction that nothing turns into
+ * pearls, so the card warns before inserting one. Flip to true once the app
+ * (or the rc-webhook) credits redeemed packs.
+ */
+export const PEARL_CODES_CREDIT_PEARLS = false;
 
 export interface OfferCodeRow {
   code: string;
@@ -128,6 +149,12 @@ function firstName(
   return /^[A-Za-z][A-Za-z'-]{1,}$/.test(first) ? first[0].toUpperCase() + first.slice(1) : null;
 }
 
+const SIGNOFF = "Dan, co-founder of DreamMe";
+
+function redeemSteps(code: Pick<OfferCodeRow, "code">): string {
+  return `Just open that link on your iPhone and Apple will walk you through it. You can also open the App Store, tap your profile picture, then "Redeem Gift Card or Code", and enter ${code.code}.`;
+}
+
 const CANCEL_STEPS =
   "Settings on your iPhone > tap your name > Subscriptions > DreamMe > Cancel Subscription";
 
@@ -152,11 +179,46 @@ export function offerCodeReply(
     `Hi ${name ?? "there"}!`,
     `Here's your Yearly Special code, it gets you a full year of DreamMe for just ${YEARLY_SPECIAL_PRICE}:`,
     code.redeem_url,
-    `Just open that link on your iPhone and Apple will walk you through it. You can also open the App Store, tap your profile picture, then "Redeem Gift Card or Code", and enter ${code.code}.`,
+    redeemSteps(code),
     cancelLine,
     `Thanks so much for sticking with DreamMe, it genuinely means the world to us!`,
-    `Dan, co-founder of DreamMe`,
+    SIGNOFF,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/**
+ * Add a Pearl Pack thank-you to the reply Dan is already writing (his own
+ * text or an AI draft), just above the sign-off. With nothing written yet it
+ * returns a short standalone thank-you. Running it twice with the same code
+ * changes nothing.
+ */
+export function addPearlPackToReply(
+  base: string,
+  thread: Pick<SupportThreadRow, "counterpart_name" | "user_context">,
+  code: Pick<OfferCodeRow, "code" | "redeem_url">,
+  messages: MessageLike[] = [],
+): string {
+  if (base.includes(code.redeem_url)) return base;
+  const gift = [
+    `As a little thank you for your feedback, here's a free bag of ${PEARL_PACK_PEARLS} pearls to spend in the shop:`,
+    code.redeem_url,
+    redeemSteps(code),
+  ].join("\n\n");
+
+  const text = base.trim();
+  if (!text) {
+    const name = firstName(thread, messages);
+    return [
+      `Hi ${name ?? "there"}!`,
+      `Thank you so much for taking the time to share your feedback, it genuinely helps us make DreamMe better!`,
+      gift,
+      SIGNOFF,
+    ].join("\n\n");
+  }
+  const at = text.lastIndexOf(SIGNOFF);
+  if (at < 0) return `${text}\n\n${gift}`;
+  const before = text.slice(0, at).trimEnd();
+  return `${before}\n\n${gift}\n\n${text.slice(at)}`;
 }

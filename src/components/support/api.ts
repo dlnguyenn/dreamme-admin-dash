@@ -10,7 +10,7 @@ import type {
   ThreadDetailPayload,
   ThreadStatus,
 } from "@/lib/support/types";
-import type { OfferCodeCounts, OfferCodeRow } from "@/lib/support/offer-codes";
+import type { OfferCodeCounts, OfferCodeRow, OfferName } from "@/lib/support/offer-codes";
 
 async function json<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => null)) as
@@ -200,25 +200,23 @@ export async function markOfferCode(
   );
 }
 
-/** Next free Yearly Special code for this thread (same one on repeat). */
+function offerCodeUrl(id: string, offer: OfferName): string {
+  return `/api/support/threads/${encodeURIComponent(id)}/offer-code?offer=${encodeURIComponent(offer)}`;
+}
+
+/** Next free code of one offer for this thread (same one on repeat). */
 export async function claimThreadOfferCode(
   id: string,
+  offer: OfferName,
 ): Promise<{ code: OfferCodeRow; created: boolean }> {
-  return json(
-    await fetch(`/api/support/threads/${encodeURIComponent(id)}/offer-code`, {
-      method: "POST",
-    }),
-  );
+  return json(await fetch(offerCodeUrl(id, offer), { method: "POST" }));
 }
 
 export async function releaseThreadOfferCode(
   id: string,
+  offer: OfferName,
 ): Promise<{ released: string }> {
-  return json(
-    await fetch(`/api/support/threads/${encodeURIComponent(id)}/offer-code`, {
-      method: "DELETE",
-    }),
-  );
+  return json(await fetch(offerCodeUrl(id, offer), { method: "DELETE" }));
 }
 
 export async function pollNow(): Promise<{

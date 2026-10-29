@@ -4,7 +4,7 @@
  */
 import { SUPABASE_URL } from "@/lib/supabase";
 import type { FeatureRequestInsert } from "./trello-card";
-import { YEARLY_SPECIAL, type OfferCodeRow } from "./offer-codes";
+import type { OfferCodeRow, OfferName } from "./offer-codes";
 import type {
   SupportActionRow,
   SupportDraftRow,
@@ -231,30 +231,47 @@ export async function logAction(
 // ---------------------------------------------------------------------------
 // One-time App Store offer codes (Offer codes sub tab)
 
-/** Every code, export order. A few hundred rows, so the tab filters locally. */
+/**
+ * Every code of every offer, export order. A couple of thousand rows, so the
+ * tab filters locally. Paged: PostgREST caps a response at 1,000 rows, which
+ * silently cut the Pearl Pack pool in half once both offers were loaded.
+ */
 export async function listOfferCodes(): Promise<OfferCodeRow[]> {
+  const page = 1000;
+  const out: OfferCodeRow[] = [];
+  for (let offset = 0; ; offset += page) {
+    const rows = await spGet<OfferCodeRow[]>(
+      `apple_offer_codes?select=*&order=offer_name.asc,position.asc&limit=${page}&offset=${offset}`,
+    );
+    out.push(...rows);
+    if (rows.length < page) return out;
+  }
+}
+
+/** Codes handed to a thread, at most one per offer (newest first). */
+export async function getThreadOfferCodes(threadId: string): Promise<OfferCodeRow[]> {
   return spGet<OfferCodeRow[]>(
-    `apple_offer_codes?select=*&order=position.asc&limit=5000`,
+    `apple_offer_codes?thread_id=eq.${encodeURIComponent(threadId)}&order=used_at.desc`,
   );
 }
 
 export async function getThreadOfferCode(
   threadId: string,
+  offerName: OfferName,
 ): Promise<OfferCodeRow | null> {
-  const rows = await spGet<OfferCodeRow[]>(
-    `apple_offer_codes?thread_id=eq.${encodeURIComponent(threadId)}&order=used_at.desc&limit=1`,
-  );
-  return rows[0] ?? null;
+  const rows = await getThreadOfferCodes(threadId);
+  return rows.find((r) => r.offer_name === offerName) ?? null;
 }
 
 /**
- * Hand the next free code to a thread. The SQL function is idempotent per
- * thread (a second click returns the same code) and takes the row under
+ * Hand the next free code of one offer to a thread. The SQL function is
+ * idempotent per thread and offer (a second click returns the same code) and takes the row under
  * FOR UPDATE SKIP LOCKED, so two tabs can never get the same code.
  * Returns null when the pool is empty.
  */
 export async function claimOfferCode(params: {
   threadId: string;
+  offerName: OfferName;
   email: string | null;
   name: string | null;
 }): Promise<OfferCodeRow | null> {
@@ -266,7 +283,7 @@ export async function claimOfferCode(params: {
       p_thread_id: params.threadId,
       p_email: params.email,
       p_name: params.name,
-      p_offer_name: YEARLY_SPECIAL,
+      p_offer_name: params.offerName,
     }),
   });
   if (!res.ok) {

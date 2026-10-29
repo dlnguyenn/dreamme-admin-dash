@@ -29,11 +29,17 @@ import {
   timeAgo,
 } from "./api";
 import {
+  addPearlPackToReply,
   askedForDiscount,
   iphoneSignal,
   offerCodeReply,
+  PEARL_CODES_CREDIT_PEARLS,
+  PEARL_PACK,
+  PEARL_PACK_PEARLS,
+  YEARLY_SPECIAL,
   YEARLY_SPECIAL_PRICE,
   type OfferCodeRow,
+  type OfferName,
 } from "@/lib/support/offer-codes";
 import { messageText, splitQuotedText } from "@/lib/support/email-text";
 import { UserSidebar } from "./UserSidebar";
@@ -363,13 +369,28 @@ export function ThreadDetail({
 
         <div style={{ padding: "0 22px 20px" }}>
 
-        {/* Discount ask -> one-click Yearly Special code */}
-        {detail && replyTo && (askedForDiscount(thread, detail.messages) || detail.offerCode) && (
+        {/* App Store codes: Yearly Special for discount asks, Pearl Pack thank-yous */}
+        {detail && replyTo && (
           <OfferCodeCard
             thread={thread}
             messages={detail.messages}
-            assigned={detail.offerCode ?? null}
+            assigned={detail.offerCodes ?? []}
+            discountAsked={askedForDiscount(thread, detail.messages)}
+            feedbackLike={
+              thread.category === "feedback" ||
+              thread.source === "feedback" ||
+              isFeatureRequest(thread)
+            }
             onInsert={fillCompose}
+            onAddToReply={(edit) => {
+              const first = activeDrafts.find((d) => d.status !== "sent");
+              const base = compose.trim()
+                ? compose
+                : first
+                  ? (draftEdits[first.id] ?? first.body)
+                  : "";
+              fillCompose(edit(base));
+            }}
             onChanged={load}
           />
         )}
@@ -513,24 +534,135 @@ function textareaStyle(isMobile: boolean): React.CSSProperties {
   };
 }
 
+type OfferRowSpec = {
+  offer: OfferName;
+  title: string;
+  /** what the button does, before a code is assigned */
+  blurb: string;
+  claimLabel: string;
+  againLabel: string;
+  primary: boolean;
+  /** extra warning under the blurb */
+  warning?: string;
+  /** turn the claimed code into the compose text */
+  apply: (code: OfferCodeRow) => void;
+};
+
 /**
- * Shown when the customer asked for a discount (or already has a code).
- * One click claims the next free Yearly Special code for this thread and
- * writes the reply into the compose box; sending stays the usual
- * confirm-gated Send. App Store codes do nothing for Play or web
- * subscribers, so the button is off when we know they are not on iPhone.
+ * One-time App Store codes for this thread. Rows:
+ *  - Yearly Special, when the customer asked for a discount: writes the
+ *    whole code reply into the compose box.
+ *  - Pearl Pack, on any iPhone thread: adds a thank-you with the code to
+ *    the reply being written (or the first AI draft), above the sign-off.
+ * One click claims the next free code of that offer; a repeat click reuses
+ * it. Sending stays the usual confirm-gated Send. Codes do nothing for Play
+ * or web customers, so their rows are off when we know they aren't on iPhone.
  */
 function OfferCodeCard({
   thread,
   messages,
   assigned,
+  discountAsked,
+  feedbackLike,
   onInsert,
+  onAddToReply,
   onChanged,
 }: {
   thread: SupportThreadRow;
   messages: SupportMessageRow[];
-  assigned: OfferCodeRow | null;
+  assigned: OfferCodeRow[];
+  discountAsked: boolean;
+  feedbackLike: boolean;
   onInsert: (text: string) => void;
+  /** gets the current reply text (compose, else the first draft) */
+  onAddToReply: (edit: (base: string) => string) => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const signal = iphoneSignal(thread, messages);
+  const has = (o: OfferName) => assigned.find((c) => c.offer_name === o) ?? null;
+  const rows: OfferRowSpec[] = [];
+  if (discountAsked || has(YEARLY_SPECIAL)) {
+    rows.push({
+      offer: YEARLY_SPECIAL,
+      title: "Asked for a discount",
+      blurb: `Writes a reply with a one-time code for the Yearly Special (${YEARLY_SPECIAL_PRICE}/yr).`,
+      claimLabel: "Insert Yearly Special code",
+      againLabel: "Insert code reply again",
+      primary: true,
+      apply: (code) => onInsert(offerCodeReply(thread, code, messages)),
+    });
+  }
+  if (signal.ios !== "no" || has(PEARL_PACK)) {
+    rows.push({
+      offer: PEARL_PACK,
+      title: "Thank them with pearls",
+      blurb: `Adds a free ${PEARL_PACK_PEARLS}-pearl pack code to your reply, above the sign-off.`,
+      claimLabel: "Add Pearl Pack",
+      againLabel: "Add Pearl Pack again",
+      primary: feedbackLike && !discountAsked,
+      warning: PEARL_CODES_CREDIT_PEARLS
+        ? undefined
+        : "The app doesn't add pearls from redeemed codes yet, so hold off sending these until that's fixed.",
+      apply: (code) =>
+        onAddToReply((base) => addPearlPackToReply(base, thread, code, messages)),
+    });
+  }
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--line)",
+        background: "var(--surface-2)",
+        borderRadius: 14,
+        padding: "12px 14px",
+        marginBottom: 18,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ font: "650 13px var(--font-ui)", color: "var(--ink)" }}>App Store codes</span>
+        <Chip tone={signal.ios === "yes" ? "success" : signal.ios === "no" ? "danger" : "warning"}>
+          {signal.ios === "yes" ? "iPhone" : signal.ios === "no" ? "not iPhone" : "device unknown"}
+        </Chip>
+        <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>{signal.reason}</span>
+      </div>
+      {rows.map((r, i) => (
+        <OfferCodeRowView
+          key={r.offer}
+          spec={r}
+          first={i === 0}
+          thread={thread}
+          assigned={has(r.offer)}
+          blocked={signal.ios === "no" && !has(r.offer)}
+          unknownDevice={signal.ios === "unknown"}
+          blockedReason={signal.reason}
+          onChanged={onChanged}
+        />
+      ))}
+    </div>
+  );
+}
+
+function OfferCodeRowView({
+  spec,
+  first,
+  thread,
+  assigned,
+  blocked,
+  unknownDevice,
+  blockedReason,
+  onChanged,
+}: {
+  spec: OfferRowSpec;
+  first: boolean;
+  thread: SupportThreadRow;
+  assigned: OfferCodeRow | null;
+  blocked: boolean;
+  unknownDevice: boolean;
+  blockedReason: string;
   onChanged: () => Promise<void> | void;
 }) {
   const toast = useToast();
@@ -538,17 +670,19 @@ function OfferCodeCard({
   const [busy, setBusy] = React.useState(false);
   const [confirmRelease, setConfirmRelease] = React.useState(false);
   const claimingRef = React.useRef(false);
-  const signal = iphoneSignal(thread, messages);
-  const blocked = signal.ios === "no" && !assigned;
 
   const claim = async () => {
     if (claimingRef.current) return;
     claimingRef.current = true;
     setBusy(true);
     try {
-      const { code, created } = await claimThreadOfferCode(thread.id);
-      onInsert(offerCodeReply(thread, code, messages));
-      toast(created ? `Code ${code.code} reserved for this thread` : `Using this thread's code ${code.code}`);
+      const { code, created } = await claimThreadOfferCode(thread.id, spec.offer);
+      spec.apply(code);
+      toast(
+        created
+          ? `${spec.offer} code ${code.code} reserved for this thread`
+          : `Using this thread's ${spec.offer} code ${code.code}`,
+      );
       await onChanged();
     } catch (e) {
       toast(`Couldn't get a code: ${e instanceof Error ? e.message : String(e)}`);
@@ -561,7 +695,7 @@ function OfferCodeCard({
   const release = async () => {
     setBusy(true);
     try {
-      const { released } = await releaseThreadOfferCode(thread.id);
+      const { released } = await releaseThreadOfferCode(thread.id, spec.offer);
       toast(`${released} is back in the pool`);
       await onChanged();
     } catch (e) {
@@ -575,25 +709,16 @@ function OfferCodeCard({
   return (
     <div
       style={{
-        border: "1px solid var(--line)",
-        background: "var(--surface-2)",
-        borderRadius: 14,
-        padding: "12px 14px",
-        marginBottom: 18,
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: 6,
+        paddingTop: first ? 0 : 10,
+        borderTop: first ? "none" : "1px solid var(--line)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ font: "650 13px var(--font-ui)", color: "var(--ink)" }}>
-          {assigned ? "Yearly Special code assigned" : "Asked for a discount"}
-        </span>
-        <Chip tone={signal.ios === "yes" ? "success" : signal.ios === "no" ? "danger" : "warning"}>
-          {signal.ios === "yes" ? "iPhone" : signal.ios === "no" ? "not iPhone" : "device unknown"}
-        </Chip>
-        <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>{signal.reason}</span>
-      </div>
+      <span style={{ font: "650 12.5px var(--font-ui)", color: "var(--ink)" }}>
+        {assigned ? `${spec.offer} code assigned` : spec.title}
+      </span>
       <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-2)" }}>
         {assigned ? (
           <>
@@ -609,17 +734,27 @@ function OfferCodeCard({
             reuses it, so the same person never burns two codes.
           </>
         ) : blocked ? (
-          <>App Store offer codes only redeem on iPhone, so a code won&apos;t help this {signal.reason}.</>
+          <>App Store codes only redeem on iPhone, so a code won&apos;t help this {blockedReason}.</>
         ) : (
           <>
-            Sends a one-time App Store code for the Yearly Special ({YEARLY_SPECIAL_PRICE}/yr).
-            {signal.ios === "unknown" && " Check they're on iPhone before you send it."}
+            {spec.blurb}
+            {unknownDevice && " Check they're on iPhone before you send it."}
           </>
         )}
       </div>
+      {spec.warning && (
+        <div style={{ font: "500 12px/1.45 var(--font-ui)", color: "var(--danger-text)" }}>
+          {spec.warning}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Button size="sm" variant="primary" onClick={claim} disabled={busy || blocked}>
-          {busy ? "Getting a code…" : assigned ? "Insert code reply again" : "Insert Yearly Special code"}
+        <Button
+          size="sm"
+          variant={spec.primary ? "primary" : "secondary"}
+          onClick={claim}
+          disabled={busy || blocked}
+        >
+          {busy ? "Getting a code…" : assigned ? spec.againLabel : spec.claimLabel}
         </Button>
         {assigned && (
           <>

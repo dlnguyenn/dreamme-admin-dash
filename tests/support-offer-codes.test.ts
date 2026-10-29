@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addPearlPackToReply,
   askedForDiscount,
   iphoneSignal,
   offerCodeReply,
@@ -135,5 +136,31 @@ describe("offerCodeReply", () => {
 
   it("falls back to 'there' for handle-like names", () => {
     expect(offerCodeReply({ ...base, counterpart_name: "joejenmc@hotmail.com" }, code)).toMatch(/^Hi there!/);
+  });
+});
+
+describe("addPearlPackToReply", () => {
+  const pearl = { code: "PEARL1", redeem_url: "https://apps.apple.com/redeem?ctx=offercodes&id=1&code=PEARL1" };
+  const draft = "Hi Sam! Love this idea, I've passed it to the team!\n\nDan, co-founder of DreamMe";
+
+  it("slots the gift above the sign-off of the reply being written", () => {
+    const out = addPearlPackToReply(draft, base, pearl);
+    expect(out.startsWith("Hi Sam! Love this idea")).toBe(true);
+    expect(out.indexOf(pearl.redeem_url)).toBeLessThan(out.indexOf("Dan, co-founder of DreamMe"));
+    expect(out).toContain("550 pearls");
+    expect(out.endsWith("Dan, co-founder of DreamMe")).toBe(true);
+    expect(out).not.toMatch(/[–—]/);
+  });
+
+  it("is a no-op the second time", () => {
+    const once = addPearlPackToReply(draft, base, pearl);
+    expect(addPearlPackToReply(once, base, pearl)).toBe(once);
+  });
+
+  it("appends when there is no sign-off, and writes a full thank-you when empty", () => {
+    expect(addPearlPackToReply("Thanks!", base, pearl).startsWith("Thanks!\n\nAs a little thank you")).toBe(true);
+    const full = addPearlPackToReply("  ", base, pearl);
+    expect(full).toMatch(/^Hi Jenn!\n\nThank you so much/);
+    expect(full.endsWith("Dan, co-founder of DreamMe")).toBe(true);
   });
 });
