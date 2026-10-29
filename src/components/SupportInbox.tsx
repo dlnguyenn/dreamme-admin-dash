@@ -18,6 +18,7 @@ import {
   fam,
   hueFromName,
   InitialsAvatar,
+  Segmented,
   SourceTag,
   type Family,
 } from "./porcelain";
@@ -30,6 +31,10 @@ import {
 } from "@/lib/support/types";
 import { fetchThreads, pollNow, timeAgo } from "./support/api";
 import { ThreadDetail } from "./support/ThreadDetail";
+import { OfferCodes } from "./support/OfferCodes";
+
+/** Sub tabs: the inbox itself, and the offer-code ledger. */
+type SubTab = "inbox" | "codes";
 
 type Filter = InboxView;
 
@@ -86,6 +91,7 @@ export function SupportInbox({
   // quiet one look identical, so this has to be stated on screen rather than
   // inferred from an empty list.
   const [health, setHealth] = React.useState<string | null>(null);
+  const [subTab, setSubTab] = React.useState<SubTab>("inbox");
 
   // ---- deep links ---------------------------------------------------------
   // A thread is addressable as ?tab=support&thread=<id>, which is what the
@@ -93,8 +99,26 @@ export function SupportInbox({
   // initializer so the server render (always null) and the first client
   // render agree.
   React.useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("thread");
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("thread");
     if (id) setSelectedId(id);
+    else if (params.get("view") === "codes") setSubTab("codes");
+  }, []);
+
+  /** ?view=codes keeps the Offer codes sub tab across reloads. */
+  const switchSubTab = React.useCallback((v: SubTab) => {
+    setSubTab(v);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", "support");
+      if (v === "codes") {
+        url.searchParams.set("view", "codes");
+        url.searchParams.delete("thread");
+      } else {
+        url.searchParams.delete("view");
+      }
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
   }, []);
 
   /** Keep the URL in step with the open thread, without adding history
@@ -106,6 +130,7 @@ export function SupportInbox({
       if (id) {
         url.searchParams.set("tab", "support");
         url.searchParams.set("thread", id);
+        url.searchParams.delete("view");
       } else {
         url.searchParams.delete("thread");
       }
@@ -193,7 +218,7 @@ export function SupportInbox({
         title="Support Inbox"
         subtitle="help@ email and in-app feedback, triaged with two reply drafts each. Nothing sends without your click."
         actions={
-          <Button
+          subTab === "inbox" && <Button
             variant="secondary"
             size="sm"
             icon={<Icons.Download />}
@@ -205,6 +230,26 @@ export function SupportInbox({
         }
       />
 
+      <div style={{ marginBottom: 14 }}>
+        <Segmented
+          options={[
+            { value: "inbox", label: "Inbox" },
+            { value: "codes", label: "Offer codes" },
+          ]}
+          value={subTab}
+          onChange={(v) => switchSubTab(v as SubTab)}
+        />
+      </div>
+
+      {subTab === "codes" ? (
+        <OfferCodes
+          onOpenThread={(id) => {
+            switchSubTab("inbox");
+            selectThread(id);
+          }}
+        />
+      ) : (
+      <>
       {health && (
         <div
           role="alert"
@@ -428,6 +473,8 @@ export function SupportInbox({
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

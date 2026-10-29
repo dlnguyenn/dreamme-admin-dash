@@ -10,6 +10,7 @@ import type {
   ThreadDetailPayload,
   ThreadStatus,
 } from "@/lib/support/types";
+import type { OfferCodeCounts, OfferCodeRow } from "@/lib/support/offer-codes";
 
 async function json<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => null)) as
@@ -175,6 +176,47 @@ export async function linkStripeCustomer(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
+    }),
+  );
+}
+
+export async function fetchOfferCodes(): Promise<{
+  codes: OfferCodeRow[];
+  counts: OfferCodeCounts;
+}> {
+  return json(await fetch(`/api/support/offer-codes`, { cache: "no-store" }));
+}
+
+export async function markOfferCode(
+  code: string,
+  used: boolean,
+): Promise<{ code: OfferCodeRow }> {
+  return json(
+    await fetch(`/api/support/offer-codes`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, used }),
+    }),
+  );
+}
+
+/** Next free Yearly Special code for this thread (same one on repeat). */
+export async function claimThreadOfferCode(
+  id: string,
+): Promise<{ code: OfferCodeRow; created: boolean }> {
+  return json(
+    await fetch(`/api/support/threads/${encodeURIComponent(id)}/offer-code`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function releaseThreadOfferCode(
+  id: string,
+): Promise<{ released: string }> {
+  return json(
+    await fetch(`/api/support/threads/${encodeURIComponent(id)}/offer-code`, {
+      method: "DELETE",
     }),
   );
 }

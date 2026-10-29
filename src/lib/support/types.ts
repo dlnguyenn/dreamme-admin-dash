@@ -3,6 +3,8 @@
  * client components. Keep this file free of server-only imports.
  */
 
+import type { OfferCodeRow } from "./offer-codes";
+
 export type ThreadSource = "email" | "feedback";
 export type ThreadStatus =
   | "new"
@@ -192,6 +194,12 @@ export interface TriageResult {
    * flag existed; see isFeatureRequest for the fallback.
    */
   feature_request?: boolean;
+  /**
+   * They asked for a discount, cheaper plan or promo/loyalty pricing. Drives
+   * the Yearly Special code card; absent on threads triaged before the flag
+   * existed (askedForDiscount falls back to a keyword scan).
+   */
+  discount_request?: boolean;
   model?: string;
   error?: string;
   triaged_at?: string;
@@ -302,4 +310,6 @@ export interface ThreadDetailPayload {
    * for this customer. Null when RevenueCat isn't configured.
    */
   revenueCatProjectId: string | null;
+  /** Yearly Special code already handed to this thread, if any */
+  offerCode?: OfferCodeRow | null;
 }

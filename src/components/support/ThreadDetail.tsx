@@ -6,7 +6,7 @@
  * plus the user/actions rail (UserSidebar).
  */
 import * as React from "react";
-import { Button, Chip, useToast } from "../ui";
+import { Button, Chip, useCopy, useToast } from "../ui";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { hueFromName, InitialsAvatar } from "../porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -20,12 +20,21 @@ import {
   type ThreadDetailPayload,
 } from "@/lib/support/types";
 import {
+  claimThreadOfferCode,
   fetchThreadDetail,
   patchThread,
+  releaseThreadOfferCode,
   retriage,
   sendReply,
   timeAgo,
 } from "./api";
+import {
+  askedForDiscount,
+  iphoneSignal,
+  offerCodeReply,
+  YEARLY_SPECIAL_PRICE,
+  type OfferCodeRow,
+} from "@/lib/support/offer-codes";
 import { messageText, splitQuotedText } from "@/lib/support/email-text";
 import { UserSidebar } from "./UserSidebar";
 
@@ -56,6 +65,7 @@ export function ThreadDetail({
   // two clicks in the same tick both pass a state-based check — a ref is
   // set immediately (this is how the double-send got through).
   const sendingRef = React.useRef(false);
+  const composeRef = React.useRef<HTMLTextAreaElement>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -134,6 +144,15 @@ export function ThreadDetail({
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Drop a reply into the compose box and bring it into view. */
+  const fillCompose = (text: string) => {
+    setCompose(text);
+    requestAnimationFrame(() => {
+      composeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      composeRef.current?.focus();
+    });
   };
 
   const snooze = (days: number) => {
@@ -344,6 +363,17 @@ export function ThreadDetail({
 
         <div style={{ padding: "0 22px 20px" }}>
 
+        {/* Discount ask -> one-click Yearly Special code */}
+        {detail && replyTo && (askedForDiscount(thread, detail.messages) || detail.offerCode) && (
+          <OfferCodeCard
+            thread={thread}
+            messages={detail.messages}
+            assigned={detail.offerCode ?? null}
+            onInsert={fillCompose}
+            onChanged={load}
+          />
+        )}
+
         {/* Drafts */}
         {activeDrafts.length > 0 && replyTo && (
           <div style={{ marginBottom: 20 }}>
@@ -380,10 +410,11 @@ export function ThreadDetail({
           <div>
             <SectionLabel>Or write your own</SectionLabel>
             <textarea
+              ref={composeRef}
               value={compose}
               onChange={(e) => setCompose(e.target.value)}
               placeholder={`Reply to ${replyTo}…`}
-              rows={5}
+              rows={compose.length > 400 ? 12 : 5}
               style={textareaStyle(isMobile)}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
@@ -419,7 +450,7 @@ export function ThreadDetail({
           thread={thread}
           actions={detail?.actions ?? []}
           rcProjectId={detail?.revenueCatProjectId ?? null}
-          onInsertTemplate={(text) => setCompose(text)}
+          onInsertTemplate={fillCompose}
           onActionDone={async () => {
             await load();
             onChanged();
@@ -480,6 +511,140 @@ function textareaStyle(isMobile: boolean): React.CSSProperties {
     fontFamily: "inherit",
     resize: "vertical",
   };
+}
+
+/**
+ * Shown when the customer asked for a discount (or already has a code).
+ * One click claims the next free Yearly Special code for this thread and
+ * writes the reply into the compose box; sending stays the usual
+ * confirm-gated Send. App Store codes do nothing for Play or web
+ * subscribers, so the button is off when we know they are not on iPhone.
+ */
+function OfferCodeCard({
+  thread,
+  messages,
+  assigned,
+  onInsert,
+  onChanged,
+}: {
+  thread: SupportThreadRow;
+  messages: SupportMessageRow[];
+  assigned: OfferCodeRow | null;
+  onInsert: (text: string) => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const toast = useToast();
+  const { copied, copy } = useCopy();
+  const [busy, setBusy] = React.useState(false);
+  const [confirmRelease, setConfirmRelease] = React.useState(false);
+  const claimingRef = React.useRef(false);
+  const signal = iphoneSignal(thread, messages);
+  const blocked = signal.ios === "no" && !assigned;
+
+  const claim = async () => {
+    if (claimingRef.current) return;
+    claimingRef.current = true;
+    setBusy(true);
+    try {
+      const { code, created } = await claimThreadOfferCode(thread.id);
+      onInsert(offerCodeReply(thread, code, messages));
+      toast(created ? `Code ${code.code} reserved for this thread` : `Using this thread's code ${code.code}`);
+      await onChanged();
+    } catch (e) {
+      toast(`Couldn't get a code: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      claimingRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const release = async () => {
+    setBusy(true);
+    try {
+      const { released } = await releaseThreadOfferCode(thread.id);
+      toast(`${released} is back in the pool`);
+      await onChanged();
+    } catch (e) {
+      toast(`Release failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+      setConfirmRelease(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--line)",
+        background: "var(--surface-2)",
+        borderRadius: 14,
+        padding: "12px 14px",
+        marginBottom: 18,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ font: "650 13px var(--font-ui)", color: "var(--ink)" }}>
+          {assigned ? "Yearly Special code assigned" : "Asked for a discount"}
+        </span>
+        <Chip tone={signal.ios === "yes" ? "success" : signal.ios === "no" ? "danger" : "warning"}>
+          {signal.ios === "yes" ? "iPhone" : signal.ios === "no" ? "not iPhone" : "device unknown"}
+        </Chip>
+        <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>{signal.reason}</span>
+      </div>
+      <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-2)" }}>
+        {assigned ? (
+          <>
+            <span
+              style={{
+                font: "600 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                color: "var(--ink)",
+              }}
+            >
+              {assigned.code}
+            </span>{" "}
+            (#{assigned.position}) was reserved {timeAgo(assigned.used_at)}. Re-inserting
+            reuses it, so the same person never burns two codes.
+          </>
+        ) : blocked ? (
+          <>App Store offer codes only redeem on iPhone, so a code won&apos;t help this {signal.reason}.</>
+        ) : (
+          <>
+            Sends a one-time App Store code for the Yearly Special ({YEARLY_SPECIAL_PRICE}/yr).
+            {signal.ios === "unknown" && " Check they're on iPhone before you send it."}
+          </>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Button size="sm" variant="primary" onClick={claim} disabled={busy || blocked}>
+          {busy ? "Getting a code…" : assigned ? "Insert code reply again" : "Insert Yearly Special code"}
+        </Button>
+        {assigned && (
+          <>
+            <Button size="sm" variant="ghost" onClick={() => copy(assigned.redeem_url)}>
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmRelease(true)} disabled={busy}>
+              Release code
+            </Button>
+          </>
+        )}
+      </div>
+      {confirmRelease && assigned && (
+        <ConfirmDialog
+          title="Put this code back in the pool?"
+          message={`Only do this if ${assigned.code} was never sent. If the customer already has it, the next person would get a code that no longer works.`}
+          confirmLabel="Release"
+          busy={busy}
+          busyLabel="Releasing…"
+          onConfirm={release}
+          onCancel={() => setConfirmRelease(false)}
+        />
+      )}
+    </div>
+  );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

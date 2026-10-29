@@ -4,6 +4,7 @@
  */
 import { SUPABASE_URL } from "@/lib/supabase";
 import type { FeatureRequestInsert } from "./trello-card";
+import { YEARLY_SPECIAL, type OfferCodeRow } from "./offer-codes";
 import type {
   SupportActionRow,
   SupportDraftRow,
@@ -225,6 +226,70 @@ export async function logAction(
 ): Promise<SupportActionRow> {
   const rows = await spPost<SupportActionRow>("support_actions", [entry]);
   return rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// One-time App Store offer codes (Offer codes sub tab)
+
+/** Every code, export order. A few hundred rows, so the tab filters locally. */
+export async function listOfferCodes(): Promise<OfferCodeRow[]> {
+  return spGet<OfferCodeRow[]>(
+    `apple_offer_codes?select=*&order=position.asc&limit=5000`,
+  );
+}
+
+export async function getThreadOfferCode(
+  threadId: string,
+): Promise<OfferCodeRow | null> {
+  const rows = await spGet<OfferCodeRow[]>(
+    `apple_offer_codes?thread_id=eq.${encodeURIComponent(threadId)}&order=used_at.desc&limit=1`,
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Hand the next free code to a thread. The SQL function is idempotent per
+ * thread (a second click returns the same code) and takes the row under
+ * FOR UPDATE SKIP LOCKED, so two tabs can never get the same code.
+ * Returns null when the pool is empty.
+ */
+export async function claimOfferCode(params: {
+  threadId: string;
+  email: string | null;
+  name: string | null;
+}): Promise<OfferCodeRow | null> {
+  if (!supportDbConfigured()) throw new Error("Supabase env missing");
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_apple_offer_code`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      p_thread_id: params.threadId,
+      p_email: params.email,
+      p_name: params.name,
+      p_offer_name: YEARLY_SPECIAL,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Supabase ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const rows = (await res.json()) as OfferCodeRow[];
+  return rows[0] ?? null;
+}
+
+/** Mark a code used/free by hand from the Offer codes tab. */
+export async function setOfferCodeUsed(
+  code: string,
+  used: boolean,
+  note?: string | null,
+): Promise<OfferCodeRow | null> {
+  const patch = used
+    ? { used_at: new Date().toISOString(), note: note ?? "Marked used by hand" }
+    : { used_at: null, thread_id: null, used_by_email: null, used_by_name: null, note: null };
+  const rows = await spPatch<OfferCodeRow>(
+    `apple_offer_codes?code=eq.${encodeURIComponent(code)}`,
+    patch,
+  );
+  return rows[0] ?? null;
 }
 
 /**
