@@ -31,6 +31,7 @@ import {
 import {
   addPearlPackToReply,
   askedForDiscount,
+  isExpiredCode,
   iphoneSignal,
   offerCodeReply,
   PEARL_CODES_CREDIT_PEARLS,
@@ -579,9 +580,14 @@ function OfferCodeCard({
   onChanged: () => Promise<void> | void;
 }) {
   const signal = iphoneSignal(thread, messages);
-  const has = (o: OfferName) => assigned.find((c) => c.offer_name === o) ?? null;
+  // An expired code no longer counts as assigned: the next click claims a
+  // fresh one (the SQL function skips expired codes too).
+  const has = (o: OfferName) =>
+    assigned.find((c) => c.offer_name === o && !isExpiredCode(c)) ?? null;
+  const expired = (o: OfferName) =>
+    assigned.find((c) => c.offer_name === o && isExpiredCode(c)) ?? null;
   const rows: OfferRowSpec[] = [];
-  if (discountAsked || has(YEARLY_SPECIAL)) {
+  if (discountAsked || has(YEARLY_SPECIAL) || expired(YEARLY_SPECIAL)) {
     rows.push({
       offer: YEARLY_SPECIAL,
       title: "Asked for a discount",
@@ -636,6 +642,7 @@ function OfferCodeCard({
           first={i === 0}
           thread={thread}
           assigned={has(r.offer)}
+          expiredCode={expired(r.offer)}
           blocked={signal.ios === "no" && !has(r.offer)}
           unknownDevice={signal.ios === "unknown"}
           blockedReason={signal.reason}
@@ -651,6 +658,7 @@ function OfferCodeRowView({
   first,
   thread,
   assigned,
+  expiredCode,
   blocked,
   unknownDevice,
   blockedReason,
@@ -660,6 +668,8 @@ function OfferCodeRowView({
   first: boolean;
   thread: SupportThreadRow;
   assigned: OfferCodeRow | null;
+  /** a code this thread got from a batch that has since expired */
+  expiredCode: OfferCodeRow | null;
   blocked: boolean;
   unknownDevice: boolean;
   blockedReason: string;
@@ -742,6 +752,12 @@ function OfferCodeRowView({
           </>
         )}
       </div>
+      {expiredCode && !assigned && (
+        <div style={{ font: "500 12px/1.45 var(--font-ui)", color: "var(--danger-text)" }}>
+          The code this thread got earlier ({expiredCode.code}) is from a batch that expired on{" "}
+          {expiredCode.expires_on}, so it won&apos;t redeem. The button sends a fresh one.
+        </div>
+      )}
       {spec.warning && (
         <div style={{ font: "500 12px/1.45 var(--font-ui)", color: "var(--danger-text)" }}>
           {spec.warning}

@@ -3,6 +3,7 @@ import {
   addPearlPackToReply,
   askedForDiscount,
   iphoneSignal,
+  isExpiredCode,
   offerCodeReply,
 } from "@/lib/support/offer-codes";
 import type { SubscriptionInfo, UserContext } from "@/lib/support/types";
@@ -115,15 +116,16 @@ describe("offerCodeReply", () => {
     expect(text).not.toMatch(/[–—]/);
   });
 
-  it("tells a live subscriber to cancel first so they aren't billed twice", () => {
+  it("tells a live subscriber the code switches their plan, no cancelling", () => {
     const text = offerCodeReply({ ...base, user_context: ctx({ subscriptions: [sub({})] }) }, code);
-    expect(text).toContain("please cancel your current subscription");
+    expect(text).toContain("No need to cancel anything first");
+    expect(text).not.toMatch(/please cancel/i);
   });
 
   it("hedges when the account is unknown, and skips it when nothing is live", () => {
-    expect(offerCodeReply(base, code)).toContain("if you have a monthly or quarterly subscription");
+    expect(offerCodeReply(base, code)).toContain("If you're on a monthly or quarterly plan right now");
     const lapsed = { ...base, user_context: ctx({ subscriptions: [sub({ isActive: false })] }) };
-    expect(offerCodeReply(lapsed, code)).not.toContain("cancel");
+    expect(offerCodeReply(lapsed, code)).not.toMatch(/cancel/i);
   });
 
   it("reuses the name Dan already greeted them with", () => {
@@ -162,5 +164,13 @@ describe("addPearlPackToReply", () => {
     const full = addPearlPackToReply("  ", base, pearl);
     expect(full).toMatch(/^Hi Jenn!\n\nThank you so much/);
     expect(full.endsWith("Dan, co-founder of DreamMe")).toBe(true);
+  });
+});
+
+describe("isExpiredCode", () => {
+  it("expires the day after the batch's expiration date", () => {
+    expect(isExpiredCode({ expires_on: "2026-09-28" }, "2026-09-28")).toBe(false);
+    expect(isExpiredCode({ expires_on: "2026-09-28" }, "2026-09-29")).toBe(true);
+    expect(isExpiredCode({ expires_on: null }, "2030-01-01")).toBe(false);
   });
 });

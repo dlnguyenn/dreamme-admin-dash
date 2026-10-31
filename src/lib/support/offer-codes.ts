@@ -13,10 +13,16 @@
  *  - are they on iPhone? Codes only redeem in the App Store, so a Google
  *    Play or web subscriber would get a link that does nothing for them.
  *
- * The Yearly Special is its own subscription group ("DreamMe Special"), so
- * a current Monthly/Quarterly/Yearly subscriber who redeems one WITHOUT
- * cancelling is billed for both. The reply template says so whenever the
- * person is, or might be, subscribed already.
+ * Despite the name, the "Yearly Special" codes are the ASC offer "DreamMe
+ * Life Yearly Special (Discounted) - $40" on the regular Yearly product
+ * (6755980474), in the same group as Monthly/Quarterly. Redeeming replaces
+ * a current plan rather than adding a second one, so nobody has to cancel
+ * first. (The separate "Yearly Special" product in the "DreamMe Special"
+ * group has no one-time code batches.)
+ *
+ * Every batch expires (ASC expirationDate, stored as expires_on). The claim
+ * function never hands out an expired code: the first batch imported here,
+ * 482615, had expired on 2026-09-28 before it was loaded.
  *
  * Pure — unit-tested. Keep free of server-only imports (the client uses it).
  */
@@ -56,7 +62,17 @@ export interface OfferCodeRow {
   used_by_email: string | null;
   used_by_name: string | null;
   note: string | null;
+  /** last day the batch redeems (ASC expirationDate), YYYY-MM-DD */
+  expires_on?: string | null;
   created_at: string;
+}
+
+/** True once the code's batch is past its App Store expiration date. */
+export function isExpiredCode(
+  c: Pick<OfferCodeRow, "expires_on">,
+  today: string = new Date().toISOString().slice(0, 10),
+): boolean {
+  return !!c.expires_on && c.expires_on < today;
 }
 
 export interface OfferCodeCounts {
@@ -155,9 +171,6 @@ function redeemSteps(code: Pick<OfferCodeRow, "code">): string {
   return `Just open that link on your iPhone and Apple will walk you through it. You can also open the App Store, tap your profile picture, then "Redeem Gift Card or Code", and enter ${code.code}.`;
 }
 
-const CANCEL_STEPS =
-  "Settings on your iPhone > tap your name > Subscriptions > DreamMe > Cancel Subscription";
-
 /**
  * The reply that hands over one code. Dan's support voice: "Hi <Name>!",
  * warm, short, no em dashes, signed "Dan, co-founder of DreamMe".
@@ -169,18 +182,19 @@ export function offerCodeReply(
 ): string {
   const name = firstName(thread, messages);
   const subscribed = subscribedNow(thread.user_context);
-  const cancelLine =
+  // Same subscription group as Monthly/Quarterly: the code swaps their plan.
+  const switchLine =
     subscribed === "yes"
-      ? `One important step first: please cancel your current subscription (${CANCEL_STEPS}) so you don't get billed for both! You keep access until it runs out, and the yearly plan starts as soon as you redeem.`
+      ? `No need to cancel anything first, redeeming switches your current plan over to the yearly one so you're never billed for both.`
       : subscribed === "maybe"
-        ? `One important step first: if you have a monthly or quarterly subscription right now, please cancel it (${CANCEL_STEPS}) so you don't get billed for both! The yearly plan starts as soon as you redeem.`
+        ? `If you're on a monthly or quarterly plan right now, no need to cancel anything first, redeeming switches it over to the yearly one so you're never billed for both.`
         : null;
   return [
     `Hi ${name ?? "there"}!`,
     `Here's your Yearly Special code, it gets you a full year of DreamMe for just ${YEARLY_SPECIAL_PRICE}:`,
     code.redeem_url,
     redeemSteps(code),
-    cancelLine,
+    switchLine,
     `Thanks so much for sticking with DreamMe, it genuinely means the world to us!`,
     SIGNOFF,
   ]

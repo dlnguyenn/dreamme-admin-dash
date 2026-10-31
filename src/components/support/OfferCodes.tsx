@@ -24,6 +24,7 @@ import {
   PEARL_PACK_PEARLS,
   YEARLY_SPECIAL,
   YEARLY_SPECIAL_PRICE,
+  isExpiredCode,
   type OfferCodeRow,
   type OfferName,
 } from "@/lib/support/offer-codes";
@@ -89,14 +90,16 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
   );
   const counts = React.useMemo(() => {
     if (!allCodes) return null;
+    // Available = unused AND unexpired: an expired code can't be handed out.
     const used = codes.filter((c) => c.used_at).length;
-    return { total: codes.length, used, free: codes.length - used };
+    const free = codes.filter((c) => !c.used_at && !isExpiredCode(c)).length;
+    return { total: codes.length, used, free };
   }, [allCodes, codes]);
 
   const visible = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
     const rows = codes.filter((c) =>
-      filter === "all" ? true : filter === "used" ? !!c.used_at : !c.used_at,
+      filter === "all" ? true : filter === "used" ? !!c.used_at : !c.used_at && !isExpiredCode(c),
     );
     // Used: newest hand-out first. Free: next to go first.
     if (filter === "used") {
@@ -110,7 +113,8 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
     );
   }, [codes, filter, q]);
 
-  const nextFree = codes.find((c) => !c.used_at) ?? null;
+  const nextFree = codes.find((c) => !c.used_at && !isExpiredCode(c)) ?? null;
+  const expiresOn = nextFree?.expires_on ?? null;
 
   const toggle = async (c: OfferCodeRow) => {
     setBusyCode(c.code);
@@ -147,7 +151,11 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
           {
             label: "Available",
             value: counts ? counts.free : "…",
-            note: nextFree ? `next up: #${nextFree.position}` : counts ? "pool is empty" : undefined,
+            note: nextFree
+              ? `next up: #${nextFree.position}${expiresOn ? `, expires ${expiresOn}` : ""}`
+              : counts
+                ? "pool is empty"
+                : undefined,
           },
           { label: "Used", value: counts ? counts.used : "…" },
           { label: "Total", value: counts ? counts.total : "…", note: OFFER_BLURB[offer].stat },
@@ -301,7 +309,11 @@ function CodeRow({
         >
           {row.code}
         </span>
-        {row.used_at ? (
+        {isExpiredCode(row) ? (
+          <CategoryTag family="danger" size={9.5}>
+            {row.used_at ? "USED · EXPIRED" : "EXPIRED"}
+          </CategoryTag>
+        ) : row.used_at ? (
           <SourceTag size={9.5}>USED</SourceTag>
         ) : (
           <CategoryTag family="success" size={9.5}>
