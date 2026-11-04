@@ -46,6 +46,7 @@ export function TrendChart({
   shade = [],
   height = 170,
   yFloor = 0,
+  xLabel = shortDate,
 }: {
   points: TrendPoint[];
   /** A token, e.g. "var(--cat-3)". */
@@ -58,6 +59,8 @@ export function TrendChart({
   height?: number;
   /** Lowest value the axis must show (null = fit the data). */
   yFloor?: number | null;
+  /** Axis and tooltip label for an x value (default "Nov 2"). */
+  xLabel?: (x: string) => string;
 }) {
   const boxRef = React.useRef<HTMLDivElement>(null);
   const [width, setWidth] = React.useState(520);
@@ -230,7 +233,7 @@ export function TrendChart({
         {points.map((p, i) =>
           i % labelEvery === 0 || i === points.length - 1 ? (
             <text key={`x${i}`} x={xAt(i)} y={height - 6} textAnchor="middle" style={{ font: "400 10.5px var(--font-ui)", fill: "var(--ink-4)" }}>
-              {shortDate(p.x)}
+              {xLabel(p.x)}
             </text>
           ) : null,
         )}
@@ -254,7 +257,7 @@ export function TrendChart({
             zIndex: 2,
           }}
         >
-          <div style={{ font: "600 11px var(--font-ui)", color: "var(--ink-3)" }}>{shortDate(hp.x)}</div>
+          <div style={{ font: "600 11px var(--font-ui)", color: "var(--ink-3)" }}>{xLabel(hp.x)}</div>
           <div style={{ font: "650 14px var(--font-ui)", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
             {hp.y == null ? "no data" : format(hp.y)}
             {hp.provisional ? " (early)" : ""}

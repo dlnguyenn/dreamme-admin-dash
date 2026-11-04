@@ -115,8 +115,66 @@ export function buildCohorts(
   sources: Map<string, string | null>,
   today: string,
 ): Cohort[] {
-  // Each charge belongs to the user's latest trial at or before it, so a
-  // user with two trials is never counted twice.
+  const chargesByTrial = assignCharges(trials, charges);
+
+  const cells = new Map<string, Cohort>();
+  for (const t of trials) {
+    const week = weekStart(easternDate(t.at));
+    const group: CohortGroup = t.userId && sources.has(t.userId) ? sourceGroup(sources.get(t.userId)) : "unmatched";
+    const key = `${week}|${group}`;
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = {
+        week,
+        group,
+        trials: 0,
+        payers: 0,
+        yearlyPayers: 0,
+        rev7: 0,
+        rev30: 0,
+        proj12Gross: 0,
+        complete: addDays(week, 6) < today,
+        payersMature: matureFor(week, WINDOWS.payer, today),
+        d7Mature: matureFor(week, WINDOWS.d7, today),
+        d30Mature: matureFor(week, WINDOWS.d30, today),
+      };
+      cells.set(key, cell);
+    }
+    cell.trials++;
+    const r = trialRevenue(t, chargesByTrial.get(t.otx) ?? []);
+    cell.rev7 += r.rev7;
+    cell.rev30 += r.rev30;
+    if (r.first) {
+      cell.payers++;
+      if (isYearly(r.first.plan)) cell.yearlyPayers++;
+      cell.proj12Gross += r.first.price * PAYMENTS_IN_12M[r.first.plan];
+    }
+  }
+  return [...cells.values()].sort((a, b) => a.week.localeCompare(b.week) || a.group.localeCompare(b.group));
+}
+
+/** One trial's charges summed over the windows, and its first subscription charge (the conversion). */
+export function trialRevenue(t: TrialStart, charges: Charge[]): { rev7: number; rev30: number; first: { plan: Plan; price: number } | null } {
+  const start = Date.parse(t.at);
+  let rev7 = 0;
+  let rev30 = 0;
+  let first: { plan: Plan; price: number } | null = null;
+  for (const c of charges.slice().sort((a, b) => a.at.localeCompare(b.at))) {
+    const age = (Date.parse(c.at) - start) / DAY_MS;
+    if (age < WINDOWS.d7) rev7 += c.priceUsd;
+    if (age < WINDOWS.d30) rev30 += c.priceUsd;
+    const plan = planOf(c.productId, c.periodDays);
+    if (!first && plan !== "consumable" && c.priceUsd > 0 && age < WINDOWS.payer) first = { plan, price: c.priceUsd };
+  }
+  return { rev7, rev30, first };
+}
+
+/**
+ * Each charge belongs to the user's latest trial at or before it, so a user
+ * with two trials is never counted twice. Charges with no user fall back to
+ * the trial with the same original_transaction_id.
+ */
+export function assignCharges(trials: TrialStart[], charges: Charge[]): Map<string, Charge[]> {
   const trialsByUser = new Map<string, TrialStart[]>();
   for (const t of trials) {
     if (!t.userId) continue;
@@ -145,49 +203,7 @@ export function buildCohorts(
     arr.push(c);
     chargesByTrial.set(owner.otx, arr);
   }
-
-  const cells = new Map<string, Cohort>();
-  for (const t of trials) {
-    const week = weekStart(easternDate(t.at));
-    const group: CohortGroup = t.userId && sources.has(t.userId) ? sourceGroup(sources.get(t.userId)) : "unmatched";
-    const key = `${week}|${group}`;
-    let cell = cells.get(key);
-    if (!cell) {
-      cell = {
-        week,
-        group,
-        trials: 0,
-        payers: 0,
-        yearlyPayers: 0,
-        rev7: 0,
-        rev30: 0,
-        proj12Gross: 0,
-        complete: addDays(week, 6) < today,
-        payersMature: matureFor(week, WINDOWS.payer, today),
-        d7Mature: matureFor(week, WINDOWS.d7, today),
-        d30Mature: matureFor(week, WINDOWS.d30, today),
-      };
-      cells.set(key, cell);
-    }
-    cell.trials++;
-
-    const start = Date.parse(t.at);
-    const mine = (chargesByTrial.get(t.otx) ?? []).slice().sort((a, b) => a.at.localeCompare(b.at));
-    let first: { plan: Plan; price: number } | null = null;
-    for (const c of mine) {
-      const age = (Date.parse(c.at) - start) / DAY_MS;
-      if (age < WINDOWS.d7) cell.rev7 += c.priceUsd;
-      if (age < WINDOWS.d30) cell.rev30 += c.priceUsd;
-      const plan = planOf(c.productId, c.periodDays);
-      if (!first && plan !== "consumable" && c.priceUsd > 0 && age < WINDOWS.payer) first = { plan, price: c.priceUsd };
-    }
-    if (first) {
-      cell.payers++;
-      if (isYearly(first.plan)) cell.yearlyPayers++;
-      cell.proj12Gross += first.price * PAYMENTS_IN_12M[first.plan];
-    }
-  }
-  return [...cells.values()].sort((a, b) => a.week.localeCompare(b.week) || a.group.localeCompare(b.group));
+  return chargesByTrial;
 }
 
 export interface GroupSummary {

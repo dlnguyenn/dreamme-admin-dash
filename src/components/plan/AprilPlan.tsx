@@ -5,9 +5,11 @@
  * wiki/revenue-100k-question.md, Decision). Can DreamMe reach $100k gross in
  * April with Meta spend no higher than what its trials earn back in 12 months?
  *
- * Sub-views: Value per trial (what each channel can pay for an extra trial)
- * and Clippers (the pay-per-view clipper relaunch against its stop rule). The
- * Meta holdout lives on its own tab (Meta Switchback).
+ * Sub-views: Scorecard (April forecast, drift, Jan 15 checkpoints), Value
+ * per trial (what each channel can pay for an extra trial), Clippers (the
+ * pay-per-view relaunch against its stop rule), Experiments (A/B tests) and
+ * P&L (monthly contribution). The Meta holdout lives on its own tab (Meta
+ * Switchback).
  */
 
 import * as React from "react";
@@ -16,19 +18,23 @@ import { Button } from "../ui";
 import { Segmented } from "../porcelain";
 import { ValuePerTrial } from "./ValuePerTrial";
 import { ClipperTracker } from "./ClipperTracker";
+import { Scorecard } from "./Scorecard";
+import { Experiments } from "./Experiments";
+import { PnL } from "./PnL";
 import type { SourceStatus } from "@/lib/revenue-plan/user-sources";
 
-type View = "value" | "clippers";
+type View = "scorecard" | "value" | "clippers" | "experiments" | "pnl";
+const VIEWS: View[] = ["scorecard", "value", "clippers", "experiments", "pnl"];
 const VIEW_KEY = "dreamme.aprilPlan.view";
 
 export function AprilPlan() {
-  const [view, setView] = React.useState<View>("value");
+  const [view, setView] = React.useState<View>("scorecard");
   const [refreshKey, setRefreshKey] = React.useState(0);
 
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem(VIEW_KEY);
-      if (saved === "value" || saved === "clippers") setView(saved);
+      if (VIEWS.includes(saved as View)) setView(saved as View);
     } catch {}
   }, []);
   const pick = (v: string) => {
@@ -45,18 +51,28 @@ export function AprilPlan() {
         title="April Plan"
         subtitle="Tracking for $100k gross in April 2027 with Meta spend no higher than what its trials earn back in 12 months. Net is gross x0.84 (Apple's real 15%), never RC proceeds."
         actions={
-          <Segmented
-            value={view}
-            onChange={pick}
-            options={[
-              { value: "value", label: "Value per trial" },
-              { value: "clippers", label: "Clippers" },
-            ]}
-          />
+          // Five views don't fit a phone: the switcher scrolls instead of clipping.
+          <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+            <Segmented
+              value={view}
+              onChange={pick}
+              options={[
+                { value: "scorecard", label: "Scorecard" },
+                { value: "value", label: "Value per trial" },
+                { value: "clippers", label: "Clippers" },
+                { value: "experiments", label: "Experiments" },
+                { value: "pnl", label: "P&L" },
+              ]}
+            />
+          </div>
         }
       />
       <SourcesBanner onSynced={() => setRefreshKey((k) => k + 1)} />
-      {view === "value" ? <ValuePerTrial key={`v${refreshKey}`} /> : <ClipperTracker key={`c${refreshKey}`} />}
+      {view === "scorecard" && <Scorecard key={`s${refreshKey}`} />}
+      {view === "value" && <ValuePerTrial key={`v${refreshKey}`} />}
+      {view === "clippers" && <ClipperTracker key={`c${refreshKey}`} />}
+      {view === "experiments" && <Experiments key={`e${refreshKey}`} />}
+      {view === "pnl" && <PnL key={`p${refreshKey}`} />}
     </div>
   );
 }

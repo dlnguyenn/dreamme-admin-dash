@@ -27,6 +27,7 @@ import {
   StatusPill,
   thStyle,
 } from "./porcelain";
+import { Experiments } from "./plan/Experiments";
 
 interface PricingExperimentDef {
   id: string;
@@ -556,6 +557,9 @@ export function PricingExperiments() {
         * CVR still maturing — that week&rsquo;s 7-day trials haven&rsquo;t all resolved yet.
         Source: RevenueCat trial conversion by product duration, weekly.
       </div>
+
+      <SectionHeader family="success" icon="Flask" title="A/B tests (April plan)" meta="arm reads from rc_events; also on April Plan > Experiments" />
+      <Experiments />
     </div>
   );
 }
