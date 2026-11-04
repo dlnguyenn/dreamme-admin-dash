@@ -27,6 +27,7 @@ import {
   watchMailbox,
 } from "@/lib/vendors/gmail";
 import { checkIngestHealth } from "./health";
+import { isFromChase } from "@/lib/finance/chase-alerts";
 import {
   consumerDbConfigured,
   fetchFeedbackSince,
@@ -256,6 +257,10 @@ async function ingestEmailViaImap(report: IngestReport): Promise<void> {
 
 /** Returns true when the message was new (not a duplicate). */
 async function insertEmailMessage(msg: ParsedInbound): Promise<boolean> {
+  // Chase alerts forwarded to dan@ belong to the Spend tab's ingest
+  // (finance/chase-alerts-store.ts). The label/alias scope already keeps
+  // them out; this guards the unscoped IMAP fallback too.
+  if (isFromChase(msg.rawFromEmail ?? "")) return false;
   const refIds = [
     ...msg.references,
     ...(msg.inReplyTo ? [msg.inReplyTo] : []),

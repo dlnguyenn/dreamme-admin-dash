@@ -6,6 +6,7 @@ import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { SpendAddModal } from "./SpendAddModal";
 import { SpendImportCsvModal } from "./SpendImportCsvModal";
+import { ChaseAlertsPanel } from "./ChaseAlertsPanel";
 import {
   CategoryTag,
   DeltaChip,
@@ -313,6 +314,8 @@ export function SpendDashboard() {
           />
         ))}
       </CardGrid>
+
+      <ChaseAlertsPanel />
 
       {showAdd && (
         <SpendAddModal
