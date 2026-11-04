@@ -6,8 +6,14 @@
 //
 // Runs after sync-ad-insights (07:00 UTC) via vercel.json. Reads with the anon
 // key; writes with the service role (marketing_alerts is RLS anon-read-only).
+//
+// The same pass checks every live Meta holdout test's spend against its plan
+// (src/lib/revenue-plan/switchback.ts) and writes a "plan_spend" alert for any
+// campaign-day more than 20% off. That check runs first and on its own, so a
+// bad insights read never hides a broken test.
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
+import { writeSwitchbackAlerts } from "@/lib/revenue-plan/switchback-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,6 +139,10 @@ export async function GET(req: Request) {
     );
   }
 
+  const plan = await writeSwitchbackAlerts().catch((e: unknown) => ({
+    error: e instanceof Error ? e.message : String(e),
+  }));
+
   // Yesterday UTC + trailing 14 days before it.
   const today = new Date();
   const yest = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
@@ -155,7 +165,7 @@ export async function GET(req: Request) {
     );
   }
   const rows = (await res.json()) as DailyRow[];
-  if (!rows.length) return NextResponse.json({ ok: true, alerts: 0, note: "no insight rows" });
+  if (!rows.length) return NextResponse.json({ ok: true, alerts: 0, note: "no insight rows", plan });
 
   // Group rows by date, and by (campaign, date).
   const byDate = new Map<string, DailyRow[]>();
@@ -226,5 +236,6 @@ export async function GET(req: Request) {
     alerts: alerts.length,
     critical: alerts.filter((a) => a.severity === "critical").length,
     messages: alerts.map((a) => a.message),
+    plan,
   });
 }

@@ -1,49 +1,65 @@
 /**
- * Daily email for the Meta iOS spend step-down test (src/lib/step-down.ts).
+ * Daily email for live Meta holdout tests (src/lib/revenue-plan/switchback.ts).
  *
  * Vercel cron, 13:00 UTC (9am Eastern), after sync-ad-insights (07:00) has
- * written yesterday's spend. Emails Dan the running verdict through the
- * dash's operational-alert sender. Sends from the transition day through
- * the day after the test ends (the final readout), then goes quiet.
+ * written yesterday's spend and marketing-alerts (07:45) has checked it
+ * against plan. Emails Dan the running verdict and any spend off plan through
+ * the dash's operational-alert sender, for every test with status "live",
+ * from the day after it starts through the day after it ends (the FINAL
+ * readout). Drafts and finished tests stay quiet.
  *
- * ?dry_run=1 returns the email body without sending.
+ * ?dry_run=1 returns the email bodies without sending; with ?test=<id> a dry
+ * run reads that test whatever its status.
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import { mailerConfigured, sendOperationalAlert } from "@/lib/support/mailer";
-import { STEP_DOWN, fetchStepDownRows, reportText, stepDownDbConfigured, summarize } from "@/lib/step-down";
+import { addDays, easternDate } from "@/lib/revenue-plan/dates";
+import { internalConfigured } from "@/lib/revenue-plan/db";
+import { HOLDOUT_TESTS, findTest, reportText, summarize, testSpan } from "@/lib/revenue-plan/switchback";
+import { fetchSwitchbackRows } from "@/lib/revenue-plan/switchback-data";
+import { metaBreakEven } from "@/lib/revenue-plan/value-per-trial-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const addDays = (d: string, n: number) =>
-  new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-
 export async function GET(req: Request) {
   if (!checkCronAuth(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  if (!stepDownDbConfigured()) {
+  if (!internalConfigured()) {
     return NextResponse.json({ ok: false, error: "Supabase service role not configured" }, { status: 500 });
   }
-  const dryRun = new URL(req.url).searchParams.get("dry_run") === "1";
+  const url = new URL(req.url);
+  const dryRun = url.searchParams.get("dry_run") === "1";
+  const picked = dryRun && url.searchParams.get("test") ? findTest(url.searchParams.get("test")) : null;
+  const tests = picked ? [picked] : HOLDOUT_TESTS.filter((t) => t.status === "live");
+  const today = easternDate(new Date());
+  const results: Record<string, unknown>[] = [];
   try {
-    const { rows, today } = await fetchStepDownRows(STEP_DOWN);
-    const finalDay = addDays(STEP_DOWN.test.to, 1);
-    if (!dryRun && (today <= STEP_DOWN.transition || today > finalDay)) {
-      return NextResponse.json({ ok: true, sent: false, reason: "outside the test window", today });
+    for (const t of tests) {
+      const span = testSpan(t);
+      const finalDay = addDays(span.to, 1);
+      if (!picked && (today <= span.from || today > finalDay)) {
+        results.push({ test: t.id, sent: false, reason: "outside the test window" });
+        continue;
+      }
+      const [rows, breakEven] = await Promise.all([fetchSwitchbackRows(t), metaBreakEven()]);
+      const summary = summarize(t, rows.days, rows.today, breakEven, rows.names);
+      const subject = `${today === finalDay ? "FINAL " : ""}${t.title}: ${summary.verdict.headline}`;
+      const bodyText = reportText(summary, rows.days, rows.today) + "\n\nFull view: DAD > Meta Switchback.";
+      if (dryRun) {
+        results.push({ test: t.id, dry_run: true, subject, bodyText });
+        continue;
+      }
+      if (!mailerConfigured()) {
+        return NextResponse.json({ ok: false, error: "DREAMME_SMTP_PASS not set" }, { status: 500 });
+      }
+      await sendOperationalAlert({ subject, bodyText });
+      results.push({ test: t.id, sent: true, subject, status: summary.verdict.status });
     }
-    const summary = summarize(STEP_DOWN, rows, today);
-    const final = today === finalDay;
-    const subject = `${final ? "FINAL " : ""}Step-down test: ${summary.verdict.headline}`;
-    const bodyText = reportText(summary, rows) + "\n\nFull view: DAD > Step-down Test.";
-    if (dryRun) return NextResponse.json({ ok: true, dry_run: true, subject, bodyText, summary });
-    if (!mailerConfigured()) {
-      return NextResponse.json({ ok: false, error: "DREAMME_SMTP_PASS not set" }, { status: 500 });
-    }
-    await sendOperationalAlert({ subject, bodyText });
-    return NextResponse.json({ ok: true, sent: true, subject, status: summary.verdict.status });
+    return NextResponse.json({ ok: true, today, results });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
