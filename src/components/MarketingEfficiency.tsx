@@ -759,7 +759,7 @@ function SkanAttribution() {
         family="neutral"
         icon="InfoCircle"
         title="First-party SKAN"
-        meta="per-campaign attribution"
+        meta="per-campaign attribution · 35d"
       />
 
       {/* Headline reconciliation + blended CAC — these work today from
