@@ -3,6 +3,7 @@
 /**
  * Product Roadmap tab: Now / Next / Later / Done board. Type into a column
  * to add an item, drag cards to move or reorder them, click one for details.
+ * The Map view (RoadmapMap.tsx) lays the same items out on a timeline.
  * Rules (ordering, drop position, done_at, linked ticket status) live in
  * src/lib/roadmap.ts; storage in /api/roadmap.
  */
@@ -10,6 +11,8 @@ import * as React from "react";
 import { PageHeader } from "./Shell";
 import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { Segmented } from "./porcelain";
+import { RoadmapMap } from "./RoadmapMap";
 import { APP_AREAS } from "@/lib/app-areas";
 import { formatDate } from "@/lib/format";
 import {
@@ -27,6 +30,8 @@ import {
 } from "@/lib/roadmap";
 
 const DONE_PREVIEW = 15;
+const VIEW_KEY = "dad.roadmap.view";
+type RoadmapView = "board" | "map";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -49,6 +54,25 @@ export function Roadmap() {
   const [dragId, setDragId] = React.useState<string | null>(null);
   const [dropAt, setDropAt] = React.useState<{ stage: RoadmapStage; beforeId: string | null } | null>(null);
   const [showAllDone, setShowAllDone] = React.useState(false);
+  const [view, setView] = React.useState<RoadmapView>("board");
+
+  // Remember Board vs Map per browser; ?view=map in the URL wins.
+  React.useEffect(() => {
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("view");
+      const v = fromUrl ?? window.localStorage.getItem(VIEW_KEY);
+      if (v === "board" || v === "map") setView(v);
+    } catch {}
+  }, []);
+  const pickView = (v: RoadmapView) => {
+    setView(v);
+    try {
+      window.localStorage.setItem(VIEW_KEY, v);
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", v);
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
+  };
 
   const load = React.useCallback(async () => {
     try {
@@ -124,6 +148,23 @@ export function Roadmap() {
     }
   };
 
+  const reschedule = async (id: string, target_date: string) => {
+    const prev = items.find((i) => i.id === id);
+    if (!prev || prev.target_date === target_date) return;
+    upsert({ ...prev, target_date });
+    try {
+      const { item } = await api<{ item: RoadmapItem }>(`/api/roadmap/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ target_date }),
+      });
+      upsert(item);
+      toast(`Target set to ${formatDate(`${target_date}T12:00:00`)}`);
+    } catch (e) {
+      upsert(prev);
+      toast(`Couldn't reschedule: ${(e as Error).message}`);
+    }
+  };
+
   const onDrop = () => {
     if (dragId && dropAt) move(dragId, dropAt.stage, dropAt.beforeId);
     setDragId(null);
@@ -137,7 +178,11 @@ export function Roadmap() {
       <PageHeader
         eyebrow="Product · Planning"
         title={<em>Roadmap</em>}
-        subtitle="What we're building now, next and later. Type in a column to add, drag to move, click a card for details."
+        subtitle={
+          view === "map"
+            ? "When things are due and what's coming. Drag a diamond to reschedule, drag an unscheduled item onto a day to date it."
+            : "What we're building now, next and later. Type in a column to add, drag to move, click a card for details."
+        }
         actions={
           <Button variant="primary" icon={<Icons.Plus />} onClick={() => setCreating(true)}>
             Add item
@@ -160,6 +205,16 @@ export function Roadmap() {
         <span style={{ fontSize: 12, color: "var(--ink-3)", marginLeft: 8 }}>
           {openCount} open
         </span>
+        <span style={{ flex: 1 }} />
+        <Segmented
+          size="sm"
+          value={view}
+          onChange={(v) => pickView(v as RoadmapView)}
+          options={[
+            { value: "board", label: "Board" },
+            { value: "map", label: "Map" },
+          ]}
+        />
       </div>
 
       {loading ? (
@@ -168,6 +223,8 @@ export function Roadmap() {
             Loading roadmap…
           </div>
         </div>
+      ) : view === "map" ? (
+        <RoadmapMap items={visible} onOpen={setSelected} onReschedule={reschedule} />
       ) : (
         <div
           style={{
