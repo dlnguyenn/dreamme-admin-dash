@@ -202,8 +202,8 @@ export function preflightPrompt(
     "type, format, asset type and awareness stage with the rubric's names. Predict the hook and hold bands " +
     "against the rubric's benchmarks and the account priors; Motion's data says about 5% of ads win, so do " +
     "not inflate. Propose 3 alternative hooks using higher-hit-rate tactics that fit this product: " +
-    "on_screen_text at most 8 words, spoken a different conversational line, no medication brand names, no " +
-    "unsubstantiated weight-loss claims. Return ONLY the JSON, every string under 200 characters."
+    "on_screen_text at most 8 words, spoken a different conversational line, no invented numbers or results, " +
+    "and never a line saying the app itself cured a symptom. Return ONLY the JSON, every string under 200 characters."
   );
 }
 
@@ -216,6 +216,7 @@ Rules:
 - Motion's diagnosis: hook low means fix the first 3 s; hook strong and hold weak means the body does not deliver the hook's promise; attention fine and conversion poor means offer, CTA or landing; CTR high and conversion poor means clickbait or wrong audience.
 - Listicles dominate DreamMe's organic TikTok, but on paid Meta Motion ranks listicle, question, how-to and explainer hooks at the bottom by hit rate; do not carry the organic playbook into paid verdicts unthinkingly.
 - Nobody predicts winners (about 5% of ads win). A pre-flight says what is missing and where it will leak, never that it will win.
+- Drug brand names, dose screens, MeAgain-style side-effect lines and before/after from real users are policy-edge (Dan, 2026-11-05): list them under Compliance as policy-edge and never count them against the ad. Flag hard only invented numbers, impersonation, or a claim that the app itself relieved a symptom (Meta rejected "no more headaches").
 - Cite moments as seconds with one decimal, like "at 7.5 s" or "0 to 3 s", never mm:ss.
 - No em dashes anywhere. Use periods, commas or colons. Plain markdown, headings as bold lines, at most 320 words.
 Format for an AIRED ad: **Numbers** · **Hook (0-3 s)** · **Where they leave** · **What is working** · **What to test** (2-3 edits tied to seconds; compliance flags separately).

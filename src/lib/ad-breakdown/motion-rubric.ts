@@ -76,7 +76,7 @@ Gemini's own band guess is stored alongside as a second opinion. When \`calibrat
 
 ## DreamMe overlay (ours, not Motion's)
 
-"Product" means the DreamMe app UI, the fish Sushi, or the DreamMe name. House rules: no medication names in hashtags or captions, weight-loss result claims need care.
+"Product" means the DreamMe app UI, the fish Sushi, or the DreamMe name. Policy-edge, allowed (Dan 2026-11-05): drug brand names, dose screens, MeAgain-style side-effect lines ("minimize nausea") and before/after from real users. Note them as policy-edge, never as faults. Hard limits: real DreamMe numbers only, no impersonated people or companies. Meta has rejected spoken claims that the app itself relieved a symptom ("no more headaches"); credit the plan or the list instead.
 
 Account priors (9 aired video ads, Sep 2026): hook rates 32 to 55%, median 42%, and 7 of 9 land in Motion's "strong" band, so for a DreamMe ad with a person on camera in the first second, "strong" is the base case and "solid" or "needs work" needs a visible reason (no face, no text, slow open). Hold rates 7 to 50%, median 29%: 6 of 9 are "weak" and none are "strong", so hold is where this account loses; predict "average" only when the body clearly pays off the hook by 15 s, and never "strong" without a reason. CPT $6.65 to $49; Danielle Kent (Android) is the scaling control at hook 39%, hold 50%, CPT $13.
 `;
