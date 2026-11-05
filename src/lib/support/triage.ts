@@ -234,7 +234,7 @@ export function describeUser(ctx: UserContext | null): string {
     .join("\n");
 }
 
-function storeGuidance(ctx: UserContext | null): string {
+export function storeGuidance(ctx: UserContext | null): string {
   // The sub most worth acting on: a live (or still-retrying) one beats a
   // dead one — a mixed-store history must not route the reply to the
   // wrong platform's cancel instructions.
@@ -251,8 +251,23 @@ function storeGuidance(ctx: UserContext | null): string {
   if (store === "STRIPE") {
     return `This user subscribed via the website (Stripe). Dan CAN cancel the subscription and issue refunds directly, so drafts can say it has been taken care of (Dan will execute the action before sending).`;
   }
-  return `Unknown store. If they ask about cancelling or refunds, ask which platform they subscribed on (App Store, Google Play, or the website) or explain the Apple/Google/website options briefly.`;
+  return UNKNOWN_STORE_GUIDANCE;
 }
+
+/**
+ * No account/subscription matched the sender (usually Apple Hide My Email,
+ * or a different email than the one they signed up with). NEVER make the
+ * user wait on a "which platform?" round-trip for a cancel ask: give them
+ * both store walkthroughs in the first reply so they can cancel right away.
+ * Exported for unit tests.
+ */
+export const UNKNOWN_STORE_GUIDANCE = `We could not find a DreamMe account or subscription for this email address, so we do not know which platform they used (a Hide My Email or different signup address is the usual reason). Dan cannot act on an account he cannot find, and you must NOT ask them which platform they used or make them wait on a reply before helping.
+If they want to cancel (or are worried about being charged), BOTH drafts MUST give BOTH sets of steps in the first reply so they can cancel themselves right now, as short numbered lists:
+- iPhone / iPad (Apple): Settings app > tap your name at the top > Subscriptions > DreamMe > Cancel Subscription.
+- Android (Google Play): Play Store app > tap your profile picture > Payments & subscriptions > Subscriptions > DreamMe > Cancel subscription.
+Tell them to follow whichever matches the phone they signed up on, and that cancelling at least 24 hours before the trial ends means they will not be charged. Then add ONE short line at the end: if they signed up on our website instead, or can't find DreamMe in either list, reply with the email they signed up with and Dan will cancel it for them.
+If they asked for a REFUND, also include Apple's https://reportaproblem.apple.com steps (Apple decides), and say that if it was a Google Play purchase they can reply and Dan will look into it.
+Neither draft may just ask a question.`;
 
 export async function triageThread(params: {
   subject: string | null;

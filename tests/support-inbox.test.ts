@@ -1333,3 +1333,16 @@ describe("buildFeatureRequest", () => {
     expect(fr.description).not.toContain("Thanks for writing in");
   });
 });
+
+describe("storeGuidance: no account matched", async () => {
+  const { storeGuidance, UNKNOWN_STORE_GUIDANCE } = await import(
+    "@/lib/support/triage"
+  );
+  it("gives both Apple and Google Play cancel steps instead of asking which platform", () => {
+    const g = storeGuidance(null);
+    expect(g).toBe(UNKNOWN_STORE_GUIDANCE);
+    expect(g).toContain("Settings app");
+    expect(g).toContain("Play Store app");
+    expect(g).toMatch(/must NOT ask them which platform/);
+  });
+});
