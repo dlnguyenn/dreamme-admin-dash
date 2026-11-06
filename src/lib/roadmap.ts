@@ -62,9 +62,52 @@ export interface RoadmapItem {
   target_date: string | null;
   position: number;
   feature_request_id: string | null;
+  /** Link to the item's brief: a DAD brief (?tab=roadmap&brief=<slug>) or any http(s) page. */
+  brief_url: string | null;
   done_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Trimmed brief link, or null when empty. */
+export function normalizeBriefUrl(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim();
+  return s ? s : null;
+}
+
+/** Why a brief link is refused, or null when it's fine (empty is fine). */
+export function briefUrlError(v: string | null | undefined): string | null {
+  const s = normalizeBriefUrl(v);
+  if (!s) return null;
+  if (s.length > 1000) return "Brief link is too long";
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return "Brief link must start with https://";
+  } catch {
+    return "Brief link must be a full URL (https://…)";
+  }
+  return null;
+}
+
+/**
+ * The DAD brief a link opens (…?tab=roadmap&brief=<slug> on this site), so
+ * the Roadmap can show it in place. Null for any other page.
+ */
+export function briefSlugFromUrl(url: string | null, host: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url, `https://${host}`);
+    if (u.host !== host) return null;
+    const slug = u.searchParams.get("brief");
+    return slug && /^[a-z0-9-]{1,80}$/.test(slug) ? slug : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The shareable link to a DAD brief. */
+export function briefLink(origin: string, slug: string): string {
+  return `${origin.replace(/\/$/, "")}/?tab=roadmap&brief=${encodeURIComponent(slug)}`;
 }
 
 const PRIORITY_RANK: Record<RoadmapPriority, number> = { high: 0, normal: 1, low: 2 };

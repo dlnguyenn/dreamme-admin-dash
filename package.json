@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "briefs": "node scripts/build-briefs.mjs",
     "refresh-fixture": "tsx scripts/refresh-fixture.ts",
     "migrate-bucket": "tsx scripts/migrate-bucket.ts",
     "migrate-rows": "tsx scripts/migrate-rows.ts",

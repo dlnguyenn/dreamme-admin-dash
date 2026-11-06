@@ -18,7 +18,9 @@ import {
   ROADMAP_OWNERS,
   ROADMAP_PRIORITIES,
   ROADMAP_STAGES,
+  briefUrlError,
   doneAtFor,
+  normalizeBriefUrl,
   requestStatusForStage,
   type RoadmapItem,
 } from "@/lib/roadmap";
@@ -36,6 +38,7 @@ const Patch = z
     owner: z.enum(ROADMAP_OWNERS as [string, ...string[]]).nullable().optional(),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     position: z.number().finite().optional(),
+    brief_url: z.string().max(1000).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "empty patch" });
 
@@ -80,6 +83,11 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
+  const briefError = briefUrlError(patch.brief_url);
+  if (briefError) {
+    return NextResponse.json({ ok: false, error: briefError }, { status: 400 });
+  }
+
   try {
     const [prev] = await spGet<RoadmapItem[]>(
       `roadmap_items?id=eq.${encodeURIComponent(id)}&limit=1`,
@@ -93,6 +101,7 @@ export async function PATCH(
     for (const k of ["area", "owner"] as const) {
       if (patch[k] === "") update[k] = null;
     }
+    if (patch.brief_url !== undefined) update.brief_url = normalizeBriefUrl(patch.brief_url);
     const stageChanged = !!patch.stage && patch.stage !== prev.stage;
     if (patch.stage) {
       update.done_at = doneAtFor(prev.stage, patch.stage as RoadmapItem["stage"], prev.done_at);

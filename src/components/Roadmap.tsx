@@ -13,6 +13,7 @@ import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { Segmented } from "./porcelain";
 import { RoadmapMap } from "./RoadmapMap";
+import { BriefReader } from "./BriefReader";
 import { APP_AREAS } from "@/lib/app-areas";
 import { formatDate } from "@/lib/format";
 import {
@@ -21,6 +22,8 @@ import {
   ROADMAP_STAGES,
   STAGE_HINTS,
   STAGE_LABELS,
+  briefSlugFromUrl,
+  briefUrlError,
   columnItems,
   ownerColor,
   ownerEdge,
@@ -58,6 +61,31 @@ export function Roadmap() {
   const [dropAt, setDropAt] = React.useState<{ stage: RoadmapStage; beforeId: string | null } | null>(null);
   const [showAllDone, setShowAllDone] = React.useState(false);
   const [view, setView] = React.useState<RoadmapView>("board");
+  const [briefSlug, setBriefSlug] = React.useState<string | null>(null);
+
+  // ?brief=<slug> opens that brief over the board: the shareable brief link.
+  React.useEffect(() => {
+    try {
+      const b = new URLSearchParams(window.location.search).get("brief");
+      if (b && /^[a-z0-9-]{1,80}$/.test(b)) setBriefSlug(b);
+    } catch {}
+  }, []);
+  const setBriefParam = (slug: string | null) => {
+    try {
+      const url = new URL(window.location.href);
+      if (slug) url.searchParams.set("brief", slug);
+      else url.searchParams.delete("brief");
+      window.history.replaceState(null, "", url.toString());
+    } catch {}
+  };
+  const openBrief = (slug: string) => {
+    setBriefSlug(slug);
+    setBriefParam(slug);
+  };
+  const closeBrief = React.useCallback(() => {
+    setBriefSlug(null);
+    setBriefParam(null);
+  }, []);
 
   // Remember Board vs Map per browser; ?view=map in the URL wins.
   React.useEffect(() => {
@@ -294,8 +322,11 @@ export function Roadmap() {
             setItems((prev) => prev.filter((i) => i.id !== id));
             setSelected(null);
           }}
+          onOpenBrief={openBrief}
         />
       )}
+
+      {briefSlug && <BriefReader slug={briefSlug} onClose={closeBrief} />}
     </>
   );
 }
@@ -482,6 +513,14 @@ function Card({
             <Icons.Flag size={12} />
           </span>
         )}
+        {item.brief_url && (
+          <span
+            title="Has a brief: open the card to read it"
+            style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: "var(--ink-2)" }}
+          >
+            <Icons.Bookmark size={12} /> Brief
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {item.target_date && item.stage !== "done" && (
           <span style={{ fontSize: 11, color: overdue ? "var(--accent)" : "var(--ink-3)" }}>
@@ -525,12 +564,14 @@ function RoadmapDrawer({
   onClose,
   onSaved,
   onDeleted,
+  onOpenBrief,
 }: {
   item: RoadmapItem | null;
   defaultOwner: string | null;
   onClose: () => void;
   onSaved: (item: RoadmapItem) => void;
   onDeleted: (id: string) => void;
+  onOpenBrief: (slug: string) => void;
 }) {
   const toast = useToast();
   const isCreate = item === null;
@@ -541,6 +582,7 @@ function RoadmapDrawer({
   const [area, setArea] = React.useState(item?.area ?? "");
   const [owner, setOwner] = React.useState(item?.owner ?? defaultOwner ?? "");
   const [target, setTarget] = React.useState(item?.target_date ?? "");
+  const [briefUrl, setBriefUrl] = React.useState(item?.brief_url ?? "");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -557,6 +599,11 @@ function RoadmapDrawer({
       setError("Title required");
       return;
     }
+    const briefError = briefUrlError(briefUrl);
+    if (briefError) {
+      setError(briefError);
+      return;
+    }
     setSaving(true);
     setError(null);
     const body = {
@@ -567,6 +614,7 @@ function RoadmapDrawer({
       area: area || null,
       owner: owner || null,
       target_date: target || null,
+      brief_url: briefUrl.trim() || null,
     };
     try {
       const { item: saved } = await api<{ item: RoadmapItem }>(
@@ -654,6 +702,8 @@ function RoadmapDrawer({
             />
           </Field>
 
+          {item?.brief_url && <BriefLink url={item.brief_url} onOpenBrief={onOpenBrief} />}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Stage">
               <select value={stage} onChange={(e) => setStage(e.target.value as RoadmapStage)} style={inputStyle}>
@@ -698,6 +748,16 @@ function RoadmapDrawer({
               ))}
               {area && !APP_AREAS.includes(area) && <option value={area}>{area}</option>}
             </select>
+          </Field>
+
+          <Field label="Brief link">
+            <input
+              value={briefUrl}
+              onChange={(e) => setBriefUrl(e.target.value)}
+              placeholder="https://… (a DAD brief link or any page)"
+              style={inputStyle}
+              inputMode="url"
+            />
           </Field>
 
           <Field label="Notes">
@@ -754,6 +814,44 @@ function RoadmapDrawer({
         </div>
       </aside>
     </>
+  );
+}
+
+/** The card's brief: a DAD brief opens in place, any other page in a new tab. */
+function BriefLink({ url, onOpenBrief }: { url: string; onOpenBrief: (slug: string) => void }) {
+  const slug = briefSlugFromUrl(url, typeof window === "undefined" ? "" : window.location.host);
+  const style: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid color-mix(in oklab, var(--accent) 30%, var(--line))",
+    background: "color-mix(in oklab, var(--accent) 7%, var(--surface))",
+    color: "var(--ink)",
+    fontSize: 13,
+    fontWeight: 500,
+    textDecoration: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    width: "100%",
+    fontFamily: "inherit",
+  };
+  const label = (
+    <>
+      <Icons.Bookmark size={15} />
+      <span style={{ flex: 1 }}>Read the brief</span>
+      <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{slug ? "opens here" : "opens in a new tab"}</span>
+    </>
+  );
+  return slug ? (
+    <button type="button" onClick={() => onOpenBrief(slug)} style={style}>
+      {label}
+    </button>
+  ) : (
+    <a href={url} target="_blank" rel="noopener noreferrer" style={style}>
+      {label}
+    </a>
   );
 }
 

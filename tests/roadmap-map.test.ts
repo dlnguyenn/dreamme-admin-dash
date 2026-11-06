@@ -20,6 +20,7 @@ const item = (over: Partial<RoadmapItem>): RoadmapItem => ({
   area: null,
   owner: null,
   target_date: null,
+  brief_url: null,
   position: 0,
   feature_request_id: null,
   done_at: null,

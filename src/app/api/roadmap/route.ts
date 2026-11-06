@@ -15,8 +15,10 @@ import {
   ROADMAP_OWNERS,
   ROADMAP_PRIORITIES,
   ROADMAP_STAGES,
+  briefUrlError,
   doneAtFor,
   endPosition,
+  normalizeBriefUrl,
   requestStatusForStage,
   type RoadmapItem,
 } from "@/lib/roadmap";
@@ -35,6 +37,7 @@ const Create = z.object({
   owner: z.enum(ROADMAP_OWNERS as [string, ...string[]]).nullable().optional(),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   feature_request_id: z.string().regex(UUID).nullable().optional(),
+  brief_url: z.string().max(1000).nullable().optional(),
 });
 
 function guard(req: Request): NextResponse | null {
@@ -91,6 +94,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
+  const briefError = briefUrlError(body.brief_url);
+  if (briefError) {
+    return NextResponse.json({ ok: false, error: briefError }, { status: 400 });
+  }
+
   try {
     const stage = (body.stage ?? "next") as RoadmapItem["stage"];
     const sameStage = await spGet<RoadmapItem[]>(
@@ -106,6 +114,7 @@ export async function POST(req: Request) {
         owner: body.owner || null,
         target_date: body.target_date ?? null,
         feature_request_id: body.feature_request_id ?? null,
+        brief_url: normalizeBriefUrl(body.brief_url),
         position: endPosition(sameStage, stage),
         done_at: doneAtFor(null, stage, null),
       },
