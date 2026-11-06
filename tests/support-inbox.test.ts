@@ -1344,5 +1344,17 @@ describe("storeGuidance: no account matched", async () => {
     expect(g).toContain("Settings app");
     expect(g).toContain("Play Store app");
     expect(g).toMatch(/must NOT ask them which platform/);
+    expect(g).toContain("If you signed up using Apple");
+    expect(g).toContain("If you signed up using Google Play");
+    expect(g).toContain("cancelling stops the next renewal");
+  });
+});
+
+describe("cleanDraft: plain-text replies", async () => {
+  const { cleanDraft } = await import("@/lib/support/triage");
+  it("strips markdown bold so asterisks never reach the customer", () => {
+    const out = cleanDraft("Hi Jo!\n\n**If you signed up using Apple (iPhone or iPad):**\n1. Settings app");
+    expect(out).toContain("If you signed up using Apple (iPhone or iPad):");
+    expect(out).not.toContain("*");
   });
 });

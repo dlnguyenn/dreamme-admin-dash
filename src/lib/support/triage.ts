@@ -4,6 +4,7 @@
  *
  * Hard guards applied AFTER the model, regardless of output:
  *  - no em/en dashes anywhere in a draft (Dan's rule for his-voice email)
+ *  - no markdown bold (replies go out as plain text, so ** would show literally)
  *  - sign-off "Dan, co-founder of DreamMe" is always present
  * A static sender deny-list short-circuits BEFORE spending tokens.
  */
@@ -140,6 +141,8 @@ export function cleanDraft(raw: string, variant = 0): string {
     .replace(/\s+[—–]\s+/g, ", ")
     .replace(/[—–]/g, ", ")
     .replace(/,\s*,/g, ",");
+  // Replies are plain-text SMTP: **label** would reach the customer as-is.
+  text = text.replace(/\*\*(.+?)\*\*/g, "$1");
   if (!text.toLowerCase().includes(SIGNOFF.toLowerCase())) {
     text = `${text.replace(/\s+$/, "")}\n\n${SIGNOFF}`;
   }
@@ -262,10 +265,10 @@ export function storeGuidance(ctx: UserContext | null): string {
  * Exported for unit tests.
  */
 export const UNKNOWN_STORE_GUIDANCE = `We could not find a DreamMe account or subscription for this email address, so we do not know which platform they used (a Hide My Email or different signup address is the usual reason). Dan cannot act on an account he cannot find, and you must NOT ask them which platform they used or make them wait on a reply before helping.
-If they want to cancel (or are worried about being charged), BOTH drafts MUST give BOTH sets of steps in the first reply so they can cancel themselves right now, as short numbered lists:
-- iPhone / iPad (Apple): Settings app > tap your name at the top > Subscriptions > DreamMe > Cancel Subscription.
-- Android (Google Play): Play Store app > tap your profile picture > Payments & subscriptions > Subscriptions > DreamMe > Cancel subscription.
-Tell them to follow whichever matches the phone they signed up on, and that cancelling at least 24 hours before the trial ends means they will not be charged. Then add ONE short line at the end: if they signed up on our website instead, or can't find DreamMe in either list, reply with the email they signed up with and Dan will cancel it for them.
+If they want to cancel (or are worried about being charged), BOTH drafts MUST give BOTH sets of steps in the first reply so they can cancel themselves right now, as short numbered lists in plain text (no markdown, no asterisks) under these two labels:
+- "If you signed up using Apple (iPhone or iPad):" Settings app > tap your name at the top > Subscriptions > DreamMe > Cancel Subscription.
+- "If you signed up using Google Play (Android):" Play Store app > tap your profile picture > Payments & subscriptions > Subscriptions > DreamMe > Cancel subscription.
+These steps work for a free trial or a paid subscription, and we do not know which one they have, so cover both in one short line: on a trial, cancelling at least 24 hours before it ends means they will not be charged; on a paid plan, cancelling stops the next renewal. Then add ONE short line at the end: if they signed up on our website instead, or can't find DreamMe in either list, reply with the email they signed up with and Dan will cancel it for them.
 If they asked for a REFUND, also include Apple's https://reportaproblem.apple.com steps (Apple decides), and say that if it was a Google Play purchase they can reply and Dan will look into it.
 Neither draft may just ask a question.`;
 
