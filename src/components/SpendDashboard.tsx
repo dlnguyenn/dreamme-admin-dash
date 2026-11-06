@@ -7,6 +7,7 @@ import { Icons } from "./Icons";
 import { SpendAddModal } from "./SpendAddModal";
 import { SpendImportCsvModal } from "./SpendImportCsvModal";
 import { ChaseAlertsPanel } from "./ChaseAlertsPanel";
+import { ExpenseLedgerPanel } from "./ExpenseLedgerPanel";
 import {
   CategoryTag,
   DeltaChip,
@@ -316,6 +317,8 @@ export function SpendDashboard() {
       </CardGrid>
 
       <ChaseAlertsPanel />
+
+      <ExpenseLedgerPanel />
 
       {showAdd && (
         <SpendAddModal

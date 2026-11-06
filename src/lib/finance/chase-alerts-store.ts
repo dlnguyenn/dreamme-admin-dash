@@ -27,6 +27,7 @@ import {
   type ParseResult,
   type StoredTxn,
 } from "./chase-alerts";
+import { syncLedgerFromAlerts } from "./ledger-store";
 
 /** Look-back for the Gmail search. Covers several missed days. */
 const DEFAULT_DAYS = 7;
@@ -173,6 +174,8 @@ export interface ChaseSyncResult {
   /** more new mail than MAX_FETCH; the next run picks up the rest */
   truncated: boolean;
   error?: string;
+  /** Rows added to the expense ledger this run. */
+  ledgerAdded?: number;
 }
 
 async function logRun(trigger: "cron" | "manual", r: ChaseSyncResult): Promise<void> {
@@ -214,6 +217,16 @@ export async function syncChaseAlerts(opts: { days?: number; trigger?: "cron" | 
     result.ok = true;
   } catch (e) {
     result.error = e instanceof Error ? e.message : String(e);
+  }
+  // A failure here marks the run failed, so the Spend tab shows SYNC FAILING
+  // instead of the ledger quietly falling behind.
+  if (result.ok) {
+    try {
+      result.ledgerAdded = await syncLedgerFromAlerts();
+    } catch (e) {
+      result.ok = false;
+      result.error = `Expense ledger: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
   await logRun(opts.trigger ?? "cron", result).catch(() => {});
   return result;
