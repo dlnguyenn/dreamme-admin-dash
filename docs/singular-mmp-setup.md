@@ -116,9 +116,15 @@ campaign, ad set and ad. No app release is needed: RevenueCat already holds the
 identifiers it uses (`$idfa` and `$idfv` on ~98% of iOS events, `$gpsAdId` on
 Android).
 
-1. **Singular → Settings → SDK:** copy the production **SDK key** (not the
-   reporting API key and not the secret).
-2. **RevenueCat → Project settings → Integrations → Attribution → Singular:**
+**Done 2026-11-05:** the RevenueCat integration is saved and Active, with the
+six required events named `rc_initial_purchase`, `rc_trial_started`,
+`rc_trial_converted`, `rc_trial_cancelled`, `rc_renewal`, `rc_cancellation`,
+gross revenue, and no sandbox key. This Singular account's events date from
+2026-06-29 to 2026-07-01, so it predates the v2-only cutoff below.
+
+1. **Singular → Developer Tools → SDK Integration → SDK Keys:** copy the
+   production **SDK key** (not the reporting API key and not the secret).
+2. **RevenueCat → Integrations → Attribution → Singular:**
    paste the SDK key. Leave the sandbox key empty, so test purchases never
    reach Singular.
    - **Event names:** give every event an `rc_` prefix, so they never collide
@@ -128,9 +134,14 @@ Android).
    - **Revenue:** choose **gross** (RevenueCat's proceeds assume a 30% store
      fee; DreamMe pays 15%).
    - Leave Singular's "Reject IAP without Receipt" off.
-3. **Singular → Settings → Events:** add `rc_trial_converted` (custom). Custom
+3. **Singular → Settings → Events → Add Custom Event:** name it
+   `rc_trial_converted` and map it to the raw event of the same name. Custom
    events never reach aggregated reports or the Reporting API until they are
-   registered here, and the page holds 12 on our plan (5 used before this).
+   registered here, and the page holds 12 on our plan (8 used before this).
+   **Order matters:** the mapping list only offers raw events Singular has
+   already received, so this step can only be done after RevenueCat has sent
+   the first `rc_trial_converted` (step 2 live, then a trial converting; about
+   one an hour). Before that the list shows "No options" and Save stays off.
 4. **Wait a day**, then run the sync (step 5). The response now carries
    `resolved_conversion_event_id` (null until step 3 has taken) and
    `paid_conversions`. Conversions are counted over a 14-day cohort, because a
