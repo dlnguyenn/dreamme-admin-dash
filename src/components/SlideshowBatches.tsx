@@ -27,6 +27,7 @@
  * older backfilled batches legitimately have gaps. Render around them.
  */
 
+import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import * as React from "react";
 import { Icons } from "./Icons";
 import { Button } from "./ui";
@@ -107,7 +108,7 @@ export function SlideshowBatches() {
         family="accent"
         icon="Sparkles"
         title="TikTok batches"
-        meta="nine personas a day, queued to Doublespeed"
+        meta={DOUBLESPEED_PAUSED ? "past batches" : "nine personas a day, queued to Doublespeed"}
         style={{ marginTop: 0 }}
         right={
           <button

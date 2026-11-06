@@ -12,13 +12,15 @@
  * safe. Only a draft can be scheduled and only a scheduled post can be
  * drafted; anything else comes back 400 with a readable reason.
  */
+import { DOUBLESPEED_PAUSED, DOUBLESPEED_PAUSED_MESSAGE } from "@/lib/doublespeedPause";
+
 const BASE = (
   process.env.DOUBLESPEED_API_BASE ?? "https://app.doublespeed.ai"
 ).replace(/\/+$/, "");
 const KEY = process.env.DOUBLESPEED_API_KEY ?? "";
 
 export function doublespeedWriteConfigured(): boolean {
-  return KEY !== "";
+  return !DOUBLESPEED_PAUSED && KEY !== "";
 }
 
 export interface SetStatusResult {
@@ -32,6 +34,7 @@ export async function setPostStatus(
   postId: string,
   status: "scheduled" | "draft",
 ): Promise<SetStatusResult> {
+  if (DOUBLESPEED_PAUSED) return { ok: false, error: DOUBLESPEED_PAUSED_MESSAGE };
   if (!doublespeedWriteConfigured()) {
     return { ok: false, error: "DOUBLESPEED_API_KEY not configured" };
   }

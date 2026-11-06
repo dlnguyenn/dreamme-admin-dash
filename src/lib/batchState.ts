@@ -19,6 +19,7 @@
  *    "unknown" is fine; one that lies is not, and one that 500s is worse.
  */
 import { SUPABASE_URL } from "@/lib/supabase";
+import { DOUBLESPEED_PAUSED, DOUBLESPEED_PAUSED_MESSAGE } from "@/lib/doublespeedPause";
 
 const BASE = (
   process.env.DOUBLESPEED_API_BASE ?? "https://app.doublespeed.ai"
@@ -89,7 +90,7 @@ interface StateRow {
 }
 
 export function batchStateConfigured(): boolean {
-  return KEY !== "" && SUPABASE_URL !== "" && SERVICE_ROLE !== "";
+  return !DOUBLESPEED_PAUSED && KEY !== "" && SUPABASE_URL !== "" && SERVICE_ROLE !== "";
 }
 
 function sbHeaders(extra?: Record<string, string>) {
@@ -102,6 +103,7 @@ function sbHeaders(extra?: Record<string, string>) {
 }
 
 async function ds<T>(path: string): Promise<T> {
+  if (DOUBLESPEED_PAUSED) throw new Error(DOUBLESPEED_PAUSED_MESSAGE);
   const res = await fetch(`${BASE}${path}`, {
     headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" },
     cache: "no-store",

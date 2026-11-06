@@ -16,6 +16,7 @@ import { PageHeader } from "./Shell";
 import { Icons } from "./Icons";
 import { useIsMobile } from "@/lib/useIsMobile";
 import type { OverviewPayload } from "@/lib/overview";
+import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import { Card, ErrorBanner, HeroCard, StatStrip } from "./porcelain";
 import { ViewsPanel } from "./overview/ViewsPanel";
 import { AttributionPanel } from "./overview/AttributionPanel";
@@ -231,7 +232,9 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
           <ViewsPanel views={data?.views ?? null} />
 
           {/* Did the machines run — sits under the reach numbers it feeds. */}
-          <MorningPanel morning={data?.morning ?? null} onQueued={load} />
+          {!DOUBLESPEED_PAUSED && (
+            <MorningPanel morning={data?.morning ?? null} onQueued={load} />
+          )}
 
           <div
             style={{
@@ -242,17 +245,28 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <TodayPanel
-                today={data?.today ?? null}
-                onOpen={() => onNavigate("our-slideshows")}
-              />
-              <QueuePanel queue={data?.queue ?? null} />
+              {DOUBLESPEED_PAUSED ? (
+                <SupportPanel
+                  support={data?.support ?? null}
+                  onOpen={() => onNavigate("support")}
+                />
+              ) : (
+                <>
+                  <TodayPanel
+                    today={data?.today ?? null}
+                    onOpen={() => onNavigate("our-slideshows")}
+                  />
+                  <QueuePanel queue={data?.queue ?? null} />
+                </>
+              )}
             </div>
             <div style={{ minWidth: 0 }}>
-              <SupportPanel
-                support={data?.support ?? null}
-                onOpen={() => onNavigate("support")}
-              />
+              {!DOUBLESPEED_PAUSED && (
+                <SupportPanel
+                  support={data?.support ?? null}
+                  onOpen={() => onNavigate("support")}
+                />
+              )}
               <OpsPanel ops={data?.ops ?? null} />
             </div>
           </div>

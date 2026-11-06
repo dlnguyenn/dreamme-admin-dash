@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { liveDoublespeedPosts } from "@/lib/batchState";
 import { doublespeedWriteConfigured, setPostStatus } from "@/lib/doublespeedWrite";
+import { DOUBLESPEED_PAUSED, DOUBLESPEED_PAUSED_MESSAGE } from "@/lib/doublespeedPause";
 import { selectQueueTargets, selectUnqueueTargets } from "@/lib/morningQueue";
 import { easternDate } from "@/lib/socialViews";
 
@@ -24,6 +25,9 @@ const MAX_BATCH = 40;
 export async function POST(req: Request) {
   if (!checkIngestAuth(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  if (DOUBLESPEED_PAUSED) {
+    return NextResponse.json({ ok: false, error: DOUBLESPEED_PAUSED_MESSAGE }, { status: 503 });
   }
   if (!doublespeedWriteConfigured()) {
     return NextResponse.json(

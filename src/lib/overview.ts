@@ -31,6 +31,7 @@ import {
   dsAccounts,
   dsPosts,
 } from "@/lib/viewsources/doublespeed";
+import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
@@ -1432,10 +1433,16 @@ const OPS_CHECKS: {
   },
 ];
 
+/** These only ever measured the Doublespeed pipeline, so they'd read late forever. */
+const DOUBLESPEED_OPS_CHECKS = new Set(["batch", "morning", "views"]);
+
 async function fetchOps(): Promise<OpsCheck[]> {
   const now = Date.now();
+  const checks = DOUBLESPEED_PAUSED
+    ? OPS_CHECKS.filter((c) => !DOUBLESPEED_OPS_CHECKS.has(c.key))
+    : OPS_CHECKS;
   return Promise.all(
-    OPS_CHECKS.map(async (c) => {
+    checks.map(async (c) => {
       let lastAt: string | null = null;
       try {
         const rows = await sbGet<Record<string, string | null>[]>(c.path);
@@ -1504,9 +1511,9 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("mixpanel-onboarding", errors, fetchOnboardingStartsToday),
       section("views", errors, fetchViews),
       section("support", errors, fetchSupport),
-      section("today", errors, fetchToday),
-      section("morning", errors, fetchMorning),
-      section("queue", errors, fetchQueueCoverage),
+      DOUBLESPEED_PAUSED ? null : section("today", errors, fetchToday),
+      DOUBLESPEED_PAUSED ? null : section("morning", errors, fetchMorning),
+      DOUBLESPEED_PAUSED ? null : section("queue", errors, fetchQueueCoverage),
       section("top-posts", errors, fetchTopPosts),
       section("paid", errors, fetchPaid),
       section("ops", errors, fetchOps),

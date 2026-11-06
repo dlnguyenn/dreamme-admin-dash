@@ -12,6 +12,7 @@
  * Note `stats` carries no share count — the MCP surface exposed one, this REST
  * API does not. Shares stay null rather than being invented.
  */
+import { DOUBLESPEED_PAUSED, DOUBLESPEED_PAUSED_MESSAGE } from "@/lib/doublespeedPause";
 import {
   firstLine,
   toPlatform,
@@ -59,6 +60,7 @@ interface DsPostsPage {
 }
 
 async function get<T>(path: string): Promise<T> {
+  if (DOUBLESPEED_PAUSED) throw new Error(DOUBLESPEED_PAUSED_MESSAGE);
   const res = await fetch(`${BASE}${path}`, {
     headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" },
     cache: "no-store",
@@ -80,7 +82,7 @@ const num = (v: unknown): number | null => {
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
 export function doublespeedConfigured(): boolean {
-  return KEY !== "";
+  return !DOUBLESPEED_PAUSED && KEY !== "";
 }
 
 /**
@@ -146,7 +148,7 @@ export const doublespeedSource: ViewSource = {
   key: "doublespeed",
 
   configured() {
-    return KEY !== "";
+    return doublespeedConfigured();
   },
 
   async listAccounts(): Promise<SourceAccount[]> {

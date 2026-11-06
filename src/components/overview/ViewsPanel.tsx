@@ -11,6 +11,7 @@
  * you could act on. See src/lib/socialViews.ts.
  */
 
+import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import * as React from "react";
 import { useIsMobile } from "@/lib/useIsMobile";
 import type { ViewsSection } from "@/lib/overview";
@@ -70,6 +71,11 @@ export function ViewsPanel({ views }: { views: ViewsSection | null }) {
 
       {!views.configured ? (
         <Card>
+          {DOUBLESPEED_PAUSED ? (
+            <EmptyState title="No tracked posts">
+              Nothing has been published through a tracked source in the last 30 days.
+            </EmptyState>
+          ) : (
           <EmptyState title="Waiting for the first view sync">
             {views.accounts.active} accounts are registered across{" "}
             {views.platforms.join(", ") || "no platforms"}, but no posts have been
@@ -77,6 +83,7 @@ export function ViewsPanel({ views }: { views: ViewsSection | null }) {
             credentials are in Vercel and <code>/api/cron/sync-post-views</code>{" "}
             has run.
           </EmptyState>
+          )}
         </Card>
       ) : (
         <Card pad={isMobile ? "16px 16px" : "20px 22px"}>

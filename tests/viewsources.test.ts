@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { firstLine, toPlatform } from "@/lib/viewsources/types";
 
+// These cover the adapter itself, for when Doublespeed comes back.
+vi.mock("@/lib/doublespeedPause", () => ({
+  DOUBLESPEED_PAUSED: false,
+  DOUBLESPEED_PAUSED_MESSAGE: "paused",
+}));
+
 describe("toPlatform", () => {
   it("maps the vendor's account_type values", () => {
     expect(toPlatform("tiktok")).toBe("tiktok");
