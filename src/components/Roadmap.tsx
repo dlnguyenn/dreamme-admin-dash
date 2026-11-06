@@ -11,6 +11,7 @@ import * as React from "react";
 import { PageHeader } from "./Shell";
 import { Button, Chip, useToast } from "./ui";
 import { Icons } from "./Icons";
+import { HandoffButtons } from "./HandoffButtons";
 import { Segmented } from "./porcelain";
 import { RoadmapMap } from "./RoadmapMap";
 import { BriefReader } from "./BriefReader";
@@ -776,6 +777,24 @@ function RoadmapDrawer({
             >
               <Icons.Flag size={14} /> Open the feature request this came from
             </a>
+          )}
+          {item && (
+            <HandoffButtons
+              kind="roadmap"
+              id={item.id}
+              blockedReason={
+                title !== item.title ||
+                notes !== item.notes ||
+                stage !== item.stage ||
+                priority !== item.priority ||
+                area !== (item.area ?? "") ||
+                owner !== (item.owner ?? "") ||
+                target !== (item.target_date ?? "") ||
+                briefUrl !== (item.brief_url ?? "")
+                  ? "Save first, so the post includes your edits"
+                  : null
+              }
+            />
           )}
           {item && (
             <div style={{ fontSize: 11, color: "var(--ink-3)" }}>

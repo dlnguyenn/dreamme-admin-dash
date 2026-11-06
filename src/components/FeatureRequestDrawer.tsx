@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Icons } from "./Icons";
 import { Button, Chip, useToast } from "./ui";
+import { HandoffButtons } from "./HandoffButtons";
 import { formatDate } from "@/lib/format";
 import {
   STAGE_LABELS,
@@ -611,6 +612,10 @@ function TicketView({
 
       <Section label="Roadmap">
         <RoadmapLink request={request} onPlanned={onPlanned} />
+      </Section>
+
+      <Section label="Discord">
+        <HandoffButtons kind="request" id={request.id} />
       </Section>
 
       <Section label="Requested by">
