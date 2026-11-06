@@ -348,6 +348,62 @@ describe("singular vendor client", () => {
       expect(mapSingularAdRows([row({ unified_campaign_id: null })], { trialEventId: TRIAL_ID })).toEqual([]);
       const [r] = mapSingularAdRows([row()]);
       expect(r.trial_starts).toBe(0);
+      expect(r.paid_conversions).toBe(0);
+    });
+
+    it("reads paid conversions on their own cohort period, and trials on theirs", async () => {
+      // With two periods requested, each cohort value carries both keys.
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const CONV_ID = "c0ffee";
+      const [r] = mapSingularAdRows(
+        [row({ [TRIAL_ID]: { "7d": 9, "14d": 9 }, [CONV_ID]: { "7d": 1, "14d": 4 } })],
+        { trialEventId: TRIAL_ID, conversionEventId: CONV_ID, cohortPeriod: "7d", conversionPeriod: "14d" },
+      );
+      expect(r).toMatchObject({ trial_starts: 9, paid_conversions: 4 });
+    });
+  });
+
+  describe("paid conversions", () => {
+    it("prefers a 14-day conversion period, then 30, and falls back when the account lists none", async () => {
+      const { pickConversionPeriod } = await import("@/lib/vendors/singular");
+      expect(pickConversionPeriod(["1d", "7d", "14d", "30d"])).toBe("14d");
+      expect(pickConversionPeriod(["7d", "30d", "ltv"])).toBe("30d");
+      expect(pickConversionPeriod([], "7d")).toBe("7d");
+    });
+
+    it("the campaign mapper counts conversions and consumes the key", async () => {
+      const { mapSingularRows } = await import("@/lib/vendors/singular");
+      const CONV_ID = "c0ffee";
+      const out = mapSingularRows(
+        [
+          {
+            start_date: "2026-10-20",
+            end_date: "2026-10-20",
+            app: "DreamMe",
+            source: "Facebook",
+            os: "iOS",
+            unified_campaign_id: "120249101441350622",
+            unified_campaign_name: "SCALING Campaign (iOS)",
+            custom_installs: 80,
+            adn_installs: null,
+            tracker_installs: 80,
+            adn_cost: null,
+            revenue: { "7d": 0, "14d": 120 },
+            fdf7: { "7d": 20, "14d": 20 },
+            [CONV_ID]: { "7d": 0, "14d": 6 },
+          },
+        ],
+        { trialEventId: "fdf7", conversionEventId: CONV_ID, cohortPeriod: "7d", conversionPeriod: "14d" },
+      );
+      expect(out.rows[0]).toMatchObject({ trial_starts: 20, paid_conversions: 6 });
+      expect(out.unmappedKeys).toEqual([]);
+    });
+
+    it("resolves RevenueCat's trial-converted event by the documented name", async () => {
+      const { CONVERSION_EVENT_NAMES, resolveEventId } = await import("@/lib/vendors/singular");
+      const catalog = { byName: { rc_trial_converted: "abc123" }, periods: ["7d", "14d"] };
+      expect(resolveEventId(catalog, CONVERSION_EVENT_NAMES)).toBe("abc123");
+      expect(resolveEventId({ byName: {}, periods: [] }, CONVERSION_EVENT_NAMES)).toBeNull();
     });
   });
 

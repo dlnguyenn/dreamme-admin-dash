@@ -98,7 +98,7 @@ export async function GET(req: Request) {
   // The ad set and ad report runs alongside the campaign one, into
   // singular_ad_daily. Its failure is reported in the response but never fails
   // the campaign sync, which the cost views depend on.
-  const adPromise: Promise<SingularAdRow[] | Error> = fetchSingularAdReport({
+  const adPromise: Promise<{ rows: SingularAdRow[]; conversionPeriod: string } | Error> = fetchSingularAdReport({
     startDate: sinceDate,
     endDate: untilDate,
     cohortPeriod,
@@ -134,7 +134,9 @@ export async function GET(req: Request) {
     trial_starts: r.trial_starts,
     subscribes: r.subscribes,
     revenue: r.revenue,
+    paid_conversions: r.paid_conversions,
     cohort_period: cohortPeriod,
+    conversion_period: report.conversionPeriod ?? cohortPeriod,
     synced_at: syncedAt,
   }));
 
@@ -147,6 +149,7 @@ export async function GET(req: Request) {
     JSON.stringify({
       resolved_trial_event_id: report.resolvedTrialEventId ?? null,
       resolved_subscribe_event_id: report.resolvedSubscribeEventId ?? null,
+      resolved_conversion_event_id: report.resolvedConversionEventId ?? null,
       unmapped_keys: report.unmappedKeys,
       raw_keys: report.sampleRaw ? Object.keys(report.sampleRaw).sort() : null,
     }),
@@ -193,27 +196,38 @@ export async function GET(req: Request) {
     upserted: rows.length,
     campaigns: new Set(rows.map((r) => r.campaign_id)).size,
     trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
+    paid_conversions: rows.reduce((a, r) => a + r.paid_conversions, 0),
     cohort_period: cohortPeriod,
+    conversion_period: report.conversionPeriod ?? cohortPeriod,
     window: { since: sinceDate, until: untilDate },
     unmapped_keys: report.unmappedKeys,
     resolved_trial_event_id: report.resolvedTrialEventId ?? null,
     resolved_subscribe_event_id: report.resolvedSubscribeEventId ?? null,
+    // Null until RevenueCat's trial-converted event is registered in Singular
+    // (docs/singular-mmp-setup.md, step 6). Then paid_conversions starts counting.
+    resolved_conversion_event_id: report.resolvedConversionEventId ?? null,
     sample_raw: report.sampleRaw,
   });
 }
 
 /** Upsert the ad set and ad rows into singular_ad_daily; a summary, never a throw. */
 async function syncAds(
-  result: SingularAdRow[] | Error,
+  result: { rows: SingularAdRow[]; conversionPeriod: string } | Error,
   syncedAt: string,
   cohortPeriod: string,
-): Promise<{ ok: boolean; upserted: number; ads: number; trial_starts: number; error?: string }> {
-  if (result instanceof Error) return { ok: false, upserted: 0, ads: 0, trial_starts: 0, error: result.message };
-  const rows = result.map((r) => ({ ...r, cohort_period: cohortPeriod, synced_at: syncedAt }));
+): Promise<{ ok: boolean; upserted: number; ads: number; trial_starts: number; paid_conversions: number; error?: string }> {
+  if (result instanceof Error) return { ok: false, upserted: 0, ads: 0, trial_starts: 0, paid_conversions: 0, error: result.message };
+  const rows = result.rows.map((r) => ({
+    ...r,
+    cohort_period: cohortPeriod,
+    conversion_period: result.conversionPeriod,
+    synced_at: syncedAt,
+  }));
   const summary = {
     upserted: rows.length,
     ads: new Set(rows.filter((r) => r.ad_id).map((r) => r.ad_id)).size,
     trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
+    paid_conversions: rows.reduce((a, r) => a + r.paid_conversions, 0),
   };
   if (!rows.length) return { ok: true, ...summary };
   const res = await fetch(

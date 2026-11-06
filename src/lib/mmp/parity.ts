@@ -76,6 +76,12 @@ export interface MmpSnapshot {
   sng_ad_trials: number;
   sng_ads_with_trials: number;
   survey_friend_family: number;
+  // from public.mmp_singular_paid (migration 0100), merged in by /api/mmp
+  /** RevenueCat trial conversions Singular attributed, last 35 days of installs. */
+  sng_paid_35d: number;
+  /** Trials and conversions from installs old enough for the conversion window. */
+  sng_trials_mature: number;
+  sng_paid_mature: number;
 }
 
 /** One row of public.mmp_ad_attribution: Meta's numbers and Singular's per ad. */
@@ -92,6 +98,9 @@ export interface MmpAdRow {
   meta_trials: number;
   singular_installs: number;
   singular_trials: number;
+  /** Trials and paid conversions from installs old enough for the conversion window (migration 0100). */
+  singular_trials_mature: number;
+  singular_paid_mature: number;
 }
 
 export function toAdRow(raw: Record<string, unknown>): MmpAdRow {
@@ -108,6 +117,8 @@ export function toAdRow(raw: Record<string, unknown>): MmpAdRow {
     meta_trials: toNum(raw.meta_trials),
     singular_installs: toNum(raw.singular_installs),
     singular_trials: toNum(raw.singular_trials),
+    singular_trials_mature: toNum(raw.singular_trials_mature),
+    singular_paid_mature: toNum(raw.singular_paid_mature),
   };
 }
 
@@ -119,7 +130,17 @@ export interface AdSetGroup {
   meta_trials: number;
   singular_installs: number;
   singular_trials: number;
+  singular_trials_mature: number;
+  singular_paid_mature: number;
   ads: MmpAdRow[];
+}
+
+/** Below this many mature trials a trial-to-paid rate is noise, so it isn't shown. */
+export const MIN_TRIALS_FOR_RATE = 20;
+
+/** Trial-to-paid from mature installs; null when there are too few trials to read. */
+export function trialToPaid(trialsMature: number, paidMature: number, min = MIN_TRIALS_FOR_RATE): number | null {
+  return trialsMature >= min ? paidMature / trialsMature : null;
 }
 
 /**
@@ -140,12 +161,25 @@ export function groupAdsBySet(
     const key = `${r.campaign_id}\u0001${r.adset_id ?? ""}`;
     const g =
       groups.get(key) ??
-      { adset_id: r.adset_id, adset_name: r.adset_name, campaign_name: r.campaign_name, spend: 0, meta_trials: 0, singular_installs: 0, singular_trials: 0, ads: [] };
+      {
+        adset_id: r.adset_id,
+        adset_name: r.adset_name,
+        campaign_name: r.campaign_name,
+        spend: 0,
+        meta_trials: 0,
+        singular_installs: 0,
+        singular_trials: 0,
+        singular_trials_mature: 0,
+        singular_paid_mature: 0,
+        ads: [],
+      };
     g.adset_name = g.adset_name ?? r.adset_name;
     g.spend += r.spend;
     g.meta_trials += r.meta_trials;
     g.singular_installs += r.singular_installs;
     g.singular_trials += r.singular_trials;
+    g.singular_trials_mature += r.singular_trials_mature;
+    g.singular_paid_mature += r.singular_paid_mature;
     if (r.spend >= minSpend || r.singular_trials > 0 || r.ad_id == null) g.ads.push(r);
     else hiddenAds += 1;
     groups.set(key, g);
@@ -458,6 +492,25 @@ const MODULES: ModuleDef[] = [
     }),
   },
   {
+    id: "postbacks-singular",
+    area: "Events to networks",
+    name: "Paid conversions to Singular",
+    appsflyer: "Subscription revenue reaches the MMP (through its SDK, its purchase connector or RevenueCat), so it can report trial-to-paid and ROAS by campaign and ad.",
+    ours: "RevenueCat's built-in Singular integration sends trial conversions with revenue, server-side. The DAD's daily sync counts them per campaign, ad set and ad.",
+    next: "",
+    assess: (s) => ({
+      status: s.sng_paid_35d > 0 ? "live" : "missing",
+      evidence:
+        s.sng_paid_35d > 0
+          ? `${int(s.sng_paid_35d)} paid conversions attributed by Singular in 35 days.`
+          : "No paid conversions in Singular's reports yet.",
+      next:
+        s.sng_paid_35d > 0
+          ? ""
+          : "Turn on RevenueCat's Singular integration and register rc_trial_converted in Singular (docs/singular-mmp-setup.md, step 6). Both are dashboard steps.",
+    }),
+  },
+  {
     id: "postbacks-tiktok",
     area: "Events to networks",
     name: "In-app events back to TikTok",
@@ -594,12 +647,25 @@ const MODULES: ModuleDef[] = [
     area: "Data and reporting",
     name: "Creative optimization",
     appsflyer: "Ranks creatives by installs, cost and fatigue across networks.",
-    ours: "The Creatives tab on Meta's own counts, and Singular's trials per ad set and ad on this tab's Summary.",
-    next: "Trials only, not payers: Singular receives no revenue, so it can't rank ads on trial-to-paid yet.",
-    assess: (s) => ({
-      status: "partial",
-      evidence: `Singular ties ${int(s.sng_ad_trials)} trials to ${int(s.sng_ads_with_trials)} named Meta ads in 35 days. Our own click match ties ${int(s.trials_click_matched)}.`,
-    }),
+    ours: "The Creatives tab on Meta's own counts, and Singular's trials and trial-to-paid per ad set and ad on this tab's Summary.",
+    next: "",
+    assess: (s) => {
+      const rate = trialToPaid(s.sng_trials_mature, s.sng_paid_mature);
+      return {
+        status: rate != null && s.sng_paid_mature > 0 ? "live" : "partial",
+        evidence:
+          `Singular ties ${int(s.sng_ad_trials)} trials to ${int(s.sng_ads_with_trials)} named Meta ads in 35 days.` +
+          (rate != null && s.sng_paid_mature > 0
+            ? ` Trial-to-paid on installs old enough to read: ${share(s.sng_paid_mature, s.sng_trials_mature)} (${int(s.sng_paid_mature)} of ${int(s.sng_trials_mature)}).`
+            : ` Our own click match ties ${int(s.trials_click_matched)}.`),
+        next:
+          rate != null && s.sng_paid_mature > 0
+            ? ""
+            : s.sng_paid_35d > 0
+              ? "Paid conversions are arriving; rates appear once those installs pass the 14-day conversion window."
+              : "Trials only until paid conversions reach Singular (see Paid conversions to Singular).",
+      };
+    },
   },
   {
     id: "product-analytics",

@@ -28,8 +28,10 @@ import {
   buildParity,
   coverage,
   groupAdsBySet,
+  MIN_TRIALS_FOR_RATE,
   scoreboard,
   singularRead,
+  trialToPaid,
   type MmpAdRow,
   type MmpCampaignRow,
   type MmpSnapshot,
@@ -246,7 +248,7 @@ function Summary({ data, rows }: { data: Payload; rows: ParityRow[] }) {
       <CampaignTable rows={data.campaigns} />
 
       <SectionHeader family="neutral" icon="Image" title="By ad set and ad: Meta against Singular" meta="35 days" />
-      <AdTable rows={data.ads} />
+      <AdTable rows={data.ads} paidFlowing={data.snapshot.sng_paid_35d > 0} />
 
       <SectionHeader family="neutral" icon="InfoCircle" title="Singular, the MMP already in the app" />
       <Card>
@@ -304,13 +306,19 @@ function CampaignTable({ rows }: { rows: MmpCampaignRow[] }) {
  * each count. On iOS, Meta's claimed trials run about three times Singular's
  * and SKAN's, so the Singular column is the one to rank on.
  */
-function AdTable({ rows }: { rows: MmpAdRow[] }) {
+function AdTable({ rows, paidFlowing }: { rows: MmpAdRow[]; paidFlowing: boolean }) {
   const { groups, hiddenAds, hiddenSets, hiddenSpend } = groupAdsBySet(rows);
   const anySingular = rows.some((r) => r.singular_installs > 0);
   if (!groups.length) return <InfoWell>No ad spend in the last 35 days.</InfoWell>;
   const dash = <span style={{ color: "var(--ink-4)" }}>—</span>;
   const cpt = (spend: number, trials: number) => (spend > 0 && trials > 0 ? usd(spend / trials) : dash);
-  const cells = (spend: number, metaTrials: number, sInstalls: number, sTrials: number) => (
+  const t2p = (trialsMature: number, paidMature: number) => {
+    const rate = paidFlowing ? trialToPaid(trialsMature, paidMature) : null;
+    return rate == null ? dash : (
+      <span title={`${int(paidMature)} of ${int(trialsMature)} trials from installs at least 14 days old`}>{pct(rate, 0)}</span>
+    );
+  };
+  const cells = (spend: number, metaTrials: number, sInstalls: number, sTrials: number, tMature: number, pMature: number) => (
     <>
       <td style={tdStyle()}>{spend > 0 ? usd(spend, 0) : dash}</td>
       <td style={tdStyle()}>{metaTrials ? int(metaTrials) : dash}</td>
@@ -318,6 +326,7 @@ function AdTable({ rows }: { rows: MmpAdRow[] }) {
       <td style={tdStyle()}>{sTrials ? int(sTrials) : dash}</td>
       <td style={tdStyle()}>{cpt(spend, metaTrials)}</td>
       <td style={{ ...tdStyle(), fontWeight: 650 }}>{cpt(spend, sTrials)}</td>
+      <td style={{ ...tdStyle(), fontWeight: 650 }}>{t2p(tMature, pMature)}</td>
     </>
   );
   return (
@@ -327,11 +336,18 @@ function AdTable({ rows }: { rows: MmpAdRow[] }) {
           Singular&rsquo;s ad-level rows land with the next daily sync (17:00 UTC). Until then only Meta&rsquo;s columns are filled.
         </InfoWell>
       )}
+      {anySingular && !paidFlowing && (
+        <InfoWell style={{ marginBottom: 12 }}>
+          <strong style={{ color: "var(--ink-2)", fontWeight: 650 }}>Trial-to-paid is waiting on RevenueCat&rsquo;s events.</strong> Turn on
+          RevenueCat&rsquo;s Singular integration and register <code>rc_trial_converted</code> in Singular (docs/singular-mmp-setup.md, step 6). The column
+          fills on the next sync after events arrive, for installs at least 14 days old.
+        </InfoWell>
+      )}
       <Card pad={0} style={tableCard}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["Ad set / ad", "Spend", "Meta-claimed trials", "Singular installs", "Singular trials", "Cost per Meta trial", "Cost per Singular trial"].map((h, i) => (
+              {["Ad set / ad", "Spend", "Meta-claimed trials", "Singular installs", "Singular trials", "Cost per Meta trial", "Cost per Singular trial", "Trial-to-paid"].map((h, i) => (
                 <th key={h} style={thStyle(i === 0 ? "left" : "right")}>
                   {h}
                 </th>
@@ -346,14 +362,14 @@ function AdTable({ rows }: { rows: MmpAdRow[] }) {
                     {g.adset_name ?? g.adset_id ?? "Unknown ad set"}
                     <span style={{ fontWeight: 400, color: "var(--ink-3)" }}> · {g.campaign_name}</span>
                   </td>
-                  {cells(g.spend, g.meta_trials, g.singular_installs, g.singular_trials)}
+                  {cells(g.spend, g.meta_trials, g.singular_installs, g.singular_trials, g.singular_trials_mature, g.singular_paid_mature)}
                 </tr>
                 {g.ads.map((a) => (
                   <tr key={`${g.adset_id}${a.ad_id ?? "na"}`}>
                     <td style={{ ...tdStyle("left"), paddingLeft: 32, color: a.ad_id ? "var(--ink)" : "var(--ink-3)" }}>
                       {a.ad_id ? a.ad_name ?? a.ad_id : "Ad not named by Singular"}
                     </td>
-                    {cells(a.spend, a.meta_trials, a.singular_installs, a.singular_trials)}
+                    {cells(a.spend, a.meta_trials, a.singular_installs, a.singular_trials, a.singular_trials_mature, a.singular_paid_mature)}
                   </tr>
                 ))}
               </React.Fragment>
@@ -362,7 +378,10 @@ function AdTable({ rows }: { rows: MmpAdRow[] }) {
         </table>
       </Card>
       <p style={{ ...muted, marginTop: 10 }}>
-        Trials, not payers: Singular receives no revenue yet. Cost per Singular trial is an upper bound, since Singular only counts users it can attribute.
+        {paidFlowing
+          ? `Trial-to-paid uses installs at least 14 days old, and only where there are ${MIN_TRIALS_FOR_RATE} or more such trials. `
+          : "Trials, not payers, until RevenueCat's events reach Singular. "}
+        Cost per Singular trial is an upper bound, since Singular only counts users it can attribute.
         {hiddenAds > 0 && ` ${hiddenAds} ads under $25 with no Singular trials are counted in their ad set but not listed.`}
         {hiddenSets > 0 && ` ${hiddenSets} smaller ad sets with no Singular data (${usd(hiddenSpend, 0)} in all, mostly website-campaign tests) are left out.`}
       </p>

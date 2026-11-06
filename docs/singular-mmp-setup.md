@@ -106,6 +106,50 @@ Empty — expected until step 2 has had ~24h:
   "note": "no Singular rows returned — ..." }
 ```
 
+## Step 6 — Paid conversions: RevenueCat → Singular (added 2026-11-05)
+
+Without this, Singular only sees trial starts (the app's SDK events), so it can
+rank ads on trials but not on who pays. RevenueCat's built-in Singular
+integration sends each trial conversion, with revenue, server-to-server.
+Singular ties it to the install its SDK already attributed, so it shows up per
+campaign, ad set and ad. No app release is needed: RevenueCat already holds the
+identifiers it uses (`$idfa` and `$idfv` on ~98% of iOS events, `$gpsAdId` on
+Android).
+
+1. **Singular → Settings → SDK:** copy the production **SDK key** (not the
+   reporting API key and not the secret).
+2. **RevenueCat → Project settings → Integrations → Attribution → Singular:**
+   paste the SDK key. Leave the sandbox key empty, so test purchases never
+   reach Singular.
+   - **Event names:** give every event an `rc_` prefix, so they never collide
+     with the app SDK's `sng_start_trial` / `sng_subscribe`. The one that
+     matters is **Trial converted → `rc_trial_converted`**; the DAD's sync
+     looks for that name.
+   - **Revenue:** choose **gross** (RevenueCat's proceeds assume a 30% store
+     fee; DreamMe pays 15%).
+   - Leave Singular's "Reject IAP without Receipt" off.
+3. **Singular → Settings → Events:** add `rc_trial_converted` (custom). Custom
+   events never reach aggregated reports or the Reporting API until they are
+   registered here, and the page holds 12 on our plan (5 used before this).
+4. **Wait a day**, then run the sync (step 5). The response now carries
+   `resolved_conversion_event_id` (null until step 3 has taken) and
+   `paid_conversions`. Conversions are counted over a 14-day cohort, because a
+   trial converts about 7 days after it starts.
+
+Checks if conversions stay at zero:
+- RevenueCat → a converted customer → **Customer History** shows a Singular
+  delivery row, with Singular's reason if it was rejected.
+- `invalid api version: v1` means this Singular account accepts only the newer
+  v2 API, which needs the Singular device ID (SDID) set on each RevenueCat
+  customer. That needs an app change: pass the SDID from the Singular SDK to
+  RevenueCat (`setSingularDeviceID`, RevenueCat iOS SDK 5.87.0+ / Android
+  10.19.0+). RevenueCat's docs say accounts created on or after 2026-07-15 are
+  v2-only.
+- Stripe (web) purchases are not sent by this integration.
+
+Where it shows: the MMP tab (Summary → "By ad set and ad", Trial-to-paid
+column; Parity → "Paid conversions to Singular").
+
 ### Response shape: confirmed live (2026-08-12)
 
 The first live runs settled every open question about the response. Rows carry

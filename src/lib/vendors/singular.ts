@@ -146,6 +146,24 @@ export function resolveEventId(
   return null;
 }
 
+/**
+ * Names RevenueCat's Singular integration may give a trial conversion. The
+ * setup (docs/singular-mmp-setup.md, step 6) names it `rc_trial_converted`;
+ * the rest tolerate a different choice in RevenueCat's dashboard.
+ */
+export const CONVERSION_EVENT_NAMES = ["rc_trial_converted", "rc trial converted", "trial converted", "trial_converted"];
+
+/**
+ * Cohort period for paid conversions. A trial converts about 7 days after it
+ * starts, so a 7-day cohort cuts most conversions off; take 14 days, else 30,
+ * from the periods the account offers. With no list, fall back to the base
+ * period rather than ask for one the API may reject (that fails the sync).
+ */
+export function pickConversionPeriod(periods: string[], fallback = "7d"): string {
+  for (const p of ["14d", "30d"]) if (periods.includes(p)) return p;
+  return fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Async report job
 // ---------------------------------------------------------------------------
@@ -163,6 +181,8 @@ export interface SingularCampaignRow {
   trial_starts: number;
   subscribes: number;
   revenue: number;
+  /** Trials converted to paid, from RevenueCat's trial-converted event, over the conversion period. */
+  paid_conversions: number;
 }
 
 export interface SingularReportResult {
@@ -180,6 +200,9 @@ export interface SingularReportResult {
    */
   resolvedTrialEventId?: string | null;
   resolvedSubscribeEventId?: string | null;
+  /** Null until RevenueCat's trial-converted event is registered in Singular's Settings > Events. */
+  resolvedConversionEventId?: string | null;
+  conversionPeriod?: string;
 }
 
 /** Inclusive [start, end] split into <= MAX_SPAN_DAYS chunks. */
@@ -240,9 +263,16 @@ function firstKey(
  */
 export function mapSingularRows(
   raw: Array<Record<string, unknown>>,
-  opts: { trialEventId?: string | null; subscribeEventId?: string | null; cohortPeriod?: string } = {},
+  opts: {
+    trialEventId?: string | null;
+    subscribeEventId?: string | null;
+    conversionEventId?: string | null;
+    cohortPeriod?: string;
+    conversionPeriod?: string;
+  } = {},
 ): SingularReportResult {
-  const { trialEventId, subscribeEventId, cohortPeriod = "7d" } = opts;
+  const { trialEventId, subscribeEventId, conversionEventId, cohortPeriod = "7d" } = opts;
+  const conversionPeriod = opts.conversionPeriod ?? cohortPeriod;
   const consumed = new Set<string>();
   const unmapped = new Set<string>();
 
@@ -293,6 +323,9 @@ export function mapSingularRows(
       trial_starts: cohortNum(take(r, trialKeys), cohortPeriod),
       subscribes: cohortNum(take(r, subKeys), cohortPeriod),
       revenue: cohortNum(take(r, [`revenue_${cohortPeriod}`, "revenue", "cohort_revenue"]), cohortPeriod),
+      paid_conversions: conversionEventId
+        ? cohortNum(take(r, [`${conversionEventId}_${conversionPeriod}`, conversionEventId]), conversionPeriod)
+        : 0,
     };
   });
 
@@ -325,6 +358,7 @@ export function mapSingularRows(
     prev.trial_starts += r.trial_starts;
     prev.subscribes += r.subscribes;
     prev.revenue += r.revenue;
+    prev.paid_conversions += r.paid_conversions;
   }
 
   return {
@@ -431,8 +465,11 @@ export async function fetchSingularCampaignReport(opts: {
     "trial started",
   ]);
   const subscribeEventId = resolveEventId(catalog, ["sng_subscribe", "subscribe"]);
+  const conversionEventId = resolveEventId(catalog, CONVERSION_EVENT_NAMES);
+  const conversionPeriod = conversionEventId ? pickConversionPeriod(catalog.periods, cohortPeriod) : cohortPeriod;
+  const periods = [...new Set([cohortPeriod, conversionPeriod])].join(",");
 
-  const cohortMetrics = [trialEventId, subscribeEventId, "revenue"]
+  const cohortMetrics = [trialEventId, subscribeEventId, conversionEventId, "revenue"]
     .filter(Boolean)
     .join(",");
 
@@ -448,7 +485,7 @@ export async function fetchSingularCampaignReport(opts: {
           "app,source,os,unified_campaign_id,unified_campaign_name",
         metrics: "adn_cost,custom_installs,adn_installs,tracker_installs",
         cohort_metrics: cohortMetrics,
-        cohort_periods: cohortPeriod,
+        cohort_periods: periods,
         source,
       });
       const downloadUrl = await awaitReport(reportId);
@@ -463,12 +500,16 @@ export async function fetchSingularCampaignReport(opts: {
   const mapped = mapSingularRows(results.flat(), {
     trialEventId,
     subscribeEventId,
+    conversionEventId,
     cohortPeriod,
+    conversionPeriod,
   });
   return {
     ...mapped,
     resolvedTrialEventId: trialEventId,
     resolvedSubscribeEventId: subscribeEventId,
+    resolvedConversionEventId: conversionEventId,
+    conversionPeriod,
   };
 }
 
@@ -592,6 +633,7 @@ export interface SingularAdRow {
   installs: number;
   trial_starts: number;
   subscribes: number;
+  paid_conversions: number;
 }
 
 /** Singular's dimension for Meta's ad set is `adn_sub_campaign_*`, for the ad `adn_creative_*`. */
@@ -612,9 +654,16 @@ const named = (v: unknown): string => {
  */
 export function mapSingularAdRows(
   raw: Array<Record<string, unknown>>,
-  opts: { trialEventId?: string | null; subscribeEventId?: string | null; cohortPeriod?: string } = {},
+  opts: {
+    trialEventId?: string | null;
+    subscribeEventId?: string | null;
+    conversionEventId?: string | null;
+    cohortPeriod?: string;
+    conversionPeriod?: string;
+  } = {},
 ): SingularAdRow[] {
-  const { trialEventId, subscribeEventId, cohortPeriod = "7d" } = opts;
+  const { trialEventId, subscribeEventId, conversionEventId, cohortPeriod = "7d" } = opts;
+  const conversionPeriod = opts.conversionPeriod ?? cohortPeriod;
   const pick = (r: Record<string, unknown>, keys: string[]): unknown => {
     const k = firstKey(r, keys);
     return k ? r[k] : undefined;
@@ -634,6 +683,9 @@ export function mapSingularAdRows(
       installs: num(pick(r, ["tracker_installs", "custom_installs"])),
       trial_starts: trialEventId ? cohortNum(pick(r, [`${trialEventId}_${cohortPeriod}`, trialEventId]), cohortPeriod) : 0,
       subscribes: subscribeEventId ? cohortNum(pick(r, [`${subscribeEventId}_${cohortPeriod}`, subscribeEventId]), cohortPeriod) : 0,
+      paid_conversions: conversionEventId
+        ? cohortNum(pick(r, [`${conversionEventId}_${conversionPeriod}`, conversionEventId]), conversionPeriod)
+        : 0,
     };
     if (!row.campaign_id || !row.date) continue;
     const key = [row.source, row.campaign_id, row.adset_id, row.ad_id, row.date].join("\u0001");
@@ -649,6 +701,7 @@ export function mapSingularAdRows(
     prev.installs += row.installs;
     prev.trial_starts += row.trial_starts;
     prev.subscribes += row.subscribes;
+    prev.paid_conversions += row.paid_conversions;
   }
   return [...merged.values()];
 }
@@ -663,12 +716,15 @@ export async function fetchSingularAdReport(opts: {
   endDate: string;
   source?: string;
   cohortPeriod?: string;
-}): Promise<SingularAdRow[]> {
+}): Promise<{ rows: SingularAdRow[]; conversionPeriod: string }> {
   const { startDate, endDate, source = "facebook", cohortPeriod = "7d" } = opts;
   const catalog = await fetchCohortMetricsCatalog();
   const trialEventId = resolveEventId(catalog, ["sng_start_trial", "start trial", "trial started"]);
   const subscribeEventId = resolveEventId(catalog, ["sng_subscribe", "subscribe"]);
-  const cohortMetrics = [trialEventId, subscribeEventId].filter(Boolean).join(",");
+  const conversionEventId = resolveEventId(catalog, CONVERSION_EVENT_NAMES);
+  const conversionPeriod = conversionEventId ? pickConversionPeriod(catalog.periods, cohortPeriod) : cohortPeriod;
+  const periods = [...new Set([cohortPeriod, conversionPeriod])].join(",");
+  const cohortMetrics = [trialEventId, subscribeEventId, conversionEventId].filter(Boolean).join(",");
 
   const results = await Promise.all(
     chunkDateRange(startDate, endDate).map(async (c) => {
@@ -679,7 +735,7 @@ export async function fetchSingularAdReport(opts: {
         format: "json",
         dimensions: SINGULAR_AD_DIMENSIONS,
         metrics: "tracker_installs",
-        ...(cohortMetrics ? { cohort_metrics: cohortMetrics, cohort_periods: cohortPeriod } : {}),
+        ...(cohortMetrics ? { cohort_metrics: cohortMetrics, cohort_periods: periods } : {}),
         source,
       });
       const downloadUrl = await awaitReport(reportId);
@@ -690,5 +746,8 @@ export async function fetchSingularAdReport(opts: {
       return payload.value?.results ?? payload.results ?? [];
     }),
   );
-  return mapSingularAdRows(results.flat(), { trialEventId, subscribeEventId, cohortPeriod });
+  return {
+    rows: mapSingularAdRows(results.flat(), { trialEventId, subscribeEventId, conversionEventId, cohortPeriod, conversionPeriod }),
+    conversionPeriod,
+  };
 }

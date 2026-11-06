@@ -173,8 +173,8 @@ export interface PlanStep {
 export const PLAN: PlanStep[] = [
   {
     title: "Get everything Singular already has",
-    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. The DAD now stores its trials by campaign, ad set and ad (Summary view). Its Meta cost has been empty since October, and it receives no revenue, so it can't show trial-to-paid.",
-    work: "Reconnect the Facebook data connector in Singular. Send purchase events with revenue to Singular so paid conversions show by ad.",
+    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. The DAD stores its trials by campaign, ad set and ad, and is ready to show trial-to-paid per ad as soon as paid conversions reach Singular. Its Meta cost has been empty since October.",
+    work: "Turn on RevenueCat's Singular integration and register rc_trial_converted in Singular (docs/singular-mmp-setup.md, step 6). Reconnect the Facebook data connector in Singular for cost.",
     needs: "Singular account",
   },
   {

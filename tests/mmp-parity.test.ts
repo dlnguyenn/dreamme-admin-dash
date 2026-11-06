@@ -11,6 +11,7 @@ import {
   toAdRow,
   toCampaignRow,
   toSnapshot,
+  trialToPaid,
   type MmpSnapshot,
 } from "@/lib/mmp/parity";
 import { AGA_NOTES, CANT_COPY, JOBS, MECHANICS, PLAN } from "@/lib/mmp/catalog";
@@ -82,6 +83,9 @@ const RAW: Record<string, unknown> = {
   sng_ad_trials: 0,
   sng_ads_with_trials: 0,
   survey_friend_family: 341,
+  sng_paid_35d: 0,
+  sng_trials_mature: 444,
+  sng_paid_mature: 0,
 };
 
 const snap = (over: Partial<MmpSnapshot> = {}): MmpSnapshot => ({ ...toSnapshot(RAW), ...over });
@@ -145,6 +149,8 @@ describe("buildParity on the live snapshot", () => {
     expect(statusOf(s, "uninstalls")).toBe("missing");
     expect(statusOf(s, "product-analytics")).toBe("live");
     for (const id of ["consent", "ad-revenue", "push-reengagement", "other-surfaces", "privacy"]) expect(statusOf(s, id), id).toBe("skip");
+    expect(statusOf(s, "postbacks-singular")).toBe("missing");
+    expect(statusOf(s, "creative")).toBe("partial");
   });
 
   it("covers every capability in AppsFlyer's public SDK API (React Native plugin docs, Nov 2026)", () => {
@@ -236,6 +242,26 @@ describe("coverage and Singular", () => {
   it("partner-only attribution counts as partly covered once Singular reports trials", () => {
     expect(statusOf(snap(), "srn")).toBe("blocked");
     expect(statusOf(snap({ sng_trials: 40 }), "srn")).toBe("partial");
+  });
+});
+
+describe("paid conversions through Singular", () => {
+  it("the Singular feed goes live once any conversion arrives, and drops its setup step", () => {
+    const row = buildParity(snap({ sng_paid_35d: 12 }), NOW).find((r) => r.id === "postbacks-singular")!;
+    expect(row.status).toBe("live");
+    expect(row.next).toBe("");
+    expect(row.evidence).toContain("12 paid conversions");
+  });
+
+  it("creative optimization is live only with enough mature trials and some conversions", () => {
+    expect(statusOf(snap({ sng_paid_35d: 12, sng_paid_mature: 0 }), "creative")).toBe("partial");
+    expect(statusOf(snap({ sng_paid_35d: 150, sng_trials_mature: 444, sng_paid_mature: 140 }), "creative")).toBe("live");
+    expect(statusOf(snap({ sng_paid_35d: 5, sng_trials_mature: 10, sng_paid_mature: 4 }), "creative")).toBe("partial");
+  });
+
+  it("trialToPaid needs the minimum number of mature trials", () => {
+    expect(trialToPaid(19, 5)).toBeNull();
+    expect(trialToPaid(20, 5)).toBe(0.25);
   });
 });
 
