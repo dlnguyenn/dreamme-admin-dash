@@ -16,9 +16,10 @@
  *   4. Exclude the suppression audience from auto-discovered active prospecting
  *      ad sets.
  *
- * `dryRun` skips every Meta write (audience create/upload/remove + ad-set attach)
- * and only does read-only Meta discovery + our own snapshot/registry writes, so a
- * dry run is safe to point at production. Win-back is empty until a few runs
+ * `dryRun` writes nothing anywhere: no Meta call beyond read-only discovery, and
+ * no snapshot or registry write. It reads the snapshot and works out what this
+ * run would leave in it, so it can be run at any time without hiding churn from
+ * the next live run. Win-back is empty until a few runs
  * accumulate churn history. The Apple-relay majority can't email-match — these
  * audiences cover only the non-relay minority (lean on lookalikes + SKAN/CAPI).
  */
@@ -200,6 +201,48 @@ export async function upsertSnapshot(
   return { activeUpserted: rows.length, lapsedFlipped: flipped.length };
 }
 
+interface CohortHashes {
+  active: string[];
+  highLtv: string[];
+  lapsed: string[];
+  becameLapsed: string[];
+}
+
+interface SnapshotRow {
+  customer_id: string;
+  email_sha256: string | null;
+  status: string;
+}
+
+/**
+ * What a live run would leave in the snapshot, worked out without writing it:
+ * the dry-run counterpart of upsertSnapshot plus the cohort reads. `existing`
+ * is the snapshot as it stands.
+ */
+export function projectSnapshot(
+  existing: SnapshotRow[],
+  actives: ActiveSubscriber[],
+  tenureCutoffMs: number,
+): { snapshot: SnapshotResult; hashes: CohortHashes } {
+  const activeIds = new Set(actives.map((a) => a.customerId));
+  // Rows this run would not refresh: lapsed already, or active until now.
+  const gone = existing.filter((r) => !activeIds.has(r.customer_id));
+  const newlyGone = gone.filter((r) => r.status === "active");
+  const hashesOf = (rows: SnapshotRow[]) =>
+    rows.flatMap((r) => (r.email_sha256 ? [r.email_sha256] : []));
+  return {
+    snapshot: { activeUpserted: actives.length, lapsedFlipped: newlyGone.length },
+    hashes: {
+      active: actives.map((a) => hashEmailForMeta(a.email)),
+      highLtv: actives
+        .filter((a) => a.startsAtMs !== null && a.startsAtMs < tenureCutoffMs)
+        .map((a) => hashEmailForMeta(a.email)),
+      lapsed: hashesOf(gone),
+      becameLapsed: hashesOf(newlyGone),
+    },
+  };
+}
+
 async function hashesWhere(query: string): Promise<string[]> {
   const rows = await snapshotSelectAll<{ email_sha256: string }>(
     `${query}&email_sha256=not.is.null&select=email_sha256`,
@@ -257,7 +300,7 @@ async function ensureCustomAudience(opts: {
 }
 
 /**
- * Run the full audience-sync pipeline. Set `dryRun` to skip all Meta writes
+ * Run the full audience-sync pipeline. Set `dryRun` to write nothing at all
  * (only snapshot/registry + read-only Meta discovery happen).
  */
 export async function runAudienceSync(opts: {
@@ -291,19 +334,35 @@ export async function runAudienceSync(opts: {
   log(`  ${scan.totalActive} live subscribers (RevenueCat reports ${revenueCatActive}).`);
   const actives = scan.subscribers;
 
-  // 2. Snapshot + churn diff
-  log(`Upserting snapshot (${actives.length} active)…`);
-  const snapshot = await upsertSnapshot(actives, runStartedAt);
-  log(`  ${snapshot.activeUpserted} active, ${snapshot.lapsedFlipped} flipped to lapsed.`);
-
-  // 3. Cohort hashes from the snapshot
-  const tenureCutoff = new Date(Date.now() - HIGH_LTV_TENURE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const activeHashes = await hashesWhere("status=eq.active");
-  const highLtvHashes = await hashesWhere(`status=eq.active&starts_at=lt.${encodeURIComponent(tenureCutoff)}`);
-  const lapsedHashes = await hashesWhere("status=eq.lapsed");
-  const becameLapsedHashes = await hashesWhere(
-    `status=eq.lapsed&became_lapsed_at=eq.${encodeURIComponent(runStartedAt)}`,
-  );
+  // 2. Snapshot + churn diff, 3. cohort hashes. A dry run projects both from
+  // the snapshot as it stands; only a live run writes it.
+  const tenureCutoffMs = Date.now() - HIGH_LTV_TENURE_DAYS * 24 * 60 * 60 * 1000;
+  let snapshot: SnapshotResult;
+  let hashes: CohortHashes;
+  if (dryRun) {
+    const existing = await snapshotSelectAll<SnapshotRow>("select=customer_id,email_sha256,status");
+    ({ snapshot, hashes } = projectSnapshot(existing, actives, tenureCutoffMs));
+    log(`  would upsert ${snapshot.activeUpserted} active and flip ${snapshot.lapsedFlipped} to lapsed.`);
+  } else {
+    log(`Upserting snapshot (${actives.length} active)…`);
+    snapshot = await upsertSnapshot(actives, runStartedAt);
+    log(`  ${snapshot.activeUpserted} active, ${snapshot.lapsedFlipped} flipped to lapsed.`);
+    const tenureCutoff = new Date(tenureCutoffMs).toISOString();
+    hashes = {
+      active: await hashesWhere("status=eq.active"),
+      highLtv: await hashesWhere(`status=eq.active&starts_at=lt.${encodeURIComponent(tenureCutoff)}`),
+      lapsed: await hashesWhere("status=eq.lapsed"),
+      becameLapsed: await hashesWhere(
+        `status=eq.lapsed&became_lapsed_at=eq.${encodeURIComponent(runStartedAt)}`,
+      ),
+    };
+  }
+  const {
+    active: activeHashes,
+    highLtv: highLtvHashes,
+    lapsed: lapsedHashes,
+    becameLapsed: becameLapsedHashes,
+  } = hashes;
   const cohorts = {
     active: activeHashes.length,
     highLtv: highLtvHashes.length,

@@ -67,7 +67,7 @@ describe("runAudienceSync", () => {
       }),
     );
 
-    const result = await runAudienceSync({ dryRun: true });
+    const result = await runAudienceSync({ dryRun: false });
 
     expect(result.enumeration).toEqual({
       totalActive: 5019,
@@ -86,6 +86,54 @@ describe("runAudienceSync", () => {
     });
     expect(row.email_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(upsert!.body).not.toContain("one@example.com");
+  });
+
+  it("a dry run writes nothing and still reports what a live run would do", async () => {
+    // A dry run used to upsert the snapshot and flip lapsed rows. The next live
+    // run then saw no one as newly lapsed and left them in Meta's suppression
+    // audience. Three subscribers were swallowed that way on 2026-11-06.
+    const DAY = 86_400_000;
+    const sub = (customerId: string, daysHeld: number) => ({
+      customerId,
+      email: `${customerId}@example.com`,
+      productId: "yearly",
+      startsAtMs: Date.now() - daysHeld * DAY,
+      expiresAtMs: Date.now() + 30 * DAY,
+    });
+    vi.mocked(fetchActiveSubscribers).mockResolvedValue({
+      totalActive: 5019,
+      // stays subscribed (long tenure), re-subscribed after lapsing, brand new
+      subscribers: [sub("stays", 200), sub("returns", 5), sub("new", 1)],
+      skipped,
+    });
+    vi.mocked(fetchOverview).mockResolvedValue(overview(4520, 505));
+    const existing = [
+      { customer_id: "stays", email_sha256: "h-stays", status: "active" },
+      { customer_id: "leaves", email_sha256: "h-leaves", status: "active" },
+      { customer_id: "returns", email_sha256: "h-returns", status: "lapsed" },
+      { customer_id: "long-gone", email_sha256: "h-long-gone", status: "lapsed" },
+    ];
+    const writes: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method && init.method !== "HEAD") writes.push(`${init.method} ${url}`);
+        if (url.includes("graph.facebook.com")) return new Response('{"data":[]}', { status: 200 });
+        if (init?.method === "HEAD") return new Response(null, { status: 204 });
+        const snapshot = url.includes("/rc_customer_snapshot?select=customer_id,email_sha256,status");
+        return new Response(JSON.stringify(snapshot ? existing : []), { status: 200 });
+      }),
+    );
+
+    const result = await runAudienceSync({ dryRun: true });
+
+    expect(writes).toEqual([]);
+    expect(result.snapshot).toEqual({ activeUpserted: 3, lapsedFlipped: 1 });
+    expect(result.cohorts).toEqual({ active: 3, highLtv: 1, lapsed: 2, becameLapsedThisRun: 1 });
+    expect(result.audiences.find((a) => a.purpose === "suppression_active")).toMatchObject({
+      added: 3,
+      removed: 1,
+    });
   });
 
   it("reads a cohort past PostgREST's 1,000-row ceiling", async () => {
@@ -113,7 +161,7 @@ describe("runAudienceSync", () => {
       }),
     );
 
-    const result = await runAudienceSync({ dryRun: true });
+    const result = await runAudienceSync({ dryRun: false });
 
     expect(result.cohorts.active).toBe(TOTAL);
     expect(result.audiences.find((a) => a.purpose === "suppression_active")?.memberCount).toBe(TOTAL);

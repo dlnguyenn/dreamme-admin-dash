@@ -5,7 +5,7 @@
  *
  * Usage:
  *   npm run refresh-audiences                  # LIVE — creates/updates Meta audiences + attaches suppression
- *   npm run refresh-audiences -- --dry-run     # no Meta writes (snapshot + read-only discovery only)
+ *   npm run refresh-audiences -- --dry-run     # writes nothing (reads the snapshot + read-only discovery)
  *
  * Required env (.env.local): CONSUMER_SUPABASE_URL, CONSUMER_SERVICE_ROLE_KEY,
  *   REVENUECAT_API_KEY, REVENUECAT_PROJECT_ID, Meta OAuth connection (or

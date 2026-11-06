@@ -13,7 +13,7 @@ export const maxDuration = 300;
 // suppression + high-LTV lookalike + win-back audiences → exclude suppression
 // from auto-discovered active prospecting ad sets. See src/lib/audiences.ts.
 //
-// Pass ?dry_run=1 to skip ALL Meta writes (snapshot/registry + read-only Meta
+// Pass ?dry_run=1 to write nothing at all (snapshot/registry reads + read-only Meta
 // discovery still run) — safe to point at production.
 export async function GET(req: Request) {
   if (!checkCronAuth(req)) {

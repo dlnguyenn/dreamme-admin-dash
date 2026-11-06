@@ -1026,9 +1026,9 @@ const mcpHandler = createMcpHandler(
     // --- WRITE: audience sync (Module 4) --------------------------------
     server.tool(
       "sync_audiences",
-      "Run the RC→Meta audience sync: snapshot live subscribers, build/refresh the suppression + high-LTV lookalike + win-back audiences, and exclude suppression from active prospecting ad sets. Guarded: defaults to dry_run (no Meta writes — snapshot + read-only discovery only). To apply live, pass dry_run:false AND confirm:true.",
+      "Run the RC→Meta audience sync: snapshot live subscribers, build/refresh the suppression + high-LTV lookalike + win-back audiences, and exclude suppression from active prospecting ad sets. Guarded: defaults to dry_run (writes nothing: reads the snapshot, read-only discovery). To apply live, pass dry_run:false AND confirm:true.",
       {
-        dry_run: z.boolean().default(true).describe("Default true — no Meta writes."),
+        dry_run: z.boolean().default(true).describe("Default true — nothing is written."),
         confirm: z.boolean().default(false).describe("Required with dry_run:false to actually create/modify Meta audiences + ad sets."),
       },
       async (a) => {
