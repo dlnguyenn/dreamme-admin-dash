@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import { writeSwitchbackAlerts } from "@/lib/revenue-plan/switchback-data";
+import { BENCHMARKS, checkAdSets, toAdSetWeek } from "@/lib/mmp/payers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ function meanStd(xs: number[]): { mean: number; std: number } {
 
 type Alert = {
   alert_date: string;
-  scope: "account" | "campaign";
+  scope: "account" | "campaign" | "adset";
   campaign_id: string | null;
   campaign_name: string | null;
   metric: string;
@@ -206,6 +207,35 @@ export async function GET(req: Request) {
     );
   }
 
+  // Weekly funnel benchmarks per ad set (AGA 2026: Parvaz's click-to-install
+  // and install-to-trial targets, Burke's 20 optimization events a week), on
+  // the last 7 full days. Dated to the Monday of this week, so one row per ad
+  // set per week however often the cron runs. Never blocks the pass above.
+  let benchmarks: number | { error: string } = 0;
+  try {
+    const wk = await fetch(`${SUPABASE_URL}/rest/v1/mmp_adset_week?select=*`, {
+      headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}` },
+      cache: "no-store",
+    });
+    if (!wk.ok) throw new Error(`mmp_adset_week read failed: ${wk.status}`);
+    const monday = new Date(yest.getTime() - ((yest.getUTCDay() + 6) % 7) * 86400_000).toISOString().slice(0, 10);
+    const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+    const before = alerts.length;
+    for (const c of checkAdSets(((await wk.json()) as Record<string, unknown>[]).map(toAdSetWeek))) {
+      const name = `${c.adset_name ?? c.adset_id} (${c.campaign_name ?? "?"})`;
+      const base = { alert_date: monday, scope: "adset" as const, campaign_id: c.adset_id, campaign_name: name, z: 0, direction: "drop" as const, severity: "warn" as const };
+      if (c.clickVerdict === "low" && c.clickToInstall != null)
+        alerts.push({ ...base, metric: "click_to_install", value: Number(c.clickToInstall.toFixed(4)), baseline: BENCHMARKS.clickToInstall, message: `${name}: click to install ${pct(c.clickToInstall)} over 7 days, below the ${pct(BENCHMARKS.clickToInstall)} benchmark` });
+      if (c.trialVerdict === "low" && c.installToTrial != null)
+        alerts.push({ ...base, metric: "install_to_trial", value: Number(c.installToTrial.toFixed(4)), baseline: BENCHMARKS.installToTrial, message: `${name}: install to trial ${pct(c.installToTrial)} over 7 days, below the ${pct(BENCHMARKS.installToTrial)} benchmark` });
+      if (c.volumeVerdict === "low")
+        alerts.push({ ...base, metric: "weekly_events", value: c.trials, baseline: BENCHMARKS.minWeeklyEvents, message: `${name}: ${c.trials} trial starts in 7 days, under the ${BENCHMARKS.minWeeklyEvents} a week Meta needs to optimize` });
+    }
+    benchmarks = alerts.length - before;
+  } catch (e) {
+    benchmarks = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   // Upsert (idempotent on the dedupe index).
   if (alerts.length) {
     const ins = await fetch(
@@ -236,6 +266,7 @@ export async function GET(req: Request) {
     alerts: alerts.length,
     critical: alerts.filter((a) => a.severity === "critical").length,
     messages: alerts.map((a) => a.message),
+    benchmarks,
     plan,
   });
 }

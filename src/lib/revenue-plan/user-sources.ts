@@ -21,6 +21,22 @@ interface ConsumerUser {
   id: string;
   referral_source: string | null;
   onboarding_completed_at: string | null;
+  birthday?: string | null;
+  gender?: string | null;
+}
+
+/**
+ * Birth year from the consumer `birthday`, or null when it can't be trusted.
+ * 1995-01-01 is the onboarding picker's default (156 of ~17k recent users sit
+ * on it exactly), so it means "not answered", not a birthday. Ages outside
+ * 13-100 are typos. Only the year is copied (migration 0101).
+ */
+export function birthYearOf(birthday: string | null | undefined, now: Date = new Date()): number | null {
+  if (!birthday || birthday.startsWith("1995-01-01")) return null;
+  const year = Number(birthday.slice(0, 4));
+  if (!Number.isInteger(year)) return null;
+  const age = now.getUTCFullYear() - year;
+  return age >= 13 && age <= 100 ? year : null;
 }
 
 export interface SyncResult {
@@ -44,7 +60,7 @@ export async function syncUserSources(opts: { full?: boolean; now?: Date } = {})
   for (let page = 0; page < 500; page++) {
     const rows = await sbGet<ConsumerUser[]>(
       "consumer",
-      `users?select=id,referral_source,onboarding_completed_at${filter}${last ? `&id=gt.${last}` : ""}&order=id.asc&limit=${PAGE}`,
+      `users?select=id,referral_source,onboarding_completed_at,birthday,gender${filter}${last ? `&id=gt.${last}` : ""}&order=id.asc&limit=${PAGE}`,
     );
     if (!rows.length) break;
     read += rows.length;
@@ -54,6 +70,8 @@ export async function syncUserSources(opts: { full?: boolean; now?: Date } = {})
         user_id: r.id,
         referral_source: r.referral_source,
         onboarding_completed_at: r.onboarding_completed_at,
+        birth_year: birthYearOf(r.birthday, now),
+        gender: r.gender ?? null,
         synced_at: syncedAt,
       })),
       "user_id",

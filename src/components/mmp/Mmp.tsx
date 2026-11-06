@@ -39,10 +39,26 @@ import {
   type ParityStatus,
 } from "@/lib/mmp/parity";
 import { AGA_NOTES, AGA_SUMMARY, BUY_OPTION, CANT_COPY, JOBS, MECHANICS, PLAN, type MmpJob } from "@/lib/mmp/catalog";
+import {
+  AGE_BANDS,
+  BENCHMARKS,
+  MIN_BAND_TRIALS,
+  ageRates,
+  checkAdSets,
+  costPerPayer,
+  summarizeAsc,
+  type AdSetWeek,
+  type AgeMix,
+  type AgeRateRow,
+  type AscSourceRow,
+  type Verdict,
+} from "@/lib/mmp/payers";
+import type { MetaLive } from "@/lib/mmp/meta-live";
 
-type View = "summary" | "parity" | "how" | "aga" | "plan";
+type View = "summary" | "checks" | "parity" | "how" | "aga" | "plan";
 const VIEWS: { value: View; label: string }[] = [
   { value: "summary", label: "Summary" },
+  { value: "checks", label: "Checks" },
   { value: "parity", label: "Parity" },
   { value: "how", label: "How AppsFlyer works" },
   { value: "aga", label: "AGA" },
@@ -80,6 +96,11 @@ interface Payload {
   snapshot: MmpSnapshot;
   campaigns: MmpCampaignRow[];
   ads: MmpAdRow[];
+  ageRates: AgeRateRow[];
+  adsetWeek: AdSetWeek[];
+  asc: AscSourceRow[];
+  meta: MetaLive | null;
+  metaError: string | null;
 }
 
 export function Mmp() {
@@ -108,7 +129,16 @@ export function Mmp() {
       const res = await fetch("/api/mmp", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setData({ snapshot: json.snapshot, campaigns: json.campaigns, ads: json.ads ?? [] });
+      setData({
+        snapshot: json.snapshot,
+        campaigns: json.campaigns,
+        ads: json.ads ?? [],
+        ageRates: json.ageRates ?? [],
+        adsetWeek: json.adsetWeek ?? [],
+        asc: json.asc ?? [],
+        meta: json.meta ?? null,
+        metaError: json.metaError ?? null,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -120,7 +150,7 @@ export function Mmp() {
   }, [refresh]);
 
   const rows = React.useMemo(() => (data ? buildParity(data.snapshot) : []), [data]);
-  const needsData = view === "summary" || view === "parity";
+  const needsData = view === "summary" || view === "parity" || view === "checks";
 
   return (
     <div>
@@ -142,6 +172,7 @@ export function Mmp() {
       {error && needsData && <ErrorBanner>{error}</ErrorBanner>}
       {needsData && !data && !error && <InfoWell>Loading…</InfoWell>}
       {view === "summary" && data && <Summary data={data} rows={rows} />}
+      {view === "checks" && data && <Checks data={data} />}
       {view === "parity" && data && <Parity rows={rows} />}
       {view === "how" && <HowItWorks />}
       {view === "aga" && <Aga />}
@@ -249,6 +280,12 @@ function Summary({ data, rows }: { data: Payload; rows: ParityRow[] }) {
 
       <SectionHeader family="neutral" icon="Image" title="By ad set and ad: Meta against Singular" meta="35 days" />
       <AdTable rows={data.ads} paidFlowing={data.snapshot.sng_paid_35d > 0} />
+
+      <SectionHeader family="accent" icon="Dollar" title="Estimated cost per payer, by ad" meta="35 days · $100+ spend" />
+      <PayerTable data={data} />
+
+      <SectionHeader family="neutral" icon="Chart" title="Trial-to-paid by age" meta="RevenueCat trials 10-120 days old" />
+      <AgeTable rows={data.ageRates} />
 
       <SectionHeader family="neutral" icon="InfoCircle" title="Singular, the MMP already in the app" />
       <Card>
@@ -386,6 +423,300 @@ function AdTable({ rows, paidFlowing }: { rows: MmpAdRow[]; paidFlowing: boolean
         {hiddenSets > 0 && ` ${hiddenSets} smaller ad sets with no Singular data (${usd(hiddenSpend, 0)} in all, mostly website-campaign tests) are left out.`}
       </p>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cost per payer and age
+// ---------------------------------------------------------------------------
+
+const dashEl = <span style={{ color: "var(--ink-4)" }}>—</span>;
+
+/**
+ * Burke's method: an ad's trials x its likely trial-to-paid (its Meta age mix
+ * weighted by our real rate per age band). Ranks ads on payers, not trials.
+ */
+function PayerTable({ data }: { data: Payload }) {
+  const mixes = data.meta?.ageMix ?? {};
+  const rates = { ios: ageRates(data.ageRates, { ios: true }), all: ageRates(data.ageRates) };
+  const ads = data.ads
+    .filter((a): a is MmpAdRow & { ad_id: string } => a.ad_id != null)
+    .map((a) => ({
+      ad_id: a.ad_id,
+      ad_name: a.ad_name,
+      adset_name: a.adset_name,
+      campaign_name: a.campaign_name,
+      spend: a.spend,
+      meta_trials: a.meta_trials,
+      singular_trials: a.singular_trials,
+    }));
+  const all = costPerPayer(ads, mixes, rates);
+  const rows = all.filter((r) => r.trials > 0);
+  const noTrials = all.length - rows.length;
+  if (!data.meta) {
+    return (
+      <InfoWell>
+        Meta&rsquo;s age breakdown didn&rsquo;t load{data.metaError ? ` (${data.metaError})` : ""}, so cost per payer can&rsquo;t be estimated right now.
+      </InfoWell>
+    );
+  }
+  if (!rows.length) return <InfoWell>No ad has $100 of spend in the last 35 days.</InfoWell>;
+  const vs = (v: number | null) => {
+    if (v == null) return dashEl;
+    const color = v <= 0.85 ? "var(--success)" : v >= 1.15 ? "var(--danger)" : "var(--ink-2)";
+    return <span style={{ color, fontWeight: 650 }}>{v <= 1 ? `${pct(1 - v, 0)} cheaper` : `${pct(v - 1, 0)} dearer`}</span>;
+  };
+  return (
+    <>
+      {rates.all.known < 0.2 && (
+        <InfoWell style={{ marginBottom: 12 }}>
+          <strong style={{ color: "var(--ink-2)", fontWeight: 650 }}>Ages haven&rsquo;t synced yet</strong> ({pct(rates.all.known, 0)} of trials have one), so every ad
+          gets the same overall trial-to-paid and this table ranks on trials only. It fills in after the next user-sources sync.
+        </InfoWell>
+      )}
+      <InfoWell style={{ marginBottom: 12 }}>
+        <strong style={{ color: "var(--ink-2)", fontWeight: 650 }}>Trial-to-paid differs by age, and each ad pulls a different age mix.</strong> Each ad&rsquo;s
+        likely trial-to-paid is its trial-start age mix from Meta, weighted by DreamMe&rsquo;s real trial-to-paid in each age band (table below). Payers = trials
+        x that rate. iOS ads use Singular&rsquo;s trials; Android ads use Meta&rsquo;s claims, which run high, so compare each ad only with others on the same basis.
+      </InfoWell>
+      <Card pad={0} style={tableCard}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["Ad", "Spend", "Trials", "Basis", "Aged 45+", "Likely trial-to-paid", "Payers", "Cost per payer", "Against average"].map((h, i) => (
+                <th key={h} style={thStyle(i === 0 ? "left" : "right")}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.ad_id}>
+                <td style={tdStyle("left")}>
+                  <span style={{ fontWeight: 650 }}>{r.ad_name ?? r.ad_id}</span>
+                  <span style={{ color: "var(--ink-3)" }}> · {r.adset_name ?? r.campaign_name}</span>
+                </td>
+                <td style={tdStyle()}>{usd(r.spend, 0)}</td>
+                <td style={tdStyle()}>{r.trials ? int(r.trials) : dashEl}</td>
+                <td style={{ ...tdStyle(), color: "var(--ink-3)" }}>{r.basis === "singular" ? "Singular" : "Meta"}</td>
+                <td style={tdStyle()}>{r.over45 == null ? dashEl : pct(r.over45, 0)}</td>
+                <td style={tdStyle()}>{r.trialToPaid == null ? dashEl : pct(r.trialToPaid, 0)}</td>
+                <td style={tdStyle()}>{r.payers == null ? dashEl : r.payers.toFixed(1)}</td>
+                <td style={{ ...tdStyle(), fontWeight: 650 }}>{r.costPerPayer == null ? dashEl : usd(r.costPerPayer, 0)}</td>
+                <td style={tdStyle()}>{vs(r.vsAverage)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+      <p style={{ ...muted, marginTop: 10 }}>
+        An estimate: it assumes users of one age convert the same whichever ad brought them. Once Singular reports real payers per ad (Trial-to-paid column above),
+        trust that over this.
+        {noTrials > 0 && ` ${noTrials} iOS ads with $100+ spend have no Singular trials yet (new, or Singular reports their ad as N/A) and aren't listed.`}
+      </p>
+    </>
+  );
+}
+
+function AgeTable({ rows }: { rows: AgeRateRow[] }) {
+  if (!rows.length) return <InfoWell>No trials old enough to have converted.</InfoWell>;
+  const all = ageRates(rows);
+  const ios = ageRates(rows, { ios: true });
+  const order = ["under 18", ...AGE_BANDS, "unknown"];
+  const sorted = [...rows].sort((a, b) => order.indexOf(a.age_band) - order.indexOf(b.age_band));
+  const rate = (c: number, t: number) => (t >= MIN_BAND_TRIALS ? pct(c / t, 0) : t > 0 ? <span style={{ color: "var(--ink-3)" }}>{pct(c / t, 0)}*</span> : dashEl);
+  return (
+    <>
+      <Card pad={0} style={tableCard}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["Age", "Trials", "Paid", "Trial-to-paid", "iOS trials", "iOS trial-to-paid"].map((h, i) => (
+                <th key={h} style={thStyle(i === 0 ? "left" : "right")}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.age_band}>
+                <td style={{ ...tdStyle("left"), fontWeight: 650, color: r.age_band === "unknown" ? "var(--ink-3)" : undefined }}>{r.age_band}</td>
+                <td style={tdStyle()}>{int(r.trials)}</td>
+                <td style={tdStyle()}>{int(r.converted)}</td>
+                <td style={{ ...tdStyle(), fontWeight: 650 }}>{rate(r.converted, r.trials)}</td>
+                <td style={tdStyle()}>{int(r.trials_ios)}</td>
+                <td style={tdStyle()}>{rate(r.converted_ios, r.trials_ios)}</td>
+              </tr>
+            ))}
+            <tr style={{ background: "var(--surface-2)" }}>
+              <td style={{ ...tdStyle("left"), fontWeight: 650 }}>All</td>
+              <td style={tdStyle()}>{int(rows.reduce((a, r) => a + r.trials, 0))}</td>
+              <td style={tdStyle()}>{int(rows.reduce((a, r) => a + r.converted, 0))}</td>
+              <td style={{ ...tdStyle(), fontWeight: 650 }}>{all.overall == null ? dashEl : pct(all.overall, 1)}</td>
+              <td style={tdStyle()}>{int(rows.reduce((a, r) => a + r.trials_ios, 0))}</td>
+              <td style={tdStyle()}>{ios.overall == null ? dashEl : pct(ios.overall, 1)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </Card>
+      <p style={{ ...muted, marginTop: 10 }}>
+        Age comes from the birthday entered in onboarding ({pct(all.known, 0)} of trials have one; the picker&rsquo;s default 1995-01-01 counts as unknown). *
+        Fewer than {MIN_BAND_TRIALS} trials: the cost-per-payer estimate uses the overall rate for that band instead.
+      </p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checks: weekly benchmarks, optimization volume, App Store sources
+// ---------------------------------------------------------------------------
+
+const VERDICT_PILL: Record<Verdict | "good", { kind: "success" | "attention" | "neutral" | "danger"; label: string }> = {
+  ok: { kind: "success", label: "OK" },
+  good: { kind: "success", label: "Good" },
+  low: { kind: "danger", label: "Low" },
+  thin: { kind: "neutral", label: "Too small" },
+};
+
+function Checks({ data }: { data: Payload }) {
+  const checks = checkAdSets(data.adsetWeek);
+  const settings = new Map((data.meta?.adsets ?? []).map((a) => [a.id, a]));
+  const asc = summarizeAsc(data.asc);
+  const flagged = checks.filter((c) => c.clickVerdict === "low" || c.trialVerdict === "low" || c.volumeVerdict === "low").length;
+  const rateCell = (v: number | null, verdict: Verdict) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+      {v == null ? dashEl : pct(v, 0)}
+      {verdict !== "ok" && <StatusPill kind={VERDICT_PILL[verdict].kind}>{VERDICT_PILL[verdict].label}</StatusPill>}
+    </span>
+  );
+
+  return (
+    <>
+      <InfoWell style={{ marginBottom: 16 }}>
+        <strong style={{ color: "var(--ink-2)", fontWeight: 650 }}>Three checks an MMP dashboard would flag, run on the last 7 full days.</strong> Benchmarks are from the AGA
+        2026 talks: Meta click to install around {pct(BENCHMARKS.clickToInstall, 0)}, install to trial over {pct(BENCHMARKS.installToTrial, 0)}, and{" "}
+        {BENCHMARKS.minWeeklyEvents}-{BENCHMARKS.goodWeeklyEvents} optimization events per ad set per week so Meta can learn. The marketing-alerts cron writes the same
+        checks to the alerts feed each morning.
+      </InfoWell>
+
+      <SectionHeader
+        family={flagged ? "attention" : "success"}
+        icon="TriAlert"
+        title="Funnel benchmarks and learning volume, by ad set"
+        meta={`last 7 days · ${flagged} flagged`}
+      />
+      {checks.length ? (
+        <Card pad={0} style={tableCard}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Ad set", "Optimizes for", "Spend", "Clicks", "Installs", "Click to install", "Install to trial", "Trial starts (events)"].map((h, i) => (
+                  <th key={h} style={thStyle(i < 2 ? "left" : "right")}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {checks.map((c) => {
+                const s = settings.get(c.adset_id);
+                const goal = s ? (s.event ?? s.optimization_goal ?? "—").toString().replace(/_/g, " ").toLowerCase() : null;
+                return (
+                  <tr key={c.adset_id}>
+                    <td style={tdStyle("left")}>
+                      <span style={{ fontWeight: 650 }}>{c.adset_name ?? c.adset_id}</span>
+                      <span style={{ color: "var(--ink-3)" }}> · {c.campaign_name}</span>
+                    </td>
+                    <td style={{ ...tdStyle("left"), color: "var(--ink-3)" }}>{goal ?? (data.meta ? "not active" : dashEl)}</td>
+                    <td style={tdStyle()}>{usd(c.spend, 0)}</td>
+                    <td style={tdStyle()}>{int(c.clicks)}</td>
+                    <td style={tdStyle()}>{int(c.installs)}</td>
+                    <td style={tdStyle()}>{rateCell(c.clickToInstall, c.clickVerdict)}</td>
+                    <td style={tdStyle()}>{rateCell(c.installToTrial, c.trialVerdict)}</td>
+                    <td style={tdStyle()}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                        {int(c.trials)}
+                        <StatusPill kind={VERDICT_PILL[c.volumeVerdict].kind}>{VERDICT_PILL[c.volumeVerdict].label}</StatusPill>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      ) : (
+        <InfoWell>No ad set spent in the last 7 days.</InfoWell>
+      )}
+      <p style={{ ...muted, marginTop: 10 }}>
+        Clicks, installs and trial starts are Meta&rsquo;s own counts, since those are what its optimizer learns from. Below ${BENCHMARKS.minWeeklySpend} of weekly spend
+        the rates are too noisy to judge. Under {BENCHMARKS.minWeeklyEvents} events a week, an ad set stays in learning: consolidate it or optimize for an earlier event.
+        {data.metaError && ` Ad set settings didn't load (${data.metaError}).`}
+      </p>
+
+      <SectionHeader family="info" icon="Flag" title="App Store downloads by source" meta={asc.lastDate ? `35 days to ${asc.lastDate}` : "no data"} />
+      <AscCard asc={asc} />
+    </>
+  );
+}
+
+function AscCard({ asc }: { asc: ReturnType<typeof summarizeAsc> }) {
+  if (!asc.rows.length) {
+    return (
+      <InfoWell>
+        No App Store download data yet. Load it with <code>npm run asc:downloads</code> (Apple&rsquo;s App Downloads Detailed report).
+      </InfoWell>
+    );
+  }
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+      <Card>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {asc.rows.map((r) => {
+            const share = asc.total > 0 ? r.downloads / asc.total : 0;
+            const isMeta = r.bucket === "Facebook app" || r.bucket === "Instagram app";
+            return (
+              <div key={r.bucket}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 5 }}>
+                  <span style={{ font: "650 13px var(--font-ui)" }}>{r.bucket}</span>
+                  <span style={{ marginLeft: "auto", font: "650 13px var(--font-ui)", fontVariantNumeric: "tabular-nums" }}>
+                    {int(r.downloads)} <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>· {pct(share, 0)}</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: `${Math.min(100, share * 100)}%`,
+                      minWidth: r.downloads > 0 ? 3 : 0,
+                      height: "100%",
+                      borderRadius: 999,
+                      background: isMeta ? "var(--accent)" : "var(--ink-4)",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+      <Card>
+        <div style={cellLabel}>Meta check</div>
+        <div style={{ font: "650 22px var(--font-ui)", marginBottom: 8, fontVariantNumeric: "tabular-nums" }}>
+          {int(asc.metaClaimed)} claimed · {int(asc.fromMetaApps)} from Meta apps
+        </div>
+        <p style={{ ...body, marginBottom: 10 }}>
+          Apple counted {int(asc.fromMetaApps)} first-time downloads referred by the Facebook and Instagram apps; Meta claims {int(asc.metaClaimed)} iOS installs over the
+          same days{asc.claimRatio != null ? ` (${pct(asc.claimRatio, 0)} of them)` : ""}.
+        </p>
+        <p style={muted}>
+          Apple&rsquo;s count covers every user, not only opted-in devices, and it can&rsquo;t be inflated by Meta&rsquo;s modelling. It includes organic shares and profile
+          links, so it&rsquo;s a ceiling for paid Meta installs: if Meta ever claims more than this, its count is padded. Downloads from search and browse are mostly
+          people who saw an ad and searched later, which no MMP can tie to a campaign.
+        </p>
+      </Card>
+    </div>
   );
 }
 

@@ -60,7 +60,14 @@ describe("syncUserSources", () => {
     expect((writes[0].init?.headers as Record<string, string>).Prefer).toContain("resolution=merge-duplicates");
     const body = JSON.parse(String(writes[1].init?.body));
     expect(body).toEqual([
-      { user_id: uuid(5000), referral_source: "facebook", onboarding_completed_at: "2026-11-01T00:00:00Z", synced_at: "2026-11-04T06:30:00.000Z" },
+      {
+        user_id: uuid(5000),
+        referral_source: "facebook",
+        onboarding_completed_at: "2026-11-01T00:00:00Z",
+        birth_year: null,
+        gender: null,
+        synced_at: "2026-11-04T06:30:00.000Z",
+      },
     ]);
   });
 
