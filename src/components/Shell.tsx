@@ -19,6 +19,7 @@ export type DashId =
   | "spend"
   | "growth"
   | "marketing"
+  | "mmp"
   | "plan"
   | "stepdown"
   | "creatives"
@@ -62,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "spend", label: "Spend", icon: "Dollar", status: "live", desc: "AI + business expenses", adminOnly: true, group: "Growth" },
   { id: "growth", label: "Growth AI", icon: "Spark", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
   { id: "marketing", label: "Marketing Efficiency", icon: "Trend", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
+  { id: "mmp", label: "MMP", icon: "Link", status: "live", desc: "In-house AppsFlyer: what it does, what we have, what's left", adminOnly: true },
   { id: "plan", label: "April Plan", icon: "Chart", status: "live", desc: "Scorecard, value per trial, clippers, experiments, P&L", adminOnly: true },
   // id kept as "stepdown" so old ?tab=stepdown links still land here.
   { id: "stepdown", label: "Meta Switchback", icon: "Flask", status: "live", desc: "Meta holdout: spend vs plan, cost per extra trial", adminOnly: true },

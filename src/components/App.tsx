@@ -22,6 +22,7 @@ import { SpendDashboard } from "./SpendDashboard";
 import { GrowthAI } from "./GrowthAI";
 import { MarketingEfficiency } from "./MarketingEfficiency";
 import { SwitchbackTest } from "./SwitchbackTest";
+import { Mmp } from "./mmp/Mmp";
 import { AprilPlan } from "./plan/AprilPlan";
 import { StoreReviews } from "./StoreReviews";
 import { CreativeAnalytics } from "./CreativeAnalytics";
@@ -334,6 +335,8 @@ export function App() {
     screen = role === "admin" ? <GrowthAI /> : <ComingSoon item={currentItem} />;
   } else if (current === "marketing") {
     screen = <MarketingEfficiency />;
+  } else if (current === "mmp") {
+    screen = role === "admin" ? <Mmp /> : <ComingSoon item={currentItem} />;
   } else if (current === "plan") {
     screen = role === "admin" ? <AprilPlan /> : <ComingSoon item={currentItem} />;
   } else if (current === "stepdown") {
