@@ -28,6 +28,28 @@ export const STAGE_HINTS: Record<RoadmapStage, string> = {
 /** Who an item can be assigned to. Always shown in full: both start with D. */
 export const ROADMAP_OWNERS = ["Dan", "David"];
 
+/** Each owner's color (teal, plum): clear of the terracotta on High chips. */
+const OWNER_COLORS: Record<string, string> = {
+  Dan: "var(--cat-6)",
+  David: "var(--cat-4)",
+};
+
+export function ownerColor(owner: string | null): string | null {
+  return (owner && OWNER_COLORS[owner]) || null;
+}
+
+/** Card background: a light wash of the owner's color. */
+export function ownerWash(owner: string | null): string {
+  const color = ownerColor(owner);
+  return color ? `color-mix(in srgb, ${color} 9%, var(--surface))` : "var(--surface)";
+}
+
+/** Card border, tinted to match. */
+export function ownerEdge(owner: string | null): string {
+  const color = ownerColor(owner);
+  return color ? `color-mix(in srgb, ${color} 35%, var(--line))` : "var(--line)";
+}
+
 export interface RoadmapItem {
   id: string;
   title: string;

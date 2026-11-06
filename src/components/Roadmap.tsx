@@ -22,6 +22,9 @@ import {
   STAGE_HINTS,
   STAGE_LABELS,
   columnItems,
+  ownerColor,
+  ownerEdge,
+  ownerWash,
   dropPosition,
   isOverdue,
   type RoadmapItem,
@@ -191,11 +194,23 @@ export function Roadmap() {
         <Chip tone={!owner ? "ink" : "neutral"} onClick={() => setOwner(null)}>
           Everyone
         </Chip>
-        {ROADMAP_OWNERS.map((o) => (
-          <Chip key={o} tone={owner === o ? "ink" : "neutral"} onClick={() => setOwner(owner === o ? null : o)}>
-            {o}
-          </Chip>
-        ))}
+        {ROADMAP_OWNERS.map((o) => {
+          const color = ownerColor(o)!;
+          const on = owner === o;
+          return (
+            <Chip
+              key={o}
+              onClick={() => setOwner(on ? null : o)}
+              style={{
+                background: on ? color : ownerWash(o),
+                color: on ? "var(--on-solid)" : color,
+                borderColor: on ? color : ownerEdge(o),
+              }}
+            >
+              {o}
+            </Chip>
+          );
+        })}
         <span style={{ fontSize: 12, color: "var(--ink-3)", marginLeft: 8 }}>
           {openCount} open
         </span>
@@ -416,6 +431,8 @@ function Card({
   onOpen: () => void;
 }) {
   const overdue = isOverdue(item);
+  const color = ownerColor(item.owner);
+  const edge = ownerEdge(item.owner);
   return (
     <button
       draggable
@@ -433,9 +450,9 @@ function Card({
       style={{
         textAlign: "left",
         width: "100%",
-        background: "var(--surface)",
-        border: "1px solid var(--line)",
-        borderTop: dropBefore ? "3px solid var(--accent)" : "1px solid var(--line)",
+        background: ownerWash(item.owner),
+        border: `1px solid ${edge}`,
+        borderTop: dropBefore ? "3px solid var(--accent)" : `1px solid ${edge}`,
         borderRadius: 10,
         padding: "10px 12px",
         cursor: "grab",
@@ -486,9 +503,9 @@ function Card({
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              background: "var(--surface-2)",
-              border: "1px solid var(--line)",
-              color: "var(--ink-2)",
+              background: color ?? "var(--surface-2)",
+              border: `1px solid ${color ?? "var(--line)"}`,
+              color: color ? "var(--on-solid)" : "var(--ink-2)",
             }}
           >
             {item.owner}
