@@ -289,6 +289,68 @@ describe("singular vendor client", () => {
     });
   });
 
+  describe("mapSingularAdRows", () => {
+    const TRIAL_ID = "fdf7c8938287480997b82032f8a5eac6";
+    const SUB_ID = "3a5168a819824ac4a8fb8d278994265c";
+    const row = (o: Record<string, unknown> = {}) => ({
+      start_date: "2026-11-01",
+      end_date: "2026-11-01",
+      app: "DreamMe",
+      source: "Facebook",
+      os: "iOS",
+      unified_campaign_id: "120249101441350622",
+      unified_campaign_name: "SCALING Campaign (iOS)",
+      adn_sub_campaign_id: "120249131510900622",
+      adn_sub_campaign_name: "DreamMe Statics",
+      adn_creative_id: "120249131690160622",
+      adn_creative_name: "Newspaper Review 4.8 (iOS)",
+      tracker_installs: 40,
+      [TRIAL_ID]: { "7d": 9 },
+      [SUB_ID]: { "7d": 9 },
+      ...o,
+    });
+
+    it("maps Meta's ad set and ad ids and unwraps period-keyed cohorts", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const [r] = mapSingularAdRows([row()], { trialEventId: TRIAL_ID, subscribeEventId: SUB_ID, cohortPeriod: "7d" });
+      expect(r).toMatchObject({
+        source: "facebook",
+        campaign_id: "120249101441350622",
+        adset_id: "120249131510900622",
+        ad_id: "120249131690160622",
+        ad_name: "Newspaper Review 4.8 (iOS)",
+        date: "2026-11-01",
+        installs: 40,
+        trial_starts: 9,
+        subscribes: 9,
+      });
+    });
+
+    it("turns Singular's N/A ad into an empty id so it still has a primary key", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const [r] = mapSingularAdRows([row({ adn_creative_id: "N/A", adn_creative_name: "N/A" })], { trialEventId: TRIAL_ID });
+      expect(r.ad_id).toBe("");
+      expect(r.ad_name).toBeNull();
+    });
+
+    it("merges rows that fan out by app and os onto one primary key", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const out = mapSingularAdRows(
+        [row({ app: "DreamMe", tracker_installs: 30, [TRIAL_ID]: { "7d": 6 } }), row({ app: "DreamMe iOS", tracker_installs: 10, [TRIAL_ID]: { "7d": 2 } })],
+        { trialEventId: TRIAL_ID },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ installs: 40, trial_starts: 8, os: "iOS" });
+    });
+
+    it("drops rows with no campaign or date, and gives 0 trials when no event resolved", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      expect(mapSingularAdRows([row({ unified_campaign_id: null })], { trialEventId: TRIAL_ID })).toEqual([]);
+      const [r] = mapSingularAdRows([row()]);
+      expect(r.trial_starts).toBe(0);
+    });
+  });
+
   describe("summarizeSingularProbe", () => {
     const TRIAL_ID = "815782610a1ddf";
 

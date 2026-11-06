@@ -27,8 +27,10 @@ import {
   STATUS_LABEL,
   buildParity,
   coverage,
+  groupAdsBySet,
   scoreboard,
   singularRead,
+  type MmpAdRow,
   type MmpCampaignRow,
   type MmpSnapshot,
   type ParityRow,
@@ -75,6 +77,7 @@ const cellLabel: React.CSSProperties = {
 interface Payload {
   snapshot: MmpSnapshot;
   campaigns: MmpCampaignRow[];
+  ads: MmpAdRow[];
 }
 
 export function Mmp() {
@@ -103,7 +106,7 @@ export function Mmp() {
       const res = await fetch("/api/mmp", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setData({ snapshot: json.snapshot, campaigns: json.campaigns });
+      setData({ snapshot: json.snapshot, campaigns: json.campaigns, ads: json.ads ?? [] });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -242,6 +245,9 @@ function Summary({ data, rows }: { data: Payload; rows: ParityRow[] }) {
       <SectionHeader family="neutral" icon="Layers" title="Every method, by campaign" meta="35 days" />
       <CampaignTable rows={data.campaigns} />
 
+      <SectionHeader family="neutral" icon="Image" title="By ad set and ad: Meta against Singular" meta="35 days" />
+      <AdTable rows={data.ads} />
+
       <SectionHeader family="neutral" icon="InfoCircle" title="Singular, the MMP already in the app" />
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
@@ -290,6 +296,77 @@ function CampaignTable({ rows }: { rows: MmpCampaignRow[] }) {
         </tbody>
       </table>
     </Card>
+  );
+}
+
+/**
+ * Ad sets with their ads underneath. Cost per trial is Meta's spend divided by
+ * each count. On iOS, Meta's claimed trials run about three times Singular's
+ * and SKAN's, so the Singular column is the one to rank on.
+ */
+function AdTable({ rows }: { rows: MmpAdRow[] }) {
+  const { groups, hiddenAds, hiddenSets, hiddenSpend } = groupAdsBySet(rows);
+  const anySingular = rows.some((r) => r.singular_installs > 0);
+  if (!groups.length) return <InfoWell>No ad spend in the last 35 days.</InfoWell>;
+  const dash = <span style={{ color: "var(--ink-4)" }}>—</span>;
+  const cpt = (spend: number, trials: number) => (spend > 0 && trials > 0 ? usd(spend / trials) : dash);
+  const cells = (spend: number, metaTrials: number, sInstalls: number, sTrials: number) => (
+    <>
+      <td style={tdStyle()}>{spend > 0 ? usd(spend, 0) : dash}</td>
+      <td style={tdStyle()}>{metaTrials ? int(metaTrials) : dash}</td>
+      <td style={tdStyle()}>{sInstalls ? int(sInstalls) : dash}</td>
+      <td style={tdStyle()}>{sTrials ? int(sTrials) : dash}</td>
+      <td style={tdStyle()}>{cpt(spend, metaTrials)}</td>
+      <td style={{ ...tdStyle(), fontWeight: 650 }}>{cpt(spend, sTrials)}</td>
+    </>
+  );
+  return (
+    <>
+      {!anySingular && (
+        <InfoWell style={{ marginBottom: 12 }}>
+          Singular&rsquo;s ad-level rows land with the next daily sync (17:00 UTC). Until then only Meta&rsquo;s columns are filled.
+        </InfoWell>
+      )}
+      <Card pad={0} style={tableCard}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["Ad set / ad", "Spend", "Meta-claimed trials", "Singular installs", "Singular trials", "Cost per Meta trial", "Cost per Singular trial"].map((h, i) => (
+                <th key={h} style={thStyle(i === 0 ? "left" : "right")}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <React.Fragment key={`${g.campaign_name}${g.adset_id}`}>
+                <tr style={{ background: "var(--surface-2)" }}>
+                  <td style={{ ...tdStyle("left"), fontWeight: 650 }}>
+                    {g.adset_name ?? g.adset_id ?? "Unknown ad set"}
+                    <span style={{ fontWeight: 400, color: "var(--ink-3)" }}> · {g.campaign_name}</span>
+                  </td>
+                  {cells(g.spend, g.meta_trials, g.singular_installs, g.singular_trials)}
+                </tr>
+                {g.ads.map((a) => (
+                  <tr key={`${g.adset_id}${a.ad_id ?? "na"}`}>
+                    <td style={{ ...tdStyle("left"), paddingLeft: 32, color: a.ad_id ? "var(--ink)" : "var(--ink-3)" }}>
+                      {a.ad_id ? a.ad_name ?? a.ad_id : "Ad not named by Singular"}
+                    </td>
+                    {cells(a.spend, a.meta_trials, a.singular_installs, a.singular_trials)}
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+      <p style={{ ...muted, marginTop: 10 }}>
+        Trials, not payers: Singular receives no revenue yet. Cost per Singular trial is an upper bound, since Singular only counts users it can attribute.
+        {hiddenAds > 0 && ` ${hiddenAds} ads under $25 with no Singular trials are counted in their ad set but not listed.`}
+        {hiddenSets > 0 && ` ${hiddenSets} smaller ad sets with no Singular data (${usd(hiddenSpend, 0)} in all, mostly website-campaign tests) are left out.`}
+      </p>
+    </>
   );
 }
 

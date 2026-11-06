@@ -23,9 +23,11 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import {
+  fetchSingularAdReport,
   fetchSingularCampaignReport,
   probeSingularBreakdown,
   singularConfigured,
+  type SingularAdRow,
 } from "@/lib/vendors/singular";
 
 export const runtime = "nodejs";
@@ -93,6 +95,15 @@ export async function GET(req: Request) {
     }
   }
 
+  // The ad set and ad report runs alongside the campaign one, into
+  // singular_ad_daily. Its failure is reported in the response but never fails
+  // the campaign sync, which the cost views depend on.
+  const adPromise: Promise<SingularAdRow[] | Error> = fetchSingularAdReport({
+    startDate: sinceDate,
+    endDate: untilDate,
+    cohortPeriod,
+  }).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
+
   let report: Awaited<ReturnType<typeof fetchSingularCampaignReport>>;
   try {
     report = await fetchSingularCampaignReport({
@@ -103,12 +114,13 @@ export async function GET(req: Request) {
   } catch (e) {
     // Vendor failures are 502 (ours are 500), so cron just retries tomorrow.
     return NextResponse.json(
-      { ok: false, error: (e as Error).message },
+      { ok: false, error: (e as Error).message, ads: await syncAds(await adPromise, new Date().toISOString(), cohortPeriod) },
       { status: 502 },
     );
   }
 
   const syncedAt = new Date().toISOString();
+  const ads = await syncAds(await adPromise, syncedAt, cohortPeriod);
   const rows = report.rows.map((r) => ({
     source: r.source,
     campaign_id: r.campaign_id,
@@ -151,6 +163,7 @@ export async function GET(req: Request) {
       unmapped_keys: report.unmappedKeys,
       sample_raw: report.sampleRaw,
       note: "no Singular rows returned — either no attributed spend in window, the events are not yet registered in Settings > Events (~24h), or the response shape differs from the mapper (check unmapped_keys/sample_raw)",
+      ads,
     });
   }
 
@@ -169,13 +182,14 @@ export async function GET(req: Request) {
   );
   if (!res.ok) {
     return NextResponse.json(
-      { ok: false, error: `upsert failed: ${res.status} ${await res.text()}` },
+      { ok: false, error: `upsert failed: ${res.status} ${await res.text()}`, ads },
       { status: 500 },
     );
   }
 
   return NextResponse.json({
     ok: true,
+    ads,
     upserted: rows.length,
     campaigns: new Set(rows.map((r) => r.campaign_id)).size,
     trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
@@ -186,4 +200,35 @@ export async function GET(req: Request) {
     resolved_subscribe_event_id: report.resolvedSubscribeEventId ?? null,
     sample_raw: report.sampleRaw,
   });
+}
+
+/** Upsert the ad set and ad rows into singular_ad_daily; a summary, never a throw. */
+async function syncAds(
+  result: SingularAdRow[] | Error,
+  syncedAt: string,
+  cohortPeriod: string,
+): Promise<{ ok: boolean; upserted: number; ads: number; trial_starts: number; error?: string }> {
+  if (result instanceof Error) return { ok: false, upserted: 0, ads: 0, trial_starts: 0, error: result.message };
+  const rows = result.map((r) => ({ ...r, cohort_period: cohortPeriod, synced_at: syncedAt }));
+  const summary = {
+    upserted: rows.length,
+    ads: new Set(rows.filter((r) => r.ad_id).map((r) => r.ad_id)).size,
+    trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
+  };
+  if (!rows.length) return { ok: true, ...summary };
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/singular_ad_daily?on_conflict=source,campaign_id,adset_id,ad_id,date`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(rows),
+    },
+  );
+  if (!res.ok) return { ok: false, ...summary, upserted: 0, error: `upsert failed: ${res.status} ${(await res.text()).slice(0, 200)}` };
+  return { ok: true, ...summary };
 }

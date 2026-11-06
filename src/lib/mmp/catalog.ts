@@ -173,8 +173,8 @@ export interface PlanStep {
 export const PLAN: PlanStep[] = [
   {
     title: "Get everything Singular already has",
-    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. It reports iOS installs and trials by campaign, ad set and ad, but the DAD stores the campaign level only. Its Meta cost has been empty since October, and it receives no revenue, so it can't show trial-to-paid.",
-    work: "Reconnect the Facebook data connector in Singular. Store its ad set and ad rows next to Meta's. Send purchase events with revenue to Singular so paid conversions show by ad.",
+    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. The DAD now stores its trials by campaign, ad set and ad (Summary view). Its Meta cost has been empty since October, and it receives no revenue, so it can't show trial-to-paid.",
+    work: "Reconnect the Facebook data connector in Singular. Send purchase events with revenue to Singular so paid conversions show by ad.",
     needs: "Singular account",
   },
   {
@@ -198,7 +198,7 @@ export const PLAN: PlanStep[] = [
   {
     title: "Fix the audience sync",
     why: "The suppression audience is empty, so ads may be reaching people who already subscribe.",
-    work: "Find why the weekly cron stopped enumerating RevenueCat customers, then rerun it.",
+    work: "Fix deployed Nov 5: subscribers now come from the consumer database. Confirm the suppression audience fills after the next weekly run.",
     needs: "DAD only",
   },
   {
@@ -230,6 +230,18 @@ export const PLAN: PlanStep[] = [
     why: "The OneLink equivalent: the app learns which link or creator sent the user.",
     work: "Pass a click ID through the Play referrer. Keep typed codes on iOS.",
     needs: "App release + DAD",
+  },
+  {
+    title: "User invite links",
+    why: "Friends and family are a large onboarding answer and a strong source, with no way to credit or reward the inviter.",
+    work: "A share link per user through /l carrying their install ID, credited when the friend's install matches.",
+    needs: "App release + DAD",
+  },
+  {
+    title: "Uninstall measurement",
+    why: "Shows which sources bring users who delete the app within days, before trial-to-paid data matures.",
+    work: "Log the push service's \"device not registered\" receipts per install, then report uninstalls by source.",
+    needs: "DAD only",
   },
   {
     title: "Fraud checks",

@@ -571,3 +571,124 @@ export async function probeSingularBreakdown(opts: {
   const rows = payload.value?.results ?? payload.results ?? [];
   return { ...summarizeSingularProbe(rows, dimensions, { trialEventId, cohortPeriod }), sample: rows[0] ?? null };
 }
+
+// ---------------------------------------------------------------------------
+// Ad set and ad level (singular_ad_daily)
+// ---------------------------------------------------------------------------
+
+/** One row of public.singular_ad_daily. */
+export interface SingularAdRow {
+  source: string;
+  campaign_id: string;
+  campaign_name: string | null;
+  /** Meta's ad set id. */
+  adset_id: string;
+  adset_name: string | null;
+  /** Meta's ad id; "" when Singular reports the ad as "N/A". */
+  ad_id: string;
+  ad_name: string | null;
+  date: string;
+  os: string | null;
+  installs: number;
+  trial_starts: number;
+  subscribes: number;
+}
+
+/** Singular's dimension for Meta's ad set is `adn_sub_campaign_*`, for the ad `adn_creative_*`. */
+export const SINGULAR_AD_DIMENSIONS =
+  "app,source,os,unified_campaign_id,unified_campaign_name,adn_sub_campaign_id,adn_sub_campaign_name,adn_creative_id,adn_creative_name";
+
+/** Singular writes "N/A" when it cannot name the ad set or ad. */
+const named = (v: unknown): string => {
+  const s = v == null ? "" : String(v).trim();
+  return s === "N/A" ? "" : s;
+};
+
+/**
+ * Pure mapper for the ad-level report, merged to the table's primary key
+ * (source, campaign_id, adset_id, ad_id, date). Rows fan out by app and os
+ * exactly as in mapSingularRows, so the same merge applies. The ad set and ad
+ * ids are Meta's own (checked 2026-11-05), so they join to ad_insights_daily.
+ */
+export function mapSingularAdRows(
+  raw: Array<Record<string, unknown>>,
+  opts: { trialEventId?: string | null; subscribeEventId?: string | null; cohortPeriod?: string } = {},
+): SingularAdRow[] {
+  const { trialEventId, subscribeEventId, cohortPeriod = "7d" } = opts;
+  const pick = (r: Record<string, unknown>, keys: string[]): unknown => {
+    const k = firstKey(r, keys);
+    return k ? r[k] : undefined;
+  };
+  const merged = new Map<string, SingularAdRow>();
+  for (const r of raw) {
+    const row: SingularAdRow = {
+      source: String(pick(r, ["source", "adn_name"]) ?? "facebook").toLowerCase(),
+      campaign_id: String(pick(r, ["unified_campaign_id", "adn_campaign_id", "campaign_id"]) ?? ""),
+      campaign_name: (pick(r, ["unified_campaign_name", "adn_campaign_name"]) as string) ?? null,
+      adset_id: named(r.adn_sub_campaign_id),
+      adset_name: named(r.adn_sub_campaign_name) || null,
+      ad_id: named(r.adn_creative_id),
+      ad_name: named(r.adn_creative_name) || null,
+      date: String(pick(r, ["date", "start_date", "stat_date"]) ?? "").slice(0, 10),
+      os: (r.os as string) ?? null,
+      installs: num(pick(r, ["tracker_installs", "custom_installs"])),
+      trial_starts: trialEventId ? cohortNum(pick(r, [`${trialEventId}_${cohortPeriod}`, trialEventId]), cohortPeriod) : 0,
+      subscribes: subscribeEventId ? cohortNum(pick(r, [`${subscribeEventId}_${cohortPeriod}`, subscribeEventId]), cohortPeriod) : 0,
+    };
+    if (!row.campaign_id || !row.date) continue;
+    const key = [row.source, row.campaign_id, row.adset_id, row.ad_id, row.date].join("\u0001");
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, row);
+      continue;
+    }
+    prev.campaign_name = prev.campaign_name ?? row.campaign_name;
+    prev.adset_name = prev.adset_name ?? row.adset_name;
+    prev.ad_name = prev.ad_name ?? row.ad_name;
+    prev.os = prev.os === row.os ? prev.os : null;
+    prev.installs += row.installs;
+    prev.trial_starts += row.trial_starts;
+    prev.subscribes += row.subscribes;
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Installs, trials and subscribes per Meta ad set and ad, per day, for
+ * [startDate, endDate]. Same event lookup, chunking and cohort period as the
+ * campaign report; no cost (that comes from Meta per ad).
+ */
+export async function fetchSingularAdReport(opts: {
+  startDate: string;
+  endDate: string;
+  source?: string;
+  cohortPeriod?: string;
+}): Promise<SingularAdRow[]> {
+  const { startDate, endDate, source = "facebook", cohortPeriod = "7d" } = opts;
+  const catalog = await fetchCohortMetricsCatalog();
+  const trialEventId = resolveEventId(catalog, ["sng_start_trial", "start trial", "trial started"]);
+  const subscribeEventId = resolveEventId(catalog, ["sng_subscribe", "subscribe"]);
+  const cohortMetrics = [trialEventId, subscribeEventId].filter(Boolean).join(",");
+
+  const results = await Promise.all(
+    chunkDateRange(startDate, endDate).map(async (c) => {
+      const reportId = await createReport({
+        start_date: c.start,
+        end_date: c.end,
+        time_breakdown: "day",
+        format: "json",
+        dimensions: SINGULAR_AD_DIMENSIONS,
+        metrics: "tracker_installs",
+        ...(cohortMetrics ? { cohort_metrics: cohortMetrics, cohort_periods: cohortPeriod } : {}),
+        source,
+      });
+      const downloadUrl = await awaitReport(reportId);
+      const payload = await singularFetchJson<{
+        value?: { results?: Array<Record<string, unknown>> };
+        results?: Array<Record<string, unknown>>;
+      }>(downloadUrl);
+      return payload.value?.results ?? payload.results ?? [];
+    }),
+  );
+  return mapSingularAdRows(results.flat(), { trialEventId, subscribeEventId, cohortPeriod });
+}

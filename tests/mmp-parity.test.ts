@@ -5,8 +5,10 @@ import {
   buildParity,
   coverage,
   daysSince,
+  groupAdsBySet,
   scoreboard,
   singularRead,
+  toAdRow,
   toCampaignRow,
   toSnapshot,
   type MmpSnapshot,
@@ -75,6 +77,11 @@ const RAW: Record<string, unknown> = {
   survey_instagram: 1221,
   survey_tiktok: 1103,
   survey_app_store: 1373,
+  installs_meta_deferred: 80,
+  trials_meta_deferred: 8,
+  sng_ad_trials: 0,
+  sng_ads_with_trials: 0,
+  survey_friend_family: 341,
 };
 
 const snap = (over: Partial<MmpSnapshot> = {}): MmpSnapshot => ({ ...toSnapshot(RAW), ...over });
@@ -133,6 +140,34 @@ describe("buildParity on the live snapshot", () => {
     expect(statusOf(s, "srn")).toBe("blocked");
     expect(statusOf(s, "revenue")).toBe("live");
     expect(statusOf(s, "alerts")).toBe("partial");
+    expect(statusOf(s, "deferred-deep-link")).toBe("partial");
+    expect(statusOf(s, "invites")).toBe("missing");
+    expect(statusOf(s, "uninstalls")).toBe("missing");
+    expect(statusOf(s, "product-analytics")).toBe("live");
+    for (const id of ["consent", "ad-revenue", "push-reengagement", "other-surfaces", "privacy"]) expect(statusOf(s, id), id).toBe("skip");
+  });
+
+  it("covers every capability in AppsFlyer's public SDK API (React Native plugin docs, Nov 2026)", () => {
+    // Each SDK method group maps to the module that answers it on the DAD.
+    const covers: Record<string, string> = {
+      "logEvent / AFInAppEventType": "postbacks-meta",
+      "setCustomerUserId": "revenue",
+      "validateAndLogInAppPurchase / Purchase Connector": "revenue",
+      "setUserEmail / setUserPhone (hashed matching)": "postbacks-meta",
+      "generateInviteLink / logInvite": "invites",
+      "registerConversionListener / UDL / deferred deep links": "deferred-deep-link",
+      "OneLink domains and deep link URLs": "onelink",
+      "updateServerUninstallToken": "uninstalls",
+      "sendPushNotificationData / handlePushNotification": "push-reengagement",
+      "setConsentData / enableTCFDataCollection": "consent",
+      "logAdRevenue": "ad-revenue",
+      "logCrossPromoteImpression / setPreinstallAttribution / setOutOfStore": "other-surfaces",
+      "setDisableAppleAdsAttribution": "apple-ads",
+      "setDisableSKAdNetwork": "skan-collect",
+      "anonymizeUser / setSharingFilterForPartners": "privacy",
+    };
+    const ids = new Set(rows.map((r) => r.id));
+    for (const [api, id] of Object.entries(covers)) expect(ids.has(id), api).toBe(true);
   });
 
   it("everything that still needs work says what the next step is", () => {
@@ -201,6 +236,43 @@ describe("coverage and Singular", () => {
   it("partner-only attribution counts as partly covered once Singular reports trials", () => {
     expect(statusOf(snap(), "srn")).toBe("blocked");
     expect(statusOf(snap({ sng_trials: 40 }), "srn")).toBe("partial");
+  });
+});
+
+describe("ad rows", () => {
+  const ad = (o: Record<string, unknown>) =>
+    toAdRow({ campaign_id: "C1", campaign_name: "SCALING Campaign (iOS)", adset_id: "S1", adset_name: "DreamMe Statics", spend: 0, meta_installs: 0, meta_trials: 0, singular_installs: 0, singular_trials: 0, ...o });
+
+  it("turns Singular's unnamed ad into a null id, and strings into numbers", () => {
+    const r = ad({ ad_id: "", ad_name: null, spend: "12.5", singular_trials: "3" });
+    expect(r.ad_id).toBeNull();
+    expect(r.spend).toBe(12.5);
+    expect(r.singular_trials).toBe(3);
+  });
+
+  it("groups ads under their ad set, sums the set, and folds tiny ads into the totals only", () => {
+    const { groups, hiddenAds } = groupAdsBySet([
+      ad({ ad_id: "A1", ad_name: "Newspaper", spend: 12320, meta_trials: 1074, singular_installs: 1489, singular_trials: 388 }),
+      ad({ ad_id: "A2", ad_name: "Comic sans", spend: 2844, meta_trials: 193, singular_installs: 419, singular_trials: 76 }),
+      ad({ ad_id: "A3", ad_name: "Tiny", spend: 4, meta_trials: 1 }),
+      ad({ ad_id: null, singular_installs: 6, singular_trials: 1 }),
+      ad({ adset_id: "S2", adset_name: "DreamMe Videos", ad_id: "B1", ad_name: "Danielle", spend: 1286, meta_trials: 194, singular_installs: 334, singular_trials: 83 }),
+    ]);
+    expect(groups.map((g) => g.adset_name)).toEqual(["DreamMe Statics", "DreamMe Videos"]);
+    expect(groups[0]).toMatchObject({ spend: 15168, meta_trials: 1268, singular_installs: 1914, singular_trials: 465 });
+    expect(groups[0].ads.map((a) => a.ad_name ?? "unnamed")).toEqual(["Newspaper", "Comic sans", "unnamed"]);
+    expect(hiddenAds).toBe(1);
+  });
+
+  it("leaves out small ad sets with no Singular data and says how much spend they hold", () => {
+    const { groups, hiddenSets, hiddenSpend } = groupAdsBySet([
+      ad({ ad_id: "A1", spend: 12320, singular_installs: 1489, singular_trials: 388 }),
+      ad({ campaign_id: "W1", adset_id: "T1004", adset_name: "T1004_proven_winners", ad_id: "W", spend: 266 }),
+      ad({ campaign_id: "W2", adset_id: "L1018", adset_name: "L1018", ad_id: "L", spend: 120, singular_installs: 3 }),
+    ]);
+    expect(groups.map((g) => g.adset_name)).toEqual(["DreamMe Statics", "L1018"]);
+    expect(hiddenSets).toBe(1);
+    expect(hiddenSpend).toBe(266);
   });
 });
 

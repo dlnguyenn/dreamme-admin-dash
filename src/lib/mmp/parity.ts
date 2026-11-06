@@ -68,6 +68,94 @@ export interface MmpSnapshot {
   survey_instagram: number;
   survey_tiktok: number;
   survey_app_store: number;
+  // added in migration 0099
+  /** Installs whose Meta deferred deep link names the campaign and ad. */
+  installs_meta_deferred: number;
+  trials_meta_deferred: number;
+  /** Singular trials tied to a named Meta ad, and how many ads have any. */
+  sng_ad_trials: number;
+  sng_ads_with_trials: number;
+  survey_friend_family: number;
+}
+
+/** One row of public.mmp_ad_attribution: Meta's numbers and Singular's per ad. */
+export interface MmpAdRow {
+  campaign_id: string;
+  campaign_name: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
+  /** null = Singular reported the ad as "N/A" for these installs. */
+  ad_id: string | null;
+  ad_name: string | null;
+  spend: number;
+  meta_installs: number;
+  meta_trials: number;
+  singular_installs: number;
+  singular_trials: number;
+}
+
+export function toAdRow(raw: Record<string, unknown>): MmpAdRow {
+  const str = (v: unknown) => (v == null || v === "" ? null : String(v));
+  return {
+    campaign_id: String(raw.campaign_id ?? ""),
+    campaign_name: str(raw.campaign_name),
+    adset_id: str(raw.adset_id),
+    adset_name: str(raw.adset_name),
+    ad_id: str(raw.ad_id),
+    ad_name: str(raw.ad_name),
+    spend: toNum(raw.spend),
+    meta_installs: toNum(raw.meta_installs),
+    meta_trials: toNum(raw.meta_trials),
+    singular_installs: toNum(raw.singular_installs),
+    singular_trials: toNum(raw.singular_trials),
+  };
+}
+
+export interface AdSetGroup {
+  adset_id: string | null;
+  adset_name: string | null;
+  campaign_name: string | null;
+  spend: number;
+  meta_trials: number;
+  singular_installs: number;
+  singular_trials: number;
+  ads: MmpAdRow[];
+}
+
+/**
+ * Group ad rows under their ad set, ad sets by spend, ads by spend then
+ * Singular trials. Ads below `minSpend` with no Singular trials are folded
+ * into the ad set totals only, so 26 tiny test ads don't swamp the table, and
+ * ad sets below `minGroupSpend` with no Singular installs are left out and
+ * counted (the small website-campaign tests).
+ */
+export function groupAdsBySet(
+  rows: MmpAdRow[],
+  minSpend = 25,
+  minGroupSpend = 300,
+): { groups: AdSetGroup[]; hiddenAds: number; hiddenSets: number; hiddenSpend: number } {
+  const groups = new Map<string, AdSetGroup>();
+  let hiddenAds = 0;
+  for (const r of rows) {
+    const key = `${r.campaign_id}\u0001${r.adset_id ?? ""}`;
+    const g =
+      groups.get(key) ??
+      { adset_id: r.adset_id, adset_name: r.adset_name, campaign_name: r.campaign_name, spend: 0, meta_trials: 0, singular_installs: 0, singular_trials: 0, ads: [] };
+    g.adset_name = g.adset_name ?? r.adset_name;
+    g.spend += r.spend;
+    g.meta_trials += r.meta_trials;
+    g.singular_installs += r.singular_installs;
+    g.singular_trials += r.singular_trials;
+    if (r.spend >= minSpend || r.singular_trials > 0 || r.ad_id == null) g.ads.push(r);
+    else hiddenAds += 1;
+    groups.set(key, g);
+  }
+  const all = [...groups.values()].filter((g) => g.spend > 0 || g.singular_installs > 0);
+  const shown = all.filter((g) => g.spend >= minGroupSpend || g.singular_installs > 0);
+  const small = all.filter((g) => !shown.includes(g));
+  for (const g of shown) g.ads.sort((a, b) => b.spend - a.spend || b.singular_trials - a.singular_trials);
+  shown.sort((a, b) => b.spend - a.spend || b.singular_trials - a.singular_trials);
+  return { groups: shown, hiddenAds, hiddenSets: small.length, hiddenSpend: small.reduce((a, g) => a + g.spend, 0) };
 }
 
 /** One row of public.mmp_campaign_attribution, numbers coerced. */
@@ -361,7 +449,7 @@ const MODULES: ModuleDef[] = [
     area: "Events to networks",
     name: "In-app events back to Meta",
     appsflyer: "One SDK event is forwarded to every connected network as a postback, so each can optimize on it.",
-    ours: "The Meta SDK fires events on the device, RevenueCat sends purchases to Meta's Conversions API, and the DAD sends trial_qualified every 15 minutes.",
+    ours: "The Meta SDK fires events on the device, RevenueCat sends purchases to Meta's Conversions API, and the DAD sends trial_qualified every 15 minutes with a hashed email for matching (AppsFlyer's setUserEmail does the same).",
     next: "",
     assess: (s, now) => ({
       status: fresh(s.capi_qualified_last, now, 2) ? "live" : "broken",
@@ -401,7 +489,7 @@ const MODULES: ModuleDef[] = [
     area: "Cost and revenue",
     name: "Subscription revenue per user",
     appsflyer: "Validates store purchases and ties trials, renewals and refunds to the attributed install.",
-    ours: "RevenueCat webhooks land in rc_events, and the app stamps each customer with our install ID.",
+    ours: "RevenueCat validates store purchases (AppsFlyer's Purchase Connector does the same job), its webhooks land in rc_events, and the app stamps each customer with our install ID.",
     next: "",
     assess: (s) => {
       const ok = s.trials > 0 && s.trials_with_install / s.trials >= 0.9;
@@ -506,11 +594,47 @@ const MODULES: ModuleDef[] = [
     area: "Data and reporting",
     name: "Creative optimization",
     appsflyer: "Ranks creatives by installs, cost and fatigue across networks.",
-    ours: "The Creatives tab and ad breakdowns, on Meta's own trial counts.",
-    next: "Ad-level truth needs matched installs or the Android referrer.",
+    ours: "The Creatives tab on Meta's own counts, and Singular's trials per ad set and ad on this tab's Summary.",
+    next: "Trials only, not payers: Singular receives no revenue, so it can't rank ads on trial-to-paid yet.",
     assess: (s) => ({
       status: "partial",
-      evidence: `${int(s.trials_click_matched)} of ${int(s.trials)} trials in 35 days are tied to an ad by our own match.`,
+      evidence: `Singular ties ${int(s.sng_ad_trials)} trials to ${int(s.sng_ads_with_trials)} named Meta ads in 35 days. Our own click match ties ${int(s.trials_click_matched)}.`,
+    }),
+  },
+  {
+    id: "product-analytics",
+    area: "Data and reporting",
+    name: "Product analytics",
+    appsflyer: "Funnels and user behavior after install, next to the acquisition source.",
+    ours: "Mixpanel tracks the in-app funnel, and the onboarding survey's answers are copied into user_sources.",
+    next: "",
+    assess: (s) => ({
+      status: "live",
+      evidence: `${int(s.survey_total)} onboarding survey answers in 35 days.`,
+    }),
+  },
+  {
+    id: "uninstalls",
+    area: "Data and reporting",
+    name: "Uninstall measurement",
+    appsflyer: "Sends a silent push to each install and counts the ones that bounce as uninstalls, by media source.",
+    ours: "Not built. The app's push service already reports devices that no longer have the app, but nothing records it.",
+    next: "Log Expo's DeviceNotRegistered push receipts per install ID, then report uninstalls by source and campaign.",
+    assess: () => ({
+      status: "missing",
+      evidence: "No uninstall data is stored.",
+    }),
+  },
+  {
+    id: "consent",
+    area: "Data and reporting",
+    name: "EU consent (DMA, TCF)",
+    appsflyer: "Collects consent from a consent platform or the app and attaches it to every event, as Google and Meta require for EU users.",
+    ours: "Nothing, because nothing in the app collects EU consent.",
+    next: "",
+    assess: () => ({
+      status: "skip",
+      evidence: "Needed only before running ads to EU or UK users.",
     }),
   },
   {
@@ -544,6 +668,59 @@ const MODULES: ModuleDef[] = [
       status: "partial",
       evidence: `${int(s.clicks)} link clicks in 35 days.`,
     }),
+  },
+  {
+    id: "deferred-deep-link",
+    area: "Links",
+    name: "Deferred deep links and conversion data",
+    appsflyer: "On first open, the SDK hands the app the install's source, campaign and deep link, so onboarding can change by source.",
+    ours: "The app reads Meta's deferred app link and stores it with the install. When Meta returns one, it names the campaign, ad set and ad.",
+    next: "Meta returns a named ad for very few installs. Use it to personalize onboarding where present, not as a measurement source.",
+    assess: (s) => ({
+      status: "partial",
+      evidence: `${int(s.installs_meta_deferred)} of ${int(s.installs)} installs (${share(s.installs_meta_deferred, s.installs, 1)}) carry a Meta ad in their deferred link, with ${int(s.trials_meta_deferred)} trials.`,
+    }),
+  },
+  {
+    id: "invites",
+    area: "Links",
+    name: "User invites and referrals",
+    appsflyer: "Generates a personal invite link per user and attributes the friend's install back to the inviter.",
+    ours: "Not built. Creators have typed codes; users can't invite friends with a link.",
+    next: "A share link per user through /l with their install ID, credited when the friend's install matches.",
+    assess: (s) => ({
+      status: "missing",
+      evidence: `${int(s.survey_friend_family)} of ${int(s.survey_total)} onboarding answers in 35 days (${share(s.survey_friend_family, s.survey_total)}) say a friend or family member sent them, with no way to credit who.`,
+    }),
+  },
+
+  // ---- Not needed for how DreamMe buys and earns -------------------------
+  {
+    id: "push-reengagement",
+    area: "Attribution",
+    name: "Push and retargeting attribution",
+    appsflyer: "Credits a re-engagement to the push campaign or retargeting ad that brought a lapsed user back.",
+    ours: "Push messages are product notifications, and no retargeting campaign runs.",
+    next: "",
+    assess: () => ({ status: "skip", evidence: "Becomes relevant if the win-back audience gets its own ads." }),
+  },
+  {
+    id: "ad-revenue",
+    area: "Cost and revenue",
+    name: "Ad revenue",
+    appsflyer: "Logs revenue from ads shown inside the app, per user and source.",
+    ours: "The app shows no ads; all revenue is subscriptions.",
+    next: "",
+    assess: () => ({ status: "skip", evidence: "No in-app ads." }),
+  },
+  {
+    id: "other-surfaces",
+    area: "Attribution",
+    name: "Other surfaces (CTV, PC, preinstalls, cross-promotion, clean rooms)",
+    appsflyer: "Attribution for TV and desktop apps, phone-maker preinstalls and promotion between your own apps, plus data clean rooms for large advertisers.",
+    ours: "None apply: one mobile app, sold through the two app stores.",
+    next: "",
+    assess: () => ({ status: "skip", evidence: "Not used." }),
   },
   {
     id: "web-to-app",
@@ -591,7 +768,8 @@ export function coverage(s: MmpSnapshot): CoverageRow[] {
     { id: "meta", label: "Claimed by Meta", value: s.meta_trials, of: s.trials, note: "Meta's own count, by campaign and ad. Includes view-through, and over-claims." },
     { id: "skan", label: "Decoded from SKAN", value: s.skan_trials, of: s.trials, note: "iOS only, by campaign. Apple withholds the rest." },
     { id: "click", label: "Matched to an ad click", value: s.trials_click_matched, of: s.trials, note: "Our own click match, down to the ad. Website-objective campaigns only." },
-    { id: "singular", label: "Attributed by Singular", value: s.sng_trials, of: s.trials, note: "The MMP already in the app, a certified Meta partner. By campaign, iOS." },
+    { id: "singular", label: "Attributed by Singular", value: s.sng_trials, of: s.trials, note: "The MMP already in the app, a certified Meta partner. By campaign, ad set and ad, iOS." },
+    { id: "deferred", label: "Named in Meta's deferred link", value: s.trials_meta_deferred, of: s.trials, note: "Meta's deferred app link names the ad for a few installs." },
   ];
 }
 
