@@ -87,4 +87,35 @@ describe("runAudienceSync", () => {
     expect(row.email_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(upsert!.body).not.toContain("one@example.com");
   });
+
+  it("reads a cohort past PostgREST's 1,000-row ceiling", async () => {
+    // The first deployed run of the fixed sync snapshotted 2,839 subscribers
+    // and then reported a suppression audience of exactly 1,000: one request
+    // with a large limit comes back cut to 1,000 rows, with no error.
+    const TOTAL = 2500;
+    vi.mocked(fetchActiveSubscribers).mockResolvedValue({ totalActive: 5019, subscribers: [], skipped });
+    vi.mocked(fetchOverview).mockResolvedValue(overview(4520, 505));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes("graph.facebook.com")) return new Response('{"data":[]}', { status: 200 });
+        const allActive =
+          url.includes("/rc_customer_snapshot?status=eq.active&email_sha256") && !init?.body;
+        if (!allActive) return new Response(init?.method ? null : "[]", { status: init?.method ? 204 : 200 });
+        if (init?.method === "HEAD") {
+          return new Response(null, { status: 206, headers: { "content-range": `0-0/${TOTAL}` } });
+        }
+        const offset = Number(new URL(url).searchParams.get("offset") ?? 0);
+        const rows = Array.from({ length: Math.min(1000, TOTAL - offset) }, (_, i) => ({
+          email_sha256: `hash-${offset + i}`,
+        }));
+        return new Response(JSON.stringify(rows), { status: 200 });
+      }),
+    );
+
+    const result = await runAudienceSync({ dryRun: true });
+
+    expect(result.cohorts.active).toBe(TOTAL);
+    expect(result.audiences.find((a) => a.purpose === "suppression_active")?.memberCount).toBe(TOTAL);
+  });
 });

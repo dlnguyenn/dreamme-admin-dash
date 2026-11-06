@@ -35,6 +35,7 @@ import {
 import { fetchActiveSubscribers, type ActiveSubscriber } from "@/lib/audience-subscribers";
 import { fetchOverview } from "@/lib/vendors/revenuecat";
 import { resolveMetaToken } from "@/lib/meta-oauth";
+import { PAGE_SIZE, countFromContentRange, fetchAllPages } from "@/lib/pagedFetch";
 
 // Read env lazily inside functions — top-level constants capture process.env
 // before loadEnvConfig runs in CLI scripts (ESM imports hoist).
@@ -104,6 +105,30 @@ async function sbSelect<T>(table: string, query: string): Promise<T[]> {
   return res.json();
 }
 
+/**
+ * Every snapshot row a query matches. PostgREST returns at most 1,000 rows
+ * however large the `limit`, without an error, so a cohort has to be paged or
+ * it is silently cut to an arbitrary 1,000.
+ */
+async function snapshotSelectAll<T>(query: string): Promise<T[]> {
+  return fetchAllPages<T>({
+    maxPages: 200,
+    count: async () => {
+      const res = await fetch(`${supabaseUrl()}/rest/v1/rc_customer_snapshot?${query}`, {
+        method: "HEAD",
+        headers: svcHeaders({ Prefer: "count=exact", Range: "0-0" }),
+        cache: "no-store",
+      });
+      return res.ok ? countFromContentRange(res.headers.get("content-range")) : null;
+    },
+    page: (offset) =>
+      sbSelect<T>(
+        "rc_customer_snapshot",
+        `${query}&order=customer_id.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+      ),
+  });
+}
+
 // --- registry --------------------------------------------------------------
 interface RegistryRow {
   purpose: string;
@@ -169,17 +194,15 @@ export async function upsertSnapshot(
     { status: "lapsed", became_lapsed_at: runStartedAt, updated_at: runStartedAt },
   );
 
-  const flipped = await sbSelect<{ customer_id: string }>(
-    "rc_customer_snapshot",
+  const flipped = await snapshotSelectAll<{ customer_id: string }>(
     `status=eq.lapsed&became_lapsed_at=eq.${encodeURIComponent(runStartedAt)}&select=customer_id`,
   );
   return { activeUpserted: rows.length, lapsedFlipped: flipped.length };
 }
 
 async function hashesWhere(query: string): Promise<string[]> {
-  const rows = await sbSelect<{ email_sha256: string }>(
-    "rc_customer_snapshot",
-    `${query}&email_sha256=not.is.null&select=email_sha256&limit=200000`,
+  const rows = await snapshotSelectAll<{ email_sha256: string }>(
+    `${query}&email_sha256=not.is.null&select=email_sha256`,
   );
   return rows.map((r) => r.email_sha256);
 }
