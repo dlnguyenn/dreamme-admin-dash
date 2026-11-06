@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import { audiencesConfigured, runAudienceSync } from "@/lib/audiences";
+import { audienceSourceConfigured } from "@/lib/audience-subscribers";
 import { revenueCatConfigured } from "@/lib/vendors/revenuecat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 min — RC enumeration is windowed to fit.
+export const maxDuration = 300;
 
 // Closed-loop RC→Meta audience sync (Module 4). Weekly via vercel.json.
-// Pipeline: snapshot active payers → derive lapsed by diff → build/refresh
+// Pipeline: snapshot live subscribers → derive lapsed by diff → build/refresh
 // suppression + high-LTV lookalike + win-back audiences → exclude suppression
 // from auto-discovered active prospecting ad sets. See src/lib/audiences.ts.
 //
@@ -24,6 +25,12 @@ export async function GET(req: Request) {
       { status: 500 },
     );
   }
+  if (!audienceSourceConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: "Consumer Supabase env not configured" },
+      { status: 500 },
+    );
+  }
   if (!revenueCatConfigured()) {
     return NextResponse.json(
       { ok: false, error: "RevenueCat env not configured" },
@@ -33,10 +40,8 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const dryRun = url.searchParams.get("dry_run") === "1";
-  const daysParam = Number(url.searchParams.get("window_days"));
-  const windowDays = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 365) : undefined;
   try {
-    const result = await runAudienceSync({ dryRun, windowDays });
+    const result = await runAudienceSync({ dryRun });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     return NextResponse.json(

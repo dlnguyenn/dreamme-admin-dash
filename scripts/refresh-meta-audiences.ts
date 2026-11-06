@@ -6,10 +6,10 @@
  * Usage:
  *   npm run refresh-audiences                  # LIVE — creates/updates Meta audiences + attaches suppression
  *   npm run refresh-audiences -- --dry-run     # no Meta writes (snapshot + read-only discovery only)
- *   npm run refresh-audiences -- --days 90     # RC enumeration window (default 180)
  *
- * Required env (.env.local): REVENUECAT_API_KEY, REVENUECAT_PROJECT_ID,
- *   Meta OAuth connection (or META_ACCESS_TOKEN), service-role Supabase key.
+ * Required env (.env.local): CONSUMER_SUPABASE_URL, CONSUMER_SERVICE_ROLE_KEY,
+ *   REVENUECAT_API_KEY, REVENUECAT_PROJECT_ID, Meta OAuth connection (or
+ *   META_ACCESS_TOKEN), service-role Supabase key.
  */
 import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
@@ -18,19 +18,13 @@ import { runAudienceSync } from "../src/lib/audiences";
 
 const args = process.argv.slice(2);
 const hasFlag = (n: string) => args.includes(`--${n}`);
-const getArg = (n: string) => {
-  const i = args.indexOf(`--${n}`);
-  return i === -1 ? undefined : args[i + 1];
-};
 
 async function main() {
   const dryRun = hasFlag("dry-run");
-  const windowDays = getArg("days") ? Number(getArg("days")) : undefined;
-  console.error(`\n  Audience sync — ${dryRun ? "DRY RUN (no Meta writes)" : "LIVE"}${windowDays ? ` · ${windowDays}d` : ""}\n`);
+  console.error(`\n  Audience sync — ${dryRun ? "DRY RUN (no Meta writes)" : "LIVE"}\n`);
 
   const result = await runAudienceSync({
     dryRun,
-    windowDays,
     log: (m) => console.error(m),
   });
 

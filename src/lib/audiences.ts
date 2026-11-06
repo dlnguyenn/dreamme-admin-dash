@@ -4,9 +4,12 @@
  * tools so there's a single implementation.
  *
  * Pipeline each run:
- *   1. Pull active payers (non-relay, with entitlement tenure) from RevenueCat.
+ *   1. Read every live subscriber (non-relay, with tenure) from the consumer
+ *      app's subscriptions table (see audience-subscribers.ts for why not the
+ *      RevenueCat customer list), and stop if the read falls well short of
+ *      RevenueCat's own active count.
  *   2. Upsert them into rc_customer_snapshot as 'active'; flip prior-active-but-
- *      absent rows to 'lapsed' (the only churn signal RC v2 gives us — by diff).
+ *      absent rows to 'lapsed' (churn by diff).
  *   3. Build/refresh three Meta audiences from snapshot HASHES (we never persist
  *      raw email): suppression (= active subs), high-LTV seed (tenure > 60d) +
  *      its 1% lookalike, and win-back (= lapsed).
@@ -29,10 +32,8 @@ import {
   setExcludedAudiencesOnAdSet,
   uploadEmailHashesToAudience,
 } from "@/lib/vendors/meta-ads";
-import {
-  fetchActivePayersDetailed,
-  type ActivePayerDetailed,
-} from "@/lib/vendors/revenuecat";
+import { fetchActiveSubscribers, type ActiveSubscriber } from "@/lib/audience-subscribers";
+import { fetchOverview } from "@/lib/vendors/revenuecat";
 import { resolveMetaToken } from "@/lib/meta-oauth";
 
 // Read env lazily inside functions — top-level constants capture process.env
@@ -48,7 +49,10 @@ function serviceRole(): string {
   );
 }
 
-const WINDOW_DAYS = 180;
+// Below this share of RevenueCat's own active count the subscriber read is
+// treated as broken. Everything after it trusts the read: a subscriber it
+// misses is flipped to lapsed, pulled out of suppression and put in win-back.
+const MIN_ACTIVE_COVERAGE = 0.5;
 const HIGH_LTV_TENURE_DAYS = 60; // active entitlement older than this = high-LTV proxy
 const LOOKALIKE_RATIO = 0.01;
 const LOOKALIKE_COUNTRY = "US";
@@ -139,13 +143,13 @@ export interface SnapshotResult {
  * be captured before the upsert and used as the diff boundary.
  */
 export async function upsertSnapshot(
-  actives: ActivePayerDetailed[],
+  actives: ActiveSubscriber[],
   runStartedAt: string,
 ): Promise<SnapshotResult> {
   const rows = actives.map((a) => ({
     customer_id: a.customerId,
     email_sha256: hashEmailForMeta(a.email),
-    entitlement: a.entitlement,
+    entitlement: a.productId, // the column predates this source; it holds the product id
     status: "active",
     starts_at: a.startsAtMs ? new Date(a.startsAtMs).toISOString() : null,
     expires_at: a.expiresAtMs ? new Date(a.expiresAtMs).toISOString() : null,
@@ -184,7 +188,13 @@ async function hashesWhere(query: string): Promise<string[]> {
 export interface AudienceSyncResult {
   dryRun: boolean;
   runStartedAt: string;
-  windowDays: number;
+  /** What the subscriber read found, next to RevenueCat's own active count. */
+  enumeration: {
+    totalActive: number;
+    revenueCatActive: number;
+    matchable: number;
+    skipped: { noAccount: number; noEmail: number; relay: number };
+  };
   snapshot: SnapshotResult;
   cohorts: { active: number; highLtv: number; lapsed: number; becameLapsedThisRun: number };
   audiences: Array<{
@@ -229,7 +239,6 @@ async function ensureCustomAudience(opts: {
  */
 export async function runAudienceSync(opts: {
   dryRun: boolean;
-  windowDays?: number;
   log?: (m: string) => void;
 }): Promise<AudienceSyncResult> {
   const logs: string[] = [];
@@ -237,7 +246,6 @@ export async function runAudienceSync(opts: {
     logs.push(m);
     opts.log?.(m);
   };
-  const windowDays = opts.windowDays ?? WINDOW_DAYS;
   const runStartedAt = new Date().toISOString();
   const dryRun = opts.dryRun;
 
@@ -247,10 +255,18 @@ export async function runAudienceSync(opts: {
   if (!meta) throw new Error("No Meta token — connect an account or set META_ACCESS_TOKEN");
   const { token, account } = meta;
 
-  // 1. RC active payers
-  log(`Pulling active payers from RevenueCat (${windowDays}d window)…`);
-  const sinceMs = Date.now() - windowDays * 24 * 60 * 60 * 1000;
-  const actives = await fetchActivePayersDetailed({ sinceMs, concurrency: 25, log });
+  // 1. Live subscribers, checked against RevenueCat's own count before any write
+  log("Reading live subscribers from the consumer DB…");
+  const scan = await fetchActiveSubscribers({ log });
+  const overview = await fetchOverview();
+  const revenueCatActive = overview.active_subscriptions + overview.active_trials;
+  if (scan.totalActive < revenueCatActive * MIN_ACTIVE_COVERAGE) {
+    throw new Error(
+      `Subscriber read looks short: found ${scan.totalActive}, RevenueCat reports ${revenueCatActive} active. Nothing was written.`,
+    );
+  }
+  log(`  ${scan.totalActive} live subscribers (RevenueCat reports ${revenueCatActive}).`);
+  const actives = scan.subscribers;
 
   // 2. Snapshot + churn diff
   log(`Upserting snapshot (${actives.length} active)…`);
@@ -383,7 +399,12 @@ export async function runAudienceSync(opts: {
   return {
     dryRun,
     runStartedAt,
-    windowDays,
+    enumeration: {
+      totalActive: scan.totalActive,
+      revenueCatActive,
+      matchable: actives.length,
+      skipped: scan.skipped,
+    },
     snapshot,
     cohorts,
     audiences,

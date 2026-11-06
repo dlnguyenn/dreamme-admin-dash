@@ -1026,17 +1026,16 @@ const mcpHandler = createMcpHandler(
     // --- WRITE: audience sync (Module 4) --------------------------------
     server.tool(
       "sync_audiences",
-      "Run the RC→Meta audience sync: snapshot active payers, build/refresh the suppression + high-LTV lookalike + win-back audiences, and exclude suppression from active prospecting ad sets. Guarded: defaults to dry_run (no Meta writes — snapshot + read-only discovery only). To apply live, pass dry_run:false AND confirm:true.",
+      "Run the RC→Meta audience sync: snapshot live subscribers, build/refresh the suppression + high-LTV lookalike + win-back audiences, and exclude suppression from active prospecting ad sets. Guarded: defaults to dry_run (no Meta writes — snapshot + read-only discovery only). To apply live, pass dry_run:false AND confirm:true.",
       {
         dry_run: z.boolean().default(true).describe("Default true — no Meta writes."),
         confirm: z.boolean().default(false).describe("Required with dry_run:false to actually create/modify Meta audiences + ad sets."),
-        window_days: z.number().optional().describe("RC enumeration window in days (default 180)."),
       },
       async (a) => {
         const live = a.dry_run === false;
         if (live && !a.confirm) return fail("Refusing live audience sync: pass confirm:true (or leave dry_run:true to preview).");
         try {
-          return json(await runAudienceSync({ dryRun: !live, windowDays: a.window_days }));
+          return json(await runAudienceSync({ dryRun: !live }));
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }

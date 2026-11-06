@@ -266,8 +266,13 @@ async function rcGetUrl<T>(url: string, maxRetries = 4): Promise<T> {
 }
 
 /**
- * Page through customers. Stops paginating once first_seen_at falls below
- * the threshold (customers come back newest-first).
+ * Page through every customer, yielding those first seen inside the window.
+ *
+ * The list is NOT ordered by first_seen_at (or by anything useful), so an old
+ * customer says nothing about the ones after it and the walk has to reach the
+ * last page. It used to stop at the first customer older than the window,
+ * which on 2026-11-05 was the 13th one returned. A full walk is slow: 100 per
+ * page at ~0.3s, tens of thousands of customers.
  */
 export async function* iterateCustomers(params: {
   sinceMs?: number;
@@ -277,15 +282,10 @@ export async function* iterateCustomers(params: {
   let url: string | null = `${BASE_URL}/projects/${projectId}/customers?limit=100`;
   while (url) {
     const page: ListResponse<CustomerRow> = await rcGetUrl(url);
-    let stoppedEarly = false;
     for (const c of page.items) {
-      if (params.sinceMs && c.first_seen_at < params.sinceMs) {
-        stoppedEarly = true;
-        break;
-      }
+      if (params.sinceMs && c.first_seen_at < params.sinceMs) continue;
       yield c;
     }
-    if (stoppedEarly) return;
     url = page.next_page;
   }
 }
@@ -434,75 +434,4 @@ export async function fetchPaidCustomersWithEmail(params: {
     `  done — ${result.length} paid customers with real email (skipped ${nullEmail} no-email, ${relayEmail} Apple-relay).`,
   );
   return result;
-}
-
-export interface ActivePayerDetailed {
-  customerId: string;
-  email: string; // normalized lowercase, non-relay
-  entitlement: string;
-  startsAtMs: number | null; // entitlement start → tenure (high-LTV proxy)
-  expiresAtMs: number | null;
-  firstSeenAt: number;
-}
-
-/**
- * Like {@link fetchPaidCustomersWithEmail} but threads each active entitlement's
- * starts_at / expires_at through, for the audience-sync snapshot (tenure-based
- * high-LTV cohort + churn diffing). Same relay/null-email exclusion — only
- * customers we can actually match in Meta are returned.
- */
-export async function fetchActivePayersDetailed(params: {
-  sinceMs?: number;
-  concurrency?: number;
-  log?: (msg: string) => void;
-}): Promise<ActivePayerDetailed[]> {
-  const concurrency = params.concurrency ?? 25;
-  const log = params.log ?? ((m) => process.stderr.write(m + "\n"));
-
-  const allCustomers: CustomerRow[] = [];
-  for await (const c of iterateCustomers({ sinceMs: params.sinceMs })) {
-    allCustomers.push(c);
-    if (allCustomers.length % 500 === 0) log(`  enumerated ${allCustomers.length} customers...`);
-  }
-  log(`  ${allCustomers.length} customers in window.`);
-
-  const entResults = await pMap(
-    allCustomers,
-    async (c) => ({ customer: c, ents: await getCustomerActiveEntitlements(c.id) }),
-    concurrency,
-  );
-  const paid = entResults.filter((r) => r.ents.length > 0);
-  log(`  ${paid.length} have an active entitlement.`);
-
-  const withEmails = await pMap(
-    paid,
-    async ({ customer, ents }) => ({ customer, ents, email: await getCustomerEmail(customer.id) }),
-    concurrency,
-  );
-
-  const out: ActivePayerDetailed[] = [];
-  let nullEmail = 0;
-  let relayEmail = 0;
-  for (const { customer, ents, email } of withEmails) {
-    if (!email) {
-      nullEmail++;
-      continue;
-    }
-    if (email.toLowerCase().endsWith("@privaterelay.appleid.com")) {
-      relayEmail++;
-      continue;
-    }
-    // Pick the entitlement with the earliest start (longest tenure).
-    const ent = ents.reduce((a, b) => ((a.starts_at ?? Infinity) <= (b.starts_at ?? Infinity) ? a : b));
-    out.push({
-      customerId: customer.id,
-      email: email.toLowerCase().trim(),
-      entitlement: ent.lookup_key ?? ent.id,
-      startsAtMs: ent.starts_at ?? null,
-      expiresAtMs: ent.expires_at ?? null,
-      firstSeenAt: customer.first_seen_at,
-    });
-  }
-  log(`  ${out.length} active payers with usable email (skipped ${nullEmail} no-email, ${relayEmail} relay).`);
-  return out;
 }
