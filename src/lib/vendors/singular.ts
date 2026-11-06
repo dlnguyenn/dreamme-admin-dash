@@ -13,6 +13,8 @@
  *   - Cohort metric columns are keyed by the BARE auto-generated event id
  *     (e.g. "fdf7c893...", no `_7d` period suffix), and revenue by bare
  *     `revenue`. The `_${period}` candidates are kept first for tolerance.
+ *   - Each cohort VALUE is an object keyed by period, e.g. `{ "7d": 3 }`
+ *     (observed 2026-11-05). `cohortNum` unwraps it; a bare number still works.
  *   - `custom_installs` equals `tracker_installs` on this account, NOT the
  *     network number the docs suggest for SANs; `adn_installs` carries the
  *     network count. Both are stored separately.
@@ -211,6 +213,17 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * A cohort metric's value. Observed live 2026-11-05: each one arrives as an
+ * object keyed by period, e.g. `{ "7d": 3 }`, not as a bare number. Reading it
+ * as a number gave NaN, so every trial and subscribe was stored as 0 while
+ * Singular was reporting them.
+ */
+function cohortNum(v: unknown, period: string): number {
+  if (v && typeof v === "object" && !Array.isArray(v)) return num((v as Record<string, unknown>)[period]);
+  return num(v);
+}
+
 function firstKey(
   row: Record<string, unknown>,
   candidates: string[],
@@ -277,9 +290,9 @@ export function mapSingularRows(
       installs: num(take(r, ["custom_installs", "installs"])),
       adn_installs: num(take(r, ["adn_installs"])),
       tracker_installs: num(take(r, ["tracker_installs"])),
-      trial_starts: num(take(r, trialKeys)),
-      subscribes: num(take(r, subKeys)),
-      revenue: num(take(r, [`revenue_${cohortPeriod}`, "revenue", "cohort_revenue"])),
+      trial_starts: cohortNum(take(r, trialKeys), cohortPeriod),
+      subscribes: cohortNum(take(r, subKeys), cohortPeriod),
+      revenue: cohortNum(take(r, [`revenue_${cohortPeriod}`, "revenue", "cohort_revenue"]), cohortPeriod),
     };
   });
 

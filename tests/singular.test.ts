@@ -188,6 +188,35 @@ describe("singular vendor client", () => {
       expect(out.rows[0].trial_starts).toBe(22);
     });
 
+    it("unwraps cohort values nested by period, the shape the live API returns", async () => {
+      // A real row from 2026-11-05. Reading `{ "7d": 3 }` as a number gave NaN,
+      // so trials were stored as 0 for months while Singular reported them.
+      const { mapSingularRows } = await import("@/lib/vendors/singular");
+      const out = mapSingularRows(
+        [
+          {
+            start_date: "2026-11-05",
+            end_date: "2026-11-05",
+            app: "DreamMe",
+            source: "Facebook",
+            os: "iOS",
+            unified_campaign_id: "120249182914140622",
+            unified_campaign_name: "TESTING Campaign (iOS)",
+            custom_installs: 16,
+            adn_installs: null,
+            tracker_installs: 16,
+            adn_cost: null,
+            revenue: { "7d": null },
+            [TRIAL_ID]: { "7d": 3 },
+            [SUB_ID]: { "7d": 2 },
+          },
+        ],
+        { trialEventId: TRIAL_ID, subscribeEventId: SUB_ID, cohortPeriod: "7d" },
+      );
+      expect(out.rows[0]).toMatchObject({ tracker_installs: 16, trial_starts: 3, subscribes: 2, revenue: 0, spend: 0 });
+      expect(out.unmappedKeys).toEqual([]);
+    });
+
     it("merges rows that fan out across os/app onto the table's PK grain", async () => {
       const { mapSingularRows } = await import("@/lib/vendors/singular");
       // The report requests `app` and `os` dimensions, so one campaign/date

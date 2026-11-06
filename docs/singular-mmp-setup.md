@@ -118,7 +118,18 @@ bare `revenue`; `custom_installs` equals `tracker_installs` on this account
 / resolved-event-id diagnostics stay in the route so any future drift announces
 itself.
 
-### The trials-per-campaign reality (measured 2026-08-12)
+### Correction (2026-11-05): trials were never zero, the mapper dropped them
+
+Each cohort value arrives as an object keyed by period, e.g.
+`"fdf7c893…": { "7d": 3 }`, not as a bare number. `mapSingularRows` read that
+as a number, got NaN and stored 0, so `trial_starts` and `subscribes` were 0
+for every row while Singular was reporting them. `cohortNum` now unwraps it
+(pinned by a test on a real row). By then `tracker_installs` had also grown to
+about 2,800 a month on SCALING iOS, so the 1.6% figure below is out of date.
+Still open: `adn_cost` and `adn_installs` have been null since October, which
+points at the Facebook data connector needing a reconnect in Singular.
+
+### The trials-per-campaign reality (measured 2026-08-12, superseded above)
 
 The cohort columns resolve and map correctly — **and their values are genuinely
 zero**. Device-level attribution is the constraint: `tracker_installs` is ~1.6%
