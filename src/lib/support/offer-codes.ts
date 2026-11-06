@@ -32,6 +32,7 @@ import type { SupportMessageRow, SupportThreadRow, UserContext } from "./types";
 
 export const YEARLY_SPECIAL = "Yearly Special";
 export const YEARLY_SPECIAL_PRICE = "$39.99";
+export const YEARLY_REGULAR_PRICE = "$69.99";
 export const PEARL_PACK = "Pearl Pack";
 export const PEARL_PACK_PEARLS = 550;
 
@@ -151,18 +152,30 @@ function subscribedNow(ctx: UserContext | null): "yes" | "maybe" | "no" {
 function firstName(
   thread: Pick<SupportThreadRow, "counterpart_name" | "user_context">,
   messages: MessageLike[],
+  draftBodies: string[] = [],
 ): string | null {
+  const greeted = (text: string): string | null => {
+    const hi = /^\s*Hi ([A-Z][A-Za-z'-]+)[!,]/.exec(text);
+    return hi && hi[1] !== "there" ? hi[1] : null;
+  };
   // The name Dan already greeted them with wins: "Jenn McQuaid" on the
   // header signs her mail "Jennifer", and the reply should match his.
   for (const m of [...messages].reverse()) {
     if (m.direction !== "outbound") continue;
-    const hi = /^\s*Hi ([A-Z][A-Za-z'-]+)[!,]/.exec(messageText(m.body_text, m.body_html) ?? "");
-    if (hi && hi[1] !== "there") return hi[1];
+    const name = greeted(messageText(m.body_text, m.body_html) ?? "");
+    if (name) return name;
   }
   const raw = thread.user_context?.name || thread.counterpart_name || "";
   const first = raw.trim().split(/\s+/)[0] ?? "";
   // Skip handles and placeholders ("joejenmc", "K.") that read oddly.
-  return /^[A-Za-z][A-Za-z'-]{1,}$/.test(first) ? first[0].toUpperCase() + first.slice(1) : null;
+  if (/^[A-Za-z][A-Za-z'-]{1,}$/.test(first)) return first[0].toUpperCase() + first.slice(1);
+  // No usable name on the thread (a bare address with no account): the AI
+  // drafts sitting beside this reply may have worked one out.
+  for (const body of draftBodies) {
+    const name = greeted(body);
+    if (name) return name;
+  }
+  return null;
 }
 
 const SIGNOFF = "Dan, co-founder of DreamMe";
@@ -172,16 +185,50 @@ function redeemSteps(code: Pick<OfferCodeRow, "code">): string {
 }
 
 /**
+ * "since March", or "for over a year". Null under two months, where saying
+ * how long they've been with us would sound odd.
+ */
+function tenurePhrase(ctx: UserContext | null, now: Date): string | null {
+  const created = ctx?.accountCreatedAt ? new Date(ctx.accountCreatedAt) : null;
+  if (!created || Number.isNaN(created.getTime())) return null;
+  const months =
+    (now.getUTCFullYear() - created.getUTCFullYear()) * 12 + now.getUTCMonth() - created.getUTCMonth();
+  if (months < 2) return null;
+  if (months >= 12) return "for over a year";
+  return `since ${created.toLocaleString("en-US", { month: "long", timeZone: "UTC" })}`;
+}
+
+/**
  * The reply that hands over one code. Dan's support voice: "Hi <Name>!",
  * warm, short, no em dashes, signed "Dan, co-founder of DreamMe".
+ *
+ * It has to make the code feel worth using, and everything it claims has to
+ * stay true. The rarity is about the CODE: one-time, handed out one by one
+ * from a limited batch (23 assigned as of 2026-11-06). Never say the PRICE is
+ * exclusive or the lowest: $39.99 is also the app's Yearly Special plan and
+ * the cancel-flow save offer, and "$30 Yearly" codes exist. No deadlines
+ * either: nothing enforces one, and the batch runs until 2027-04-29.
  */
 export function offerCodeReply(
   thread: Pick<SupportThreadRow, "counterpart_name" | "user_context">,
   code: Pick<OfferCodeRow, "code" | "redeem_url">,
   messages: MessageLike[] = [],
+  draftBodies: string[] = [],
+  now: Date = new Date(),
 ): string {
-  const name = firstName(thread, messages);
+  const name = firstName(thread, messages, draftBodies);
   const subscribed = subscribedNow(thread.user_context);
+  const scarcity = `These aren't codes we advertise and it's not something we do often`;
+  let opener: string;
+  if (subscribed === "yes") {
+    const tenure = tenurePhrase(thread.user_context, now);
+    const loyalty = tenure
+      ? `You've been with us ${tenure}, and that genuinely means a lot to a small team like ours.`
+      : `Having you with us genuinely means a lot to a small team like ours.`;
+    opener = `I'm so glad you asked! ${loyalty} ${scarcity}, but I keep a limited batch for people like you, so I set one aside.`;
+  } else {
+    opener = `I'm so glad you asked! ${scarcity}, but I keep a limited batch for people who take the time to write in, so I set one aside for you.`;
+  }
   // Same subscription group as Monthly/Quarterly: the code swaps their plan.
   const switchLine =
     subscribed === "yes"
@@ -191,11 +238,12 @@ export function offerCodeReply(
         : null;
   return [
     `Hi ${name ?? "there"}!`,
-    `Here's your Yearly Special code, it gets you a full year of DreamMe for just ${YEARLY_SPECIAL_PRICE}:`,
+    opener,
+    `It takes your first year of DreamMe from ${YEARLY_REGULAR_PRICE} down to ${YEARLY_SPECIAL_PRICE}, which works out to about $3.33 a month. It only works once, so it's yours alone:`,
     code.redeem_url,
     redeemSteps(code),
     switchLine,
-    `Thanks so much for sticking with DreamMe, it genuinely means the world to us!`,
+    `It only takes a minute, and if anything looks off, just reply here and I'll fix it myself. Let me know once you're in, I'd love to hear how it goes!`,
     SIGNOFF,
   ]
     .filter(Boolean)

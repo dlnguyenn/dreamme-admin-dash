@@ -375,6 +375,7 @@ export function ThreadDetail({
           <OfferCodeCard
             thread={thread}
             messages={detail.messages}
+            draftBodies={activeDrafts.map((d) => d.body)}
             assigned={detail.offerCodes ?? []}
             discountAsked={askedForDiscount(thread, detail.messages)}
             feedbackLike={
@@ -562,6 +563,7 @@ type OfferRowSpec = {
 function OfferCodeCard({
   thread,
   messages,
+  draftBodies,
   assigned,
   discountAsked,
   feedbackLike,
@@ -571,6 +573,8 @@ function OfferCodeCard({
 }: {
   thread: SupportThreadRow;
   messages: SupportMessageRow[];
+  /** the AI drafts, which may know a first name the thread doesn't */
+  draftBodies: string[];
   assigned: OfferCodeRow[];
   discountAsked: boolean;
   feedbackLike: boolean;
@@ -595,7 +599,7 @@ function OfferCodeCard({
       claimLabel: "Insert Yearly Special code",
       againLabel: "Insert code reply again",
       primary: true,
-      apply: (code) => onInsert(offerCodeReply(thread, code, messages)),
+      apply: (code) => onInsert(offerCodeReply(thread, code, messages, draftBodies)),
     });
   }
   if (signal.ios !== "no" || has(PEARL_PACK)) {

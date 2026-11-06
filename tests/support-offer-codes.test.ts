@@ -136,6 +136,41 @@ describe("offerCodeReply", () => {
     expect(text).toMatch(/^Hi Jennifer!/);
   });
 
+  it("anchors on the regular price and only makes claims about the code", () => {
+    const text = offerCodeReply(base, code);
+    expect(text).toContain("from $69.99 down to $39.99");
+    expect(text).toContain("It only works once");
+    expect(text).toContain("it's not something we do often");
+    expect(text).not.toMatch(/exclusive|lowest|best price|expires|hurry|only today/i);
+  });
+
+  it("only thanks people for staying when they are actually subscribed", () => {
+    expect(offerCodeReply(base, code)).not.toMatch(/been with us|having you with us|sticking/i);
+    const lapsed = { ...base, user_context: ctx({ subscriptions: [sub({ isActive: false })] }) };
+    expect(offerCodeReply(lapsed, code)).not.toMatch(/been with us|having you with us|sticking/i);
+    const live = { ...base, user_context: ctx({ subscriptions: [sub({})] }) };
+    expect(offerCodeReply(live, code)).toContain("Having you with us");
+  });
+
+  it("names how long a subscriber has been with us when the account is old enough", () => {
+    const now = new Date("2026-11-06T12:00:00Z");
+    const at = (accountCreatedAt: string) => ({
+      ...base,
+      user_context: ctx({ subscriptions: [sub({})], accountCreatedAt }),
+    });
+    expect(offerCodeReply(at("2026-03-14T00:00:00Z"), code, [], [], now)).toContain("You've been with us since March");
+    expect(offerCodeReply(at("2025-02-01T00:00:00Z"), code, [], [], now)).toContain("You've been with us for over a year");
+    expect(offerCodeReply(at("2026-10-20T00:00:00Z"), code, [], [], now)).toContain("Having you with us");
+  });
+
+  it("borrows the first name from an AI draft when the thread has no usable name", () => {
+    const bare = { ...base, counterpart_name: null, user_context: null };
+    expect(offerCodeReply(bare, code, [], ["Hi Felicia! We don't list promo codes."])).toMatch(/^Hi Felicia!/);
+    expect(offerCodeReply(bare, code, [], ["Hi there! Thanks."])).toMatch(/^Hi there!/);
+    // A real name on the thread still beats a draft's guess.
+    expect(offerCodeReply(base, code, [], ["Hi Felicia!"])).toMatch(/^Hi Jenn!/);
+  });
+
   it("falls back to 'there' for handle-like names", () => {
     expect(offerCodeReply({ ...base, counterpart_name: "joejenmc@hotmail.com" }, code)).toMatch(/^Hi there!/);
   });
