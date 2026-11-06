@@ -31,6 +31,8 @@
  *   unified_campaign_id   ↔ campaign_id
  *   <cohort event id>     ↔ trial_starts / subscribes
  */
+import type { ConnectorStatus } from "@/lib/mmp/connector-health";
+
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const BASE_URL = "https://api.singular.net";
 
@@ -51,6 +53,20 @@ function sleep(ms: number): Promise<void> {
 
 export function singularConfigured(): boolean {
   return !!getApiKey();
+}
+
+/**
+ * Every data connector's status for one day (Reporting API "Data
+ * Availability" endpoint). `display_non_active_sources` matters: a connector
+ * whose login broke stops getting data, and after 30 days Singular hides it
+ * from this list (and from the Data Connectors page) unless asked.
+ */
+export async function fetchConnectorStatus(dataDate: string): Promise<ConnectorStatus[]> {
+  const url =
+    `${BASE_URL}/api/v2.0/data_availability_status?api_key=${encodeURIComponent(getApiKey())}` +
+    `&data_date=${encodeURIComponent(dataDate)}&format=json&expanded=true&display_non_active_sources=true`;
+  const body = await singularFetchJson<{ value?: { data_connectors?: ConnectorStatus[] } }>(url, 2);
+  return body.value?.data_connectors ?? [];
 }
 
 async function singularFetchJson<T>(url: string, maxRetries = 4): Promise<T> {

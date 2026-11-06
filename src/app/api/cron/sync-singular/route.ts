@@ -23,12 +23,14 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import {
+  fetchConnectorStatus,
   fetchSingularAdReport,
   fetchSingularCampaignReport,
   probeSingularBreakdown,
   singularConfigured,
   type SingularAdRow,
 } from "@/lib/vendors/singular";
+import { brokenConnectors, connectorAlerts, resolveFilter } from "@/lib/mmp/connector-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +97,12 @@ export async function GET(req: Request) {
     }
   }
 
+  // Connector health first and on its own: a broken login (e.g. Facebook's,
+  // 2026-09-25 to 11-06) raises a critical alert on the Overview. Never fails
+  // the sync.
+  const connectors = await checkConnectors(utcDate(new Date(today.getTime() - 86_400_000)), utcDate(today));
+  console.log("[sync-singular] connectors", JSON.stringify(connectors));
+
   // The ad set and ad report runs alongside the campaign one, into
   // singular_ad_daily. Its failure is reported in the response but never fails
   // the campaign sync, which the cost views depend on.
@@ -114,7 +122,7 @@ export async function GET(req: Request) {
   } catch (e) {
     // Vendor failures are 502 (ours are 500), so cron just retries tomorrow.
     return NextResponse.json(
-      { ok: false, error: (e as Error).message, ads: await syncAds(await adPromise, new Date().toISOString(), cohortPeriod) },
+      { ok: false, error: (e as Error).message, ads: await syncAds(await adPromise, new Date().toISOString(), cohortPeriod), connectors },
       { status: 502 },
     );
   }
@@ -167,6 +175,7 @@ export async function GET(req: Request) {
       sample_raw: report.sampleRaw,
       note: "no Singular rows returned — either no attributed spend in window, the events are not yet registered in Settings > Events (~24h), or the response shape differs from the mapper (check unmapped_keys/sample_raw)",
       ads,
+      connectors,
     });
   }
 
@@ -185,7 +194,7 @@ export async function GET(req: Request) {
   );
   if (!res.ok) {
     return NextResponse.json(
-      { ok: false, error: `upsert failed: ${res.status} ${await res.text()}`, ads },
+      { ok: false, error: `upsert failed: ${res.status} ${await res.text()}`, ads, connectors },
       { status: 500 },
     );
   }
@@ -193,6 +202,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     ads,
+    connectors,
     upserted: rows.length,
     campaigns: new Set(rows.map((r) => r.campaign_id)).size,
     trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
@@ -245,4 +255,54 @@ async function syncAds(
   );
   if (!res.ok) return { ok: false, ...summary, upserted: 0, error: `upsert failed: ${res.status} ${(await res.text()).slice(0, 200)}` };
   return { ok: true, ...summary };
+}
+
+type ConnectorCheck = {
+  ok: boolean;
+  checked: number;
+  broken: Array<{ id: string; source: string; status: string }>;
+  alerts_written: number;
+  error?: string;
+};
+
+/**
+ * Ask Singular for every connector's status, raise a critical marketing alert
+ * per broken one (dated today, so one row a day while it stays broken), and
+ * resolve open connector alerts for connectors that recovered. A summary,
+ * never a throw.
+ */
+async function checkConnectors(dataDate: string, alertDate: string): Promise<ConnectorCheck> {
+  const headers = {
+    apikey: SERVICE_ROLE,
+    Authorization: `Bearer ${SERVICE_ROLE}`,
+    "Content-Type": "application/json",
+  };
+  try {
+    const list = await fetchConnectorStatus(dataDate);
+    const broken = brokenConnectors(list);
+    const alerts = connectorAlerts(broken, alertDate);
+    if (alerts.length) {
+      const ins = await fetch(`${SUPABASE_URL}/rest/v1/marketing_alerts?on_conflict=alert_date,scope,campaign_id,metric`, {
+        method: "POST",
+        headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(alerts),
+      });
+      if (!ins.ok) throw new Error(`marketing_alerts upsert failed: ${ins.status} ${(await ins.text()).slice(0, 200)}`);
+    }
+    const fix = await fetch(`${SUPABASE_URL}/rest/v1/marketing_alerts?${resolveFilter(broken)}`, {
+      method: "PATCH",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({ resolved_at: new Date().toISOString() }),
+    });
+    if (!fix.ok) throw new Error(`marketing_alerts resolve failed: ${fix.status} ${(await fix.text()).slice(0, 200)}`);
+    return {
+      ok: true,
+      checked: list.length,
+      broken: broken.map((c) => ({ id: c.data_connector_id, source: c.data_connector_source_name, status: c.status })),
+      alerts_written: alerts.length,
+    };
+  } catch (e) {
+    console.error("[sync-singular] connector check failed", e);
+    return { ok: false, checked: 0, broken: [], alerts_written: 0, error: e instanceof Error ? e.message : String(e) };
+  }
 }
