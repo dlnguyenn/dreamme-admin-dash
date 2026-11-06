@@ -173,8 +173,8 @@ export interface PlanStep {
 export const PLAN: PlanStep[] = [
   {
     title: "Get everything Singular already has",
-    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. It attributes iOS installs and trials by campaign today. Its Meta cost has been empty since October, and ad set and ad breakdowns are untested.",
-    work: "Reconnect the Facebook data connector in Singular. Then request the same report by ad set and ad, and see whether trials come back at that level.",
+    why: "Singular is a certified Meta partner, so its numbers include the row-level Meta data nobody can build. It reports iOS installs and trials by campaign, ad set and ad, but the DAD stores the campaign level only. Its Meta cost has been empty since October, and it receives no revenue, so it can't show trial-to-paid.",
+    work: "Reconnect the Facebook data connector in Singular. Store its ad set and ad rows next to Meta's. Send purchase events with revenue to Singular so paid conversions show by ad.",
     needs: "Singular account",
   },
   {

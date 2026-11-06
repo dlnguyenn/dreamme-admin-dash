@@ -244,7 +244,7 @@ const MODULES: ModuleDef[] = [
     appsflyer:
       "These networks don't use click links. AppsFlyer sends each install to the network's API, the network answers with a claim, and AppsFlyer picks the last touch across all claims. With Meta's Advanced Mobile Measurement terms it also gets row-level Meta attribution.",
     ours: "No claim API of our own. Singular, a certified Meta partner already in the app, has this access, and its reports are pulled in by campaign. Meta's own totals are read as a claim, not a fact.",
-    next: "It can't be built in-house. Keep Singular's sync healthy, and test whether its reports break down by ad set and ad.",
+    next: "It can't be built in-house. Singular's reports also break down by ad set and ad (tested Nov 5), but the DAD stores the campaign level only.",
     assess: (s) => ({
       status: s.sng_trials > 0 ? "partial" : "blocked",
       evidence: `Singular attributes ${int(s.sng_tracker_installs)} installs and ${int(s.sng_trials)} trials to Meta campaigns. Meta itself claims ${int(s.meta_trials)} trials, ${share(s.meta_trials, s.trials)} of the ${int(s.trials)} RevenueCat counted from every source.`,
