@@ -16,7 +16,7 @@ import { RoadmapMap } from "./RoadmapMap";
 import { APP_AREAS } from "@/lib/app-areas";
 import { formatDate } from "@/lib/format";
 import {
-  DEFAULT_OWNERS,
+  ROADMAP_OWNERS,
   ROADMAP_PRIORITIES,
   ROADMAP_STAGES,
   STAGE_HINTS,
@@ -89,12 +89,6 @@ export function Roadmap() {
   React.useEffect(() => {
     load();
   }, [load]);
-
-  const owners = React.useMemo(() => {
-    const set = new Set<string>(DEFAULT_OWNERS);
-    for (const i of items) if (i.owner) set.add(i.owner);
-    return Array.from(set);
-  }, [items]);
 
   const visible = React.useMemo(
     () => (owner ? items.filter((i) => i.owner === owner) : items),
@@ -197,7 +191,7 @@ export function Roadmap() {
         <Chip tone={!owner ? "ink" : "neutral"} onClick={() => setOwner(null)}>
           Everyone
         </Chip>
-        {owners.map((o) => (
+        {ROADMAP_OWNERS.map((o) => (
           <Chip key={o} tone={owner === o ? "ink" : "neutral"} onClick={() => setOwner(owner === o ? null : o)}>
             {o}
           </Chip>
@@ -271,7 +265,6 @@ export function Roadmap() {
       {(selected || creating) && (
         <RoadmapDrawer
           item={creating ? null : selected}
-          owners={owners}
           defaultOwner={owner}
           onClose={() => {
             setSelected(null);
@@ -476,7 +469,7 @@ function Card({
         {item.target_date && item.stage !== "done" && (
           <span style={{ fontSize: 11, color: overdue ? "var(--accent)" : "var(--ink-3)" }}>
             {overdue ? "Overdue · " : ""}
-            {formatDate(item.target_date)}
+            {formatDate(`${item.target_date}T12:00:00`)}
           </span>
         )}
         {item.stage === "done" && item.done_at && (
@@ -484,12 +477,11 @@ function Card({
         )}
         {item.owner && (
           <span
-            title={item.owner}
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
-              width: 20,
               height: 20,
+              padding: "0 8px",
               borderRadius: 999,
               display: "inline-flex",
               alignItems: "center",
@@ -499,7 +491,7 @@ function Card({
               color: "var(--ink-2)",
             }}
           >
-            {item.owner.slice(0, 1).toUpperCase()}
+            {item.owner}
           </span>
         )}
       </div>
@@ -512,14 +504,12 @@ function Card({
 
 function RoadmapDrawer({
   item,
-  owners,
   defaultOwner,
   onClose,
   onSaved,
   onDeleted,
 }: {
   item: RoadmapItem | null;
-  owners: string[];
   defaultOwner: string | null;
   onClose: () => void;
   onSaved: (item: RoadmapItem) => void;
@@ -558,7 +548,7 @@ function RoadmapDrawer({
       stage,
       priority,
       area: area || null,
-      owner: owner.trim() || null,
+      owner: owner || null,
       target_date: target || null,
     };
     try {
@@ -667,18 +657,14 @@ function RoadmapDrawer({
               </select>
             </Field>
             <Field label="Owner">
-              <input
-                list="roadmap-owners"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-                placeholder="Dan, David…"
-                style={inputStyle}
-              />
-              <datalist id="roadmap-owners">
-                {owners.map((o) => (
-                  <option key={o} value={o} />
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inputStyle}>
+                <option value="">Unassigned</option>
+                {ROADMAP_OWNERS.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </Field>
             <Field label="Target date">
               <input type="date" value={target} onChange={(e) => setTarget(e.target.value)} style={inputStyle} />

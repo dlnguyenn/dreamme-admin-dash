@@ -25,8 +25,8 @@ export const STAGE_HINTS: Record<RoadmapStage, string> = {
   done: "Shipped",
 };
 
-/** Names offered in the owner field; any free text works too. */
-export const DEFAULT_OWNERS = ["Dan", "David"];
+/** Who an item can be assigned to. Always shown in full: both start with D. */
+export const ROADMAP_OWNERS = ["Dan", "David"];
 
 export interface RoadmapItem {
   id: string;

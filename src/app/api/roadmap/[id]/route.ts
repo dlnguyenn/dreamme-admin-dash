@@ -15,6 +15,7 @@ import {
   supportDbConfigured,
 } from "@/lib/support/db";
 import {
+  ROADMAP_OWNERS,
   ROADMAP_PRIORITIES,
   ROADMAP_STAGES,
   doneAtFor,
@@ -32,7 +33,7 @@ const Patch = z
     stage: z.enum(ROADMAP_STAGES as [string, ...string[]]).optional(),
     priority: z.enum(ROADMAP_PRIORITIES as [string, ...string[]]).optional(),
     area: z.string().trim().max(100).nullable().optional(),
-    owner: z.string().trim().max(60).nullable().optional(),
+    owner: z.enum(ROADMAP_OWNERS as [string, ...string[]]).nullable().optional(),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     position: z.number().finite().optional(),
   })
