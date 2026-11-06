@@ -289,6 +289,35 @@ describe("singular vendor client", () => {
     });
   });
 
+  describe("summarizeSingularProbe", () => {
+    const TRIAL_ID = "815782610a1ddf";
+
+    it("sums installs and trials per group and counts distinct and blank values", async () => {
+      const { summarizeSingularProbe } = await import("@/lib/vendors/singular");
+      const out = summarizeSingularProbe(
+        [
+          { adn_sub_campaign_id: "111", adn_sub_campaign_name: "Videos", tracker_installs: 40, [TRIAL_ID]: { "7d": 9 } },
+          { adn_sub_campaign_id: "111", adn_sub_campaign_name: "Videos", tracker_installs: 10, [TRIAL_ID]: { "7d": 3 } },
+          { adn_sub_campaign_id: "222", adn_sub_campaign_name: "Statics", tracker_installs: 70, [TRIAL_ID]: { "7d": 20 } },
+          { adn_sub_campaign_id: null, adn_sub_campaign_name: null, tracker_installs: 5, [TRIAL_ID]: { "7d": null } },
+        ],
+        ["adn_sub_campaign_id", "adn_sub_campaign_name"],
+        { trialEventId: TRIAL_ID, cohortPeriod: "7d" },
+      );
+      expect(out).toMatchObject({ rows: 4, installs: 125, trials: 32 });
+      expect(out.distinct).toEqual({ adn_sub_campaign_id: 2, adn_sub_campaign_name: 2 });
+      expect(out.blank).toEqual({ adn_sub_campaign_id: 1, adn_sub_campaign_name: 1 });
+      expect(out.top[0]).toMatchObject({ adn_sub_campaign_id: "222", installs: 70, trials: 20 });
+      expect(out.top[1]).toMatchObject({ adn_sub_campaign_id: "111", installs: 50, trials: 12 });
+    });
+
+    it("reports zero trials when no trial event resolved, without throwing", async () => {
+      const { summarizeSingularProbe } = await import("@/lib/vendors/singular");
+      const out = summarizeSingularProbe([{ os: "iOS", tracker_installs: "8" }], ["os"]);
+      expect(out).toMatchObject({ rows: 1, installs: 8, trials: 0 });
+    });
+  });
+
   describe("fetchCohortMetricsCatalog", () => {
     it("indexes events by display name and by raw name", async () => {
       globalThis.fetch = vi.fn(async (url) => {

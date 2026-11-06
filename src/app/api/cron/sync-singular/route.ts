@@ -24,6 +24,7 @@ import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
 import {
   fetchSingularCampaignReport,
+  probeSingularBreakdown,
   singularConfigured,
 } from "@/lib/vendors/singular";
 
@@ -74,6 +75,23 @@ export async function GET(req: Request) {
   const since = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
   const sinceDate = utcDate(since);
   const untilDate = utcDate(today);
+
+  // ?probe=<comma-separated dimensions>: ask Singular for installs and trials
+  // by those dimensions (ad set, creative, ...) and return a summary. Reads
+  // only: nothing is stored and the normal sync does not run.
+  const probe = url.searchParams.get("probe");
+  if (probe) {
+    const dimensions = probe.split(",").map((d) => d.trim()).filter((d) => /^[a-z0-9_]+$/.test(d));
+    if (!dimensions.length) {
+      return NextResponse.json({ ok: false, error: "probe needs dimension names" }, { status: 400 });
+    }
+    try {
+      const summary = await probeSingularBreakdown({ startDate: sinceDate, endDate: untilDate, dimensions, cohortPeriod });
+      return NextResponse.json({ ok: true, window: { since: sinceDate, until: untilDate }, cohort_period: cohortPeriod, probe: summary });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 502 });
+    }
+  }
 
   let report: Awaited<ReturnType<typeof fetchSingularCampaignReport>>;
   try {

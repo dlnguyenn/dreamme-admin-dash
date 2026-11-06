@@ -471,3 +471,103 @@ export async function fetchSingularCampaignReport(opts: {
     resolvedSubscribeEventId: subscribeEventId,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Breakdown probe (read-only)
+// ---------------------------------------------------------------------------
+
+export interface SingularProbeSummary {
+  dimensions: string[];
+  rows: number;
+  installs: number;
+  trials: number;
+  /** How many distinct non-empty values each requested dimension returned. */
+  distinct: Record<string, number>;
+  /** Rows where a requested dimension came back empty, by dimension. */
+  blank: Record<string, number>;
+  /** Up to 25 groups, most trials first, summed over the window. */
+  top: Array<Record<string, string | number>>;
+}
+
+/**
+ * Sum a probe report over its date range, grouped by the requested dimensions.
+ * Pure, so the shape Singular returns for a new breakdown can be pinned in a test.
+ */
+export function summarizeSingularProbe(
+  raw: Array<Record<string, unknown>>,
+  dimensions: string[],
+  opts: { trialEventId?: string | null; cohortPeriod?: string } = {},
+): SingularProbeSummary {
+  const { trialEventId, cohortPeriod = "7d" } = opts;
+  const groups = new Map<string, Record<string, string | number>>();
+  const seen: Record<string, Set<string>> = Object.fromEntries(dimensions.map((d) => [d, new Set<string>()]));
+  const blank: Record<string, number> = Object.fromEntries(dimensions.map((d) => [d, 0]));
+  let installs = 0;
+  let trials = 0;
+
+  for (const r of raw) {
+    const rowInstalls = num(r.tracker_installs);
+    const rowTrials = trialEventId ? cohortNum(r[trialEventId], cohortPeriod) : 0;
+    installs += rowInstalls;
+    trials += rowTrials;
+    const values = dimensions.map((d) => (r[d] == null ? "" : String(r[d])));
+    values.forEach((v, i) => {
+      if (v) seen[dimensions[i]].add(v);
+      else blank[dimensions[i]] += 1;
+    });
+    const key = values.join("\u0001");
+    const g = groups.get(key) ?? { ...Object.fromEntries(dimensions.map((d, i) => [d, values[i]])), installs: 0, trials: 0 };
+    g.installs = (g.installs as number) + rowInstalls;
+    g.trials = (g.trials as number) + rowTrials;
+    groups.set(key, g);
+  }
+
+  return {
+    dimensions,
+    rows: raw.length,
+    installs,
+    trials,
+    distinct: Object.fromEntries(dimensions.map((d) => [d, seen[d].size])),
+    blank,
+    top: [...groups.values()]
+      .sort((a, b) => (b.trials as number) - (a.trials as number) || (b.installs as number) - (a.installs as number))
+      .slice(0, 25),
+  };
+}
+
+/**
+ * Ask Singular for installs and trials broken down by any dimensions, e.g. ad
+ * set or creative, and return a summary. Reads only; nothing is stored. One
+ * request, so the window is capped at Singular's 30-day limit.
+ */
+export async function probeSingularBreakdown(opts: {
+  startDate: string;
+  endDate: string;
+  dimensions: string[];
+  source?: string;
+  cohortPeriod?: string;
+}): Promise<SingularProbeSummary & { sample: Record<string, unknown> | null }> {
+  const { startDate, endDate, dimensions, source = "facebook", cohortPeriod = "7d" } = opts;
+  const catalog = await fetchCohortMetricsCatalog();
+  const trialEventId = resolveEventId(catalog, ["sng_start_trial", "start trial", "trial started"]);
+  const [chunk] = chunkDateRange(startDate, endDate).slice(-1);
+  if (!chunk) throw new Error("empty date range");
+
+  const reportId = await createReport({
+    start_date: chunk.start,
+    end_date: chunk.end,
+    time_breakdown: "all",
+    format: "json",
+    dimensions: dimensions.join(","),
+    metrics: "tracker_installs",
+    ...(trialEventId ? { cohort_metrics: trialEventId, cohort_periods: cohortPeriod } : {}),
+    source,
+  });
+  const downloadUrl = await awaitReport(reportId);
+  const payload = await singularFetchJson<{
+    value?: { results?: Array<Record<string, unknown>> };
+    results?: Array<Record<string, unknown>>;
+  }>(downloadUrl);
+  const rows = payload.value?.results ?? payload.results ?? [];
+  return { ...summarizeSingularProbe(rows, dimensions, { trialEventId, cohortPeriod }), sample: rows[0] ?? null };
+}
