@@ -333,18 +333,22 @@ async function metaChecks() {
         data?: {
           id: string;
           name: string;
+          status?: string;
           effective_status: string;
           adset?: { name?: string; effective_status?: string };
           ad_review_feedback?: { global?: Record<string, string> };
         }[];
       }>(`${act}/ads`, {
-        fields: "id,name,effective_status,adset{name,effective_status},ad_review_feedback",
+        fields: "id,name,status,effective_status,adset{name,effective_status},ad_review_feedback",
         effective_status: JSON.stringify(["DISAPPROVED", "WITH_ISSUES"]),
         limit: "200",
       }).then((b) =>
         (b.data ?? [])
-          // Only where it costs us: an ad set that is actually delivering.
-          .filter((a) => a.adset?.effective_status === "ACTIVE")
+          // Only where it costs us: an ad that is switched on, in an ad set
+          // that is actually delivering. A rejected ad you've paused keeps
+          // effective_status WITH_ISSUES forever, so `status` (the on/off
+          // switch) is what says it's been dealt with.
+          .filter((a) => a.status === "ACTIVE" && a.adset?.effective_status === "ACTIVE")
           .map((a) => ({
             id: a.id,
             name: a.name,
