@@ -415,7 +415,7 @@ const mcpHandler = createMcpHandler(
     // --- READ: CAPI dataset status (watch the RC→Meta pipe) --------------
     server.tool(
       "capi_dataset_status",
-      "Meta dataset health: name + last_fired_time, plus event counts over the last `hours` (default 24, max 168) split by event source (server = Conversions API, e.g. RevenueCat) and by event name, from the dataset's /stats edge. Each part reports its own error instead of failing the call.",
+      "Meta dataset health: name + last_fired_time, plus event counts over the last `hours` (default 24, max 168) split by event source (server = Conversions API, e.g. RevenueCat) and by event name, from the dataset's /stats edge. Each part reports its own error instead of failing the call. Covers website and server (CAPI) events such as trial_qualified only: app events (FB SDK and RevenueCat's Meta integration) never appear in /stats (checked 2026-11-07), so check those in Events Manager.",
       { dataset_id: z.string().optional(), hours: z.number().int().min(1).max(168).optional() },
       async ({ dataset_id, hours }) => {
         const meta = await resolveMeta();
