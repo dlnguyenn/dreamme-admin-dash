@@ -33,6 +33,7 @@ import {
 } from "@/lib/viewsources/doublespeed";
 import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import { fetchPaidDaily, type PaidDaily } from "@/lib/overview-paid";
+import { collectUrgentAlerts, type UrgentAlert } from "@/lib/overview-alerts";
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
@@ -283,6 +284,8 @@ export interface OpsCheck {
 
 export interface OverviewPayload {
   generatedAt: string;
+  /** Urgent items from every alert source, worst first; null if collection failed. */
+  urgent: UrgentAlert[] | null;
   northStar: NorthStar | null;
   revenue: RevenueSnapshot | null;
   views: ViewsSection | null;
@@ -1540,9 +1543,23 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("attribution", errors, fetchAttribution),
     ]);
 
+  const northStar = buildNorthStar(trialStarts, new Date(), onboardingToday);
+  let urgent: UrgentAlert[] | null = null;
+  try {
+    urgent = await collectUrgentAlerts({
+      ops,
+      sectionErrors: [...errors],
+      northStar,
+      paid: paid?.daily ?? null,
+    });
+  } catch (e) {
+    errors.push(`urgent alerts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   return {
     generatedAt: new Date().toISOString(),
-    northStar: buildNorthStar(trialStarts, new Date(), onboardingToday),
+    urgent,
+    northStar,
     revenue: rc ? buildRevenue(rc) : null,
     views,
     support,

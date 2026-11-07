@@ -22,6 +22,7 @@ import { ViewsPanel } from "./overview/ViewsPanel";
 import { AttributionPanel } from "./overview/AttributionPanel";
 import { MorningPanel } from "./overview/MorningPanel";
 import { PaidPanel } from "./overview/PaidPanel";
+import { NeedsAttention } from "./overview/NeedsAttention";
 import {
   OpsPanel,
   QueuePanel,
@@ -348,7 +349,8 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
       />
 
       {error && <ErrorBanner>Couldn&apos;t load the overview — {error}</ErrorBanner>}
-      {data && data.errors.length > 0 && (
+      {/* Section failures are listed in Needs attention; this is the fallback when that failed too. */}
+      {data && data.urgent == null && data.errors.length > 0 && (
         <ErrorBanner>
           Some sections failed to load: {data.errors.join(" · ")}
         </ErrorBanner>
@@ -369,6 +371,8 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
         </Card>
       ) : (
         <>
+          <NeedsAttention alerts={data?.urgent ?? null} onNavigate={onNavigate} />
+
           {/* North star + the money numbers next to it. */}
           <div
             style={{
