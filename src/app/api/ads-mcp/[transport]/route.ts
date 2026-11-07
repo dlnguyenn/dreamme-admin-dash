@@ -415,28 +415,60 @@ const mcpHandler = createMcpHandler(
     // --- READ: CAPI dataset status (watch the RC→Meta pipe) --------------
     server.tool(
       "capi_dataset_status",
-      "Check the Meta dataset's last-fired timestamps — server_last_fired_time shows whether RevenueCat's Conversions API integration is actually delivering server-side events yet.",
-      { dataset_id: z.string().optional() },
-      async ({ dataset_id }) => {
+      "Meta dataset health: name + last_fired_time, plus event counts over the last `hours` (default 24, max 168) split by event source (server = Conversions API, e.g. RevenueCat) and by event name, from the dataset's /stats edge. Each part reports its own error instead of failing the call.",
+      { dataset_id: z.string().optional(), hours: z.number().int().min(1).max(168).optional() },
+      async ({ dataset_id, hours }) => {
         const meta = await resolveMeta();
         if (!meta) return fail(NO_META);
         const token = meta.token;
         const ver = process.env.META_API_VERSION ?? "v22.0";
         const id = dataset_id || DEFAULT_DATASET;
-        try {
-          // NOTE: `is_active` is not a valid field on the dataset/pixel node
-          // (Graph returns "(#100) nonexisting field") — request only real ones.
-          const url = `https://graph.facebook.com/${ver}/${id}?fields=name,last_fired_time,server_last_fired_time`;
-          const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          });
-          const body = await res.json();
-          if (!res.ok) return fail(`Meta dataset read failed: ${res.status} ${JSON.stringify(body)}`);
-          return json(body);
-        } catch (e) {
-          return fail(e instanceof Error ? e.message : String(e));
-        }
+        const span = hours ?? 24;
+        const end = Math.floor(Date.now() / 1000);
+        const start = end - span * 3600;
+        const get = async (path: string): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> => {
+          try {
+            const res = await fetch(`https://graph.facebook.com/${ver}/${path}`, {
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            });
+            const body = await res.json();
+            if (!res.ok) return { ok: false, error: `${res.status} ${JSON.stringify(body?.error?.message ?? body)}` };
+            return { ok: true, body };
+          } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : String(e) };
+          }
+        };
+        // /stats returns hourly buckets: { data: [{ start_time, data: [{ value, count }] }] }.
+        // Sum the counts per value across the window.
+        const stats = async (aggregation: string) => {
+          const r = await get(`${id}/stats?aggregation=${aggregation}&start_time=${start}&end_time=${end}`);
+          if (!r.ok) return { error: r.error };
+          const totals: Record<string, number> = {};
+          const buckets = (r.body as { data?: { data?: { value?: string; count?: number }[] }[] }).data ?? [];
+          for (const b of buckets) {
+            for (const d of b.data ?? []) {
+              const k = d.value ?? "(none)";
+              totals[k] = (totals[k] ?? 0) + (d.count ?? 0);
+            }
+          }
+          return Object.fromEntries(Object.entries(totals).sort((a, b) => b[1] - a[1]));
+        };
+        // NOTE: `is_active` and `server_last_fired_time` are not fields on the
+        // dataset node (Graph returns "(#100) nonexisting field"). Server-side
+        // delivery shows up in /stats?aggregation=event_source instead.
+        const [node, bySource, byEvent] = await Promise.all([
+          get(`${id}?fields=name,last_fired_time`),
+          stats("event_source"),
+          stats("event"),
+        ]);
+        return json({
+          dataset_id: id,
+          window_hours: span,
+          ...(node.ok ? (node.body as object) : { node_error: node.error }),
+          events_by_source: bySource,
+          events_by_name: byEvent,
+        });
       },
     );
 
