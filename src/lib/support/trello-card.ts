@@ -10,7 +10,11 @@
  * (not a paraphrase — the phrasing is the feature request), and a link back
  * to the conversation.
  */
-import type { FeatureRequestBrief, FeatureRequestDetails } from "@/lib/types";
+import type {
+  FeatureRequestBrief,
+  FeatureRequestDetails,
+  FeatureRequestPriority,
+} from "@/lib/types";
 import type { SupportThreadRow } from "./types";
 import { splitQuotedText } from "./email-text";
 import { briefMarkdown } from "./ticket-brief";
@@ -117,6 +121,8 @@ export interface FeatureRequestInsert {
   submitter_email: string | null;
   status: "new";
   epic?: string | null;
+  priority?: FeatureRequestPriority | null;
+  priority_reason?: string | null;
   details?: FeatureRequestDetails | null;
 }
 
@@ -148,6 +154,9 @@ export function buildFeatureRequest(
     status: "new",
     // The brief's area seeds the epic so the tab's epic filter fills itself.
     epic: input.brief?.area ?? null,
+    // Same for priority: the brief's suggestion, changeable in the drawer.
+    priority: input.brief?.priority ?? null,
+    priority_reason: input.brief?.priorityReason ?? null,
     details: input.details ?? null,
   };
 }

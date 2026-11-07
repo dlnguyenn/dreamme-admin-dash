@@ -106,6 +106,10 @@ export async function POST(
     };
     // Seed the epic only when nobody has set one; never overwrite a choice.
     if (!row.epic) patch.epic = brief.area;
+    if (!row.priority && brief.priority) {
+      patch.priority = brief.priority;
+      patch.priority_reason = brief.priorityReason ?? null;
+    }
     if (!row.submitter_email && details.requester?.email) {
       patch.submitter_email = details.requester.email;
     }

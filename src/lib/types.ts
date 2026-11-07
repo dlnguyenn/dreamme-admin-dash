@@ -416,6 +416,9 @@ export interface Resource {
   updatedAt: string;
 }
 
+/** What to build next. Auto-set by the brief at filing, editable by hand. */
+export type FeatureRequestPriority = "urgent" | "high" | "medium" | "low";
+
 export type FeatureRequestStatus =
   | "new"
   | "planned"
@@ -441,6 +444,9 @@ export interface FeatureRequestBrief {
   /** things to settle before building */
   openQuestions: string[];
   effort: "small" | "medium" | "large";
+  /** the model's suggested priority; seeds the priority column once */
+  priority?: FeatureRequestPriority;
+  priorityReason?: string;
   model: string;
   generatedAt: string;
 }
@@ -478,6 +484,9 @@ export interface FeatureRequestRow {
   status: FeatureRequestStatus;
   epic: string | null;
   submitter_email: string | null;
+  /** optional so fixtures and pre-0104 reads still type-check */
+  priority?: FeatureRequestPriority | null;
+  priority_reason?: string | null;
   details: FeatureRequestDetails | null;
   created_at: string;
   updated_at: string;
@@ -490,6 +499,8 @@ export interface FeatureRequest {
   status: FeatureRequestStatus;
   epic: string | null;
   submitterEmail: string | null;
+  priority: FeatureRequestPriority | null;
+  priorityReason: string | null;
   details: FeatureRequestDetails | null;
   createdAt: string;
   updatedAt: string;

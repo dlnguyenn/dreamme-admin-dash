@@ -11,6 +11,7 @@
  */
 import { callClaude, firstJson, anthropicConfigured } from "@/lib/anthropic";
 import { APP_AREAS } from "@/lib/app-areas";
+import { isPriority } from "@/lib/feature-priority";
 import type {
   FeatureRequestBrief,
   FeatureRequestDetails,
@@ -105,14 +106,20 @@ DreamMe is a GLP-1 weight-loss companion app (iOS + Android, subscription). It h
 Write for someone deciding whether and how to build it. Be concrete and brief. Do not invent facts about the user or about how the app works today; if something is unclear, put it in open_questions. Never use em dashes or en dashes.
 
 Output STRICTLY JSON:
-{"kind": "feature"|"improvement"|"bug"|"content", "area": one of ${JSON.stringify(APP_AREAS)}, "ask": string, "why": string, "needs": string[], "open_questions": string[], "effort": "small"|"medium"|"large"}
+{"kind": "feature"|"improvement"|"bug"|"content", "area": one of ${JSON.stringify(APP_AREAS)}, "ask": string, "why": string, "needs": string[], "open_questions": string[], "effort": "small"|"medium"|"large", "priority": "urgent"|"high"|"medium"|"low", "priority_reason": string}
 
 - kind: "bug" when something that should already work is broken, "improvement" for a change to something that exists, "feature" for a new capability, "content" for new items in an existing list (an activity, a food, a medication, an accessory).
 - ask: one sentence, what they want, starting with a verb.
 - why: one or two sentences on the problem behind it, in terms of the user's goal.
 - needs: 2 to 5 short bullets of the work it would take (screens, data, logic, integrations). For a bug, what to investigate and fix.
 - open_questions: 0 to 3 short questions worth settling first.
-- effort: rough size for a small team.`;
+- effort: rough size for a small team.
+- priority: how soon to build it, weighing revenue and trust against effort.
+  "urgent": something users paid for or were promised is broken or missing, or it creates billing, refund, chargeback, privacy or App Review risk.
+  "high": a bug in a core flow (logging, medication tracking, chat, paywall) or a cheap change that helps trial conversion, retention or ratings.
+  "medium": a solid improvement many GLP-1 users would value, or a bigger build with clear retention upside.
+  "low": a niche or cosmetic ask, a one-user request needing a large build, or content that can wait for the next pass on that list.
+- priority_reason: one short sentence (under 100 characters) on why that level.`;
 
 export function buildBriefInput(params: {
   title: string;
@@ -172,6 +179,8 @@ export function parseBrief(
     ? (o.effort as FeatureRequestBrief["effort"])
     : "medium";
   const area = APP_AREAS.includes(o.area as string) ? (o.area as string) : "Other";
+  const priority = isPriority(o.priority) ? o.priority : undefined;
+  const priorityReason = priority ? cleanText(o.priority_reason, 160) || undefined : undefined;
   return {
     kind,
     area,
@@ -180,6 +189,8 @@ export function parseBrief(
     needs: cleanList(o.needs, 5),
     openQuestions: cleanList(o.open_questions, 3),
     effort,
+    ...(priority ? { priority } : {}),
+    ...(priorityReason ? { priorityReason } : {}),
     model: MODEL,
     generatedAt: at,
   };
@@ -196,7 +207,7 @@ export async function generateBrief(params: {
     model: MODEL,
     system: SYSTEM,
     content: [{ type: "text", text: buildBriefInput(params) }],
-    maxTokens: 800,
+    maxTokens: 900,
     maxRetries: 2,
   });
   return parseBrief(firstJson(text));

@@ -16,6 +16,7 @@ const Patch = z
       .enum(["new", "planned", "in_progress", "shipped", "declined"])
       .optional(),
     epic: z.string().max(100).nullable().optional(),
+    priority: z.enum(["urgent", "high", "medium", "low"]).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "empty patch",
@@ -66,6 +67,8 @@ export async function PATCH(
 
   const patch: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
   if (patch.epic === "") patch.epic = null;
+  // A hand-set priority replaces the auto one, so its reason no longer applies.
+  if ("priority" in parsed.data) patch.priority_reason = null;
 
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/feature_requests?id=eq.${encodeURIComponent(id)}`,

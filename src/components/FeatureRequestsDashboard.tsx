@@ -7,6 +7,11 @@ import { Icons } from "./Icons";
 import { FeatureRequestDrawer } from "./FeatureRequestDrawer";
 import { API } from "@/lib/supabase";
 import { formatRelative } from "@/lib/format";
+import {
+  PRIORITY_LABELS,
+  PRIORITY_TONES,
+  priorityRank,
+} from "@/lib/feature-priority";
 import type { FeatureRequest, FeatureRequestStatus } from "@/lib/types";
 
 const STATUS_FILTERS: Array<"all" | FeatureRequestStatus> = [
@@ -25,6 +30,9 @@ const STATUS_LABELS: Record<FeatureRequestStatus, string> = {
   shipped: "Shipped",
   declined: "Declined",
 };
+
+// Created | Priority | Title | Epic | Submitter | Status
+const GRID = "110px 92px 1fr 140px 160px 120px";
 
 const oneLine: React.CSSProperties = {
   display: "block",
@@ -53,6 +61,7 @@ export function FeatureRequestsDashboard() {
     "all",
   );
   const [epicFilter, setEpicFilter] = React.useState<string | null>(null);
+  const [sort, setSort] = React.useState<"priority" | "newest">("priority");
   const [selected, setSelected] = React.useState<FeatureRequest | null>(null);
   const [creating, setCreating] = React.useState(false);
 
@@ -112,12 +121,17 @@ export function FeatureRequestsDashboard() {
   }, [rows]);
 
   const visible = React.useMemo(() => {
-    return rows.filter((r) => {
+    const out = rows.filter((r) => {
       if (filter !== "all" && r.status !== filter) return false;
       if (epicFilter && r.epic !== epicFilter) return false;
       return true;
     });
-  }, [rows, filter, epicFilter]);
+    // rows arrive newest first; a stable sort keeps that inside each level.
+    if (sort === "priority") {
+      out.sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
+    }
+    return out;
+  }, [rows, filter, epicFilter, sort]);
 
   const onSaved = (saved: FeatureRequest, opts?: { close?: boolean }) => {
     setRows((prev) => {
@@ -223,6 +237,38 @@ export function FeatureRequestsDashboard() {
             </button>
           );
         })}
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              fontFamily: "var(--font-geist-mono), monospace",
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+              color: "var(--ink-4)",
+            }}
+          >
+            Sort
+          </span>
+          <Chip
+            tone={sort === "priority" ? "ink" : "neutral"}
+            onClick={() => setSort("priority")}
+          >
+            Priority
+          </Chip>
+          <Chip
+            tone={sort === "newest" ? "ink" : "neutral"}
+            onClick={() => setSort("newest")}
+          >
+            Newest
+          </Chip>
+        </div>
       </div>
 
       {epics.length > 0 && (
@@ -306,7 +352,7 @@ export function FeatureRequestsDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "120px 1fr 140px 160px 120px",
+              gridTemplateColumns: GRID,
               padding: "10px 16px",
               borderBottom: "1px solid var(--line)",
               background: "var(--surface-2)",
@@ -318,6 +364,7 @@ export function FeatureRequestsDashboard() {
             }}
           >
             <div>Created</div>
+            <div>Priority</div>
             <div>Title</div>
             <div>Epic</div>
             <div>Submitter</div>
@@ -329,7 +376,7 @@ export function FeatureRequestsDashboard() {
               onClick={() => setSelected(r)}
               style={{
                 display: "grid",
-                gridTemplateColumns: "120px 1fr 140px 160px 120px",
+                gridTemplateColumns: GRID,
                 padding: "14px 16px",
                 borderBottom: "1px solid var(--line)",
                 background: "transparent",
@@ -357,6 +404,15 @@ export function FeatureRequestsDashboard() {
                 }}
               >
                 {formatRelative(r.createdAt)}
+              </div>
+              <div title={r.priorityReason ?? undefined}>
+                {r.priority ? (
+                  <Chip tone={PRIORITY_TONES[r.priority]}>
+                    {PRIORITY_LABELS[r.priority]}
+                  </Chip>
+                ) : (
+                  <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>
+                )}
               </div>
               <div style={{ minWidth: 0, paddingRight: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>

@@ -11,9 +11,16 @@ import {
   ticketBriefTarget,
   type RoadmapItem,
 } from "@/lib/roadmap";
+import {
+  PRIORITY_LABELS,
+  PRIORITY_OPTIONS,
+  PRIORITY_TONES,
+  isPriority,
+} from "@/lib/feature-priority";
 import type {
   FeatureRequest,
   FeatureRequestDetails,
+  FeatureRequestPriority,
   FeatureRequestStatus,
 } from "@/lib/types";
 
@@ -67,6 +74,9 @@ export function FeatureRequestDrawer({
     request?.status ?? "new",
   );
   const [epic, setEpic] = React.useState(request?.epic ?? "");
+  const [priority, setPriority] = React.useState<FeatureRequestPriority | null>(
+    request?.priority ?? null,
+  );
   const [saving, setSaving] = React.useState(false);
   const [briefing, setBriefing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -76,8 +86,9 @@ export function FeatureRequestDrawer({
     setDescription(request?.description ?? "");
     setStatus(request?.status ?? "new");
     setEpic(request?.epic ?? "");
+    setPriority(request?.priority ?? null);
     setError(null);
-  }, [request?.id, request?.title, request?.description, request?.status, request?.epic]);
+  }, [request?.id, request?.title, request?.description, request?.status, request?.epic, request?.priority]);
 
   const busy = saving || briefing;
 
@@ -120,11 +131,14 @@ export function FeatureRequestDrawer({
         });
         const json = await res.json();
         if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-        if (status !== "new" && json.id) {
+        if ((status !== "new" || priority) && json.id) {
           const patchRes = await fetch(`/api/feature-requests/${json.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status }),
+            body: JSON.stringify({
+              ...(status !== "new" ? { status } : {}),
+              ...(priority ? { priority } : {}),
+            }),
           });
           const pj = await patchRes.json();
           if (patchRes.ok && pj.ok) {
@@ -141,6 +155,9 @@ export function FeatureRequestDrawer({
           description: description.trim(),
           status,
           epic: epic.trim() || null,
+          // Only send it when it changed, so saving a title edit keeps the
+          // auto priority's reason.
+          ...(priority !== (request?.priority ?? null) ? { priority } : {}),
         });
         onSaved(row, { close: false });
         setEditing(false);
@@ -163,6 +180,22 @@ export function FeatureRequestDrawer({
       toast(`Marked ${STATUS_LABELS[next].toLowerCase()}`);
     } catch (e) {
       setStatus(request.status);
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changePriority = async (next: FeatureRequestPriority | null) => {
+    if (!request || next === request.priority) return;
+    setPriority(next);
+    setSaving(true);
+    setError(null);
+    try {
+      onSaved(await patch({ priority: next }), { close: false });
+      toast(next ? `Priority set to ${PRIORITY_LABELS[next].toLowerCase()}` : "Priority cleared");
+    } catch (e) {
+      setPriority(request.priority);
       setError((e as Error).message);
     } finally {
       setSaving(false);
@@ -320,6 +353,24 @@ export function FeatureRequestDrawer({
                   </Field>
                 </div>
                 <div style={{ flex: 1 }}>
+                  <Field label="Priority">
+                    <select
+                      value={priority ?? ""}
+                      onChange={(e) =>
+                        setPriority(isPriority(e.target.value) ? e.target.value : null)
+                      }
+                      style={inputStyle}
+                    >
+                      <option value="">Not set</option>
+                      {PRIORITY_OPTIONS.map((p) => (
+                        <option key={p} value={p}>
+                          {PRIORITY_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ flex: 1 }}>
                   <Field label="Epic (free-text tag)">
                     <input
                       type="text"
@@ -344,6 +395,8 @@ export function FeatureRequestDrawer({
                 request={request}
                 status={status}
                 onStatus={changeStatus}
+                priority={priority}
+                onPriority={changePriority}
                 statusDisabled={busy}
                 briefing={briefing}
                 onRegenerate={regenerate}
@@ -447,6 +500,8 @@ function TicketView({
   request,
   status,
   onStatus,
+  priority,
+  onPriority,
   statusDisabled,
   briefing,
   onRegenerate,
@@ -455,6 +510,8 @@ function TicketView({
   request: FeatureRequest;
   status: FeatureRequestStatus;
   onStatus: (s: FeatureRequestStatus) => void;
+  priority: FeatureRequestPriority | null;
+  onPriority: (p: FeatureRequestPriority | null) => void;
   statusDisabled: boolean;
   briefing: boolean;
   onRegenerate: () => void;
@@ -507,6 +564,26 @@ function TicketView({
               </option>
             ))}
           </select>
+          <select
+            value={priority ?? ""}
+            onChange={(e) => onPriority(isPriority(e.target.value) ? e.target.value : null)}
+            disabled={statusDisabled}
+            aria-label="Priority"
+            style={{
+              ...inputStyle,
+              width: "auto",
+              padding: "5px 10px",
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            <option value="">No priority</option>
+            {PRIORITY_OPTIONS.map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABELS[p]} priority
+              </option>
+            ))}
+          </select>
           {brief && (
             <Chip tone={brief.kind === "bug" ? "accent" : "ink"}>
               {KIND_LABELS[brief.kind] ?? brief.kind}
@@ -521,6 +598,12 @@ function TicketView({
             {d?.receivedAt ? ` · asked ${formatDate(d.receivedAt)}` : ""}
           </span>
         </div>
+        {priority && request.priority === priority && request.priorityReason && (
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.45 }}>
+            <Chip tone={PRIORITY_TONES[priority]}>{PRIORITY_LABELS[priority]}</Chip>
+            <span>{request.priorityReason}</span>
+          </div>
+        )}
         {briefTarget && (
           <div>
             <LinkButton href={briefTarget.href} newTab={briefTarget.newTab}>
@@ -877,6 +960,8 @@ function mapRow(row: {
   status: FeatureRequestStatus;
   epic: string | null;
   submitter_email: string | null;
+  priority?: FeatureRequestPriority | null;
+  priority_reason?: string | null;
   details?: FeatureRequestDetails | null;
   created_at: string;
   updated_at: string;
@@ -888,6 +973,8 @@ function mapRow(row: {
     status: row.status,
     epic: row.epic,
     submitterEmail: row.submitter_email,
+    priority: row.priority ?? null,
+    priorityReason: row.priority_reason ?? null,
     details: row.details ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
