@@ -42,6 +42,11 @@ import {
   type OfferCodeRow,
   type OfferName,
 } from "@/lib/support/offer-codes";
+import {
+  describeRedemption,
+  type OfferRedemption,
+  type RedemptionCopy,
+} from "@/lib/support/offer-redemptions";
 import { messageText, splitQuotedText } from "@/lib/support/email-text";
 import { UserSidebar } from "./UserSidebar";
 
@@ -377,6 +382,7 @@ export function ThreadDetail({
             messages={detail.messages}
             draftBodies={activeDrafts.map((d) => d.body)}
             assigned={detail.offerCodes ?? []}
+            redemptions={detail.offerRedemptions ?? null}
             discountAsked={askedForDiscount(thread, detail.messages)}
             feedbackLike={
               thread.category === "feedback" ||
@@ -565,6 +571,7 @@ function OfferCodeCard({
   messages,
   draftBodies,
   assigned,
+  redemptions,
   discountAsked,
   feedbackLike,
   onInsert,
@@ -576,6 +583,8 @@ function OfferCodeCard({
   /** the AI drafts, which may know a first name the thread doesn't */
   draftBodies: string[];
   assigned: OfferCodeRow[];
+  /** redemption status by code; null when the lookup failed */
+  redemptions: Record<string, OfferRedemption> | null;
   discountAsked: boolean;
   feedbackLike: boolean;
   onInsert: (text: string) => void;
@@ -646,6 +655,12 @@ function OfferCodeCard({
           first={i === 0}
           thread={thread}
           assigned={has(r.offer)}
+          redemption={
+            // Only Yearly Special redemptions are visible in RevenueCat.
+            r.offer === YEARLY_SPECIAL && has(r.offer) && redemptions
+              ? describeRedemption(redemptions[has(r.offer)!.code], has(r.offer)!.used_at)
+              : null
+          }
           expiredCode={expired(r.offer)}
           blocked={signal.ios === "no" && !has(r.offer)}
           unknownDevice={signal.ios === "unknown"}
@@ -662,6 +677,7 @@ function OfferCodeRowView({
   first,
   thread,
   assigned,
+  redemption,
   expiredCode,
   blocked,
   unknownDevice,
@@ -672,6 +688,8 @@ function OfferCodeRowView({
   first: boolean;
   thread: SupportThreadRow;
   assigned: OfferCodeRow | null;
+  /** whether the assigned code was redeemed; null when we can't tell */
+  redemption: RedemptionCopy | null;
   /** a code this thread got from a batch that has since expired */
   expiredCode: OfferCodeRow | null;
   blocked: boolean;
@@ -756,6 +774,19 @@ function OfferCodeRowView({
           </>
         )}
       </div>
+      {assigned && redemption && (
+        <div style={{ font: "400 12px/1.5 var(--font-ui)", color: "var(--ink-2)" }}>
+          <strong
+            style={{
+              fontWeight: 650,
+              color: redemption.tone === "neutral" ? "var(--ink)" : `var(--${redemption.tone}-text)`,
+            }}
+          >
+            {redemption.headline}
+          </strong>{" "}
+          {redemption.detail}
+        </div>
+      )}
       {expiredCode && !assigned && (
         <div style={{ font: "500 12px/1.45 var(--font-ui)", color: "var(--danger-text)" }}>
           The code this thread got earlier ({expiredCode.code}) is from a batch that expired on{" "}

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
   getActionsForUserOrThread,
+  getOfferRedemptions,
   getThread,
   getThreadOfferCodes,
   getThreadDrafts,
@@ -53,13 +54,15 @@ export async function GET(
     if (!thread) {
       return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     }
-    const [messages, drafts, actions, offerCodes] = await Promise.all([
+    const [messages, drafts, actions, offerCodes, redemptions] = await Promise.all([
       getThreadMessages(id),
       getThreadDrafts(id),
       // User-scoped: a repeat emailer must not get refunded twice.
       getActionsForUserOrThread(id, thread.resolved_app_user_id),
       // A missing table (deploy before migration) must not break the thread.
       getThreadOfferCodes(id).catch(() => []),
+      // Best effort too: the code card just shows no status without it.
+      getOfferRedemptions().catch(() => null),
     ]);
     if (thread.unread) {
       await patchThread(id, { unread: false }).catch(() => {});
@@ -74,6 +77,12 @@ export async function GET(
       // Lets the sidebar link straight to the customer in RevenueCat.
       revenueCatProjectId: process.env.REVENUECAT_PROJECT_ID ?? null,
       offerCodes,
+      // Only this thread's codes; null when the lookup failed.
+      offerRedemptions: redemptions
+        ? Object.fromEntries(
+            offerCodes.filter((c) => redemptions[c.code]).map((c) => [c.code, redemptions[c.code]]),
+          )
+        : null,
     });
   } catch (e) {
     return NextResponse.json(

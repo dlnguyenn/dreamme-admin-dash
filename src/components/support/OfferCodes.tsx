@@ -28,6 +28,11 @@ import {
   type OfferCodeRow,
   type OfferName,
 } from "@/lib/support/offer-codes";
+import {
+  describeRedemption,
+  type OfferRedemption,
+  type RedemptionCopy,
+} from "@/lib/support/offer-redemptions";
 import { fetchOfferCodes, markOfferCode, timeAgo } from "./api";
 
 type CodeFilter = "free" | "used" | "all";
@@ -60,6 +65,7 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
   const isMobile = useIsMobile();
   const toast = useToast();
   const [allCodes, setAllCodes] = React.useState<OfferCodeRow[] | null>(null);
+  const [redemptions, setRedemptions] = React.useState<Record<string, OfferRedemption> | null>(null);
   const [offer, setOffer] = React.useState<OfferName>(YEARLY_SPECIAL);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -73,6 +79,7 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
       setError(null);
       const r = await fetchOfferCodes();
       setAllCodes(r.codes);
+      setRedemptions(r.redemptions ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -248,6 +255,12 @@ export function OfferCodes({ onOpenThread }: { onOpenThread: (id: string) => voi
               busy={busyCode === c.code}
               onToggle={() => toggle(c)}
               onOpenThread={onOpenThread}
+              redemption={
+                // Only Yearly Special redemptions are visible in RevenueCat.
+                redemptions && c.offer_name === YEARLY_SPECIAL && c.used_at && !isExpiredCode(c)
+                  ? describeRedemption(redemptions[c.code], c.used_at)
+                  : null
+              }
             />
           ))}
         </div>
@@ -268,8 +281,11 @@ function CodeRow({
   busy,
   onToggle,
   onOpenThread,
+  redemption,
 }: {
   row: OfferCodeRow;
+  /** whether a handed-out code was redeemed; null when we can't tell */
+  redemption: RedemptionCopy | null;
   first: boolean;
   isMobile: boolean;
   busy: boolean;
@@ -314,7 +330,20 @@ function CodeRow({
             {row.used_at ? "USED · EXPIRED" : "EXPIRED"}
           </CategoryTag>
         ) : row.used_at ? (
-          <SourceTag size={9.5}>USED</SourceTag>
+          <>
+            <SourceTag size={9.5}>USED</SourceTag>
+            {redemption && (
+              <span title={`${redemption.headline} ${redemption.detail}`}>
+                {redemption.tone === "neutral" ? (
+                  <SourceTag size={9.5}>{redemption.tag}</SourceTag>
+                ) : (
+                  <CategoryTag family={redemption.tone} size={9.5}>
+                    {redemption.tag}
+                  </CategoryTag>
+                )}
+              </span>
+            )}
+          </>
         ) : (
           <CategoryTag family="success" size={9.5}>
             AVAILABLE

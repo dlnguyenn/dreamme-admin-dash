@@ -4,7 +4,13 @@
  */
 import { SUPABASE_URL } from "@/lib/supabase";
 import type { FeatureRequestInsert } from "./trello-card";
-import type { OfferCodeRow, OfferName } from "./offer-codes";
+import { YEARLY_SPECIAL, type OfferCodeRow, type OfferName } from "./offer-codes";
+import {
+  YEARLY_SPECIAL_ASC_OFFER,
+  matchOfferRedemptions,
+  type OfferRedemption,
+  type OfferRedemptionEvent,
+} from "./offer-redemptions";
 import type {
   SupportActionRow,
   SupportDraftRow,
@@ -246,6 +252,40 @@ export async function listOfferCodes(): Promise<OfferCodeRow[]> {
     out.push(...rows);
     if (rows.length < page) return out;
   }
+}
+
+/**
+ * Redemption status of every handed-out Yearly Special code, keyed by code
+ * (see offer-redemptions.ts for what each status can and can't prove). Reads
+ * the PRODUCTION rc_events rows carrying the ASC offer name since the oldest
+ * handout, plus the app account each code's thread is linked to.
+ */
+export async function getOfferRedemptions(): Promise<Record<string, OfferRedemption>> {
+  const codes = await spGet<OfferCodeRow[]>(
+    `apple_offer_codes?select=code,used_at,thread_id,expires_on&offer_name=eq.${encodeURIComponent(YEARLY_SPECIAL)}&used_at=not.is.null&limit=1000`,
+  );
+  if (codes.length === 0) return {};
+  const since = codes.reduce((m, c) => (c.used_at! < m ? c.used_at! : m), codes[0].used_at!);
+  const sinceIso = new Date(new Date(since).getTime() - 24 * 3600 * 1000).toISOString();
+  const threadIds = [...new Set(codes.map((c) => c.thread_id).filter((x): x is string => !!x))];
+  const [events, threads] = await Promise.all([
+    spGet<OfferRedemptionEvent[]>(
+      `rc_events?select=app_user_id,event_at&offer_code=eq.${encodeURIComponent(YEARLY_SPECIAL_ASC_OFFER)}` +
+        `&environment=eq.PRODUCTION&event_at=gte.${encodeURIComponent(sinceIso)}&order=event_at.asc&limit=1000`,
+    ),
+    threadIds.length
+      ? spGet<{ id: string; resolved_app_user_id: string | null; ctx_user: string | null }[]>(
+          `support_threads?select=id,resolved_app_user_id,ctx_user:user_context->>appUserId&id=in.(${threadIds.join(",")})`,
+        )
+      : Promise.resolve([]),
+  ]);
+  const linked: Record<string, string | null> = {};
+  for (const t of threads) linked[t.id] = t.resolved_app_user_id || t.ctx_user || null;
+  return matchOfferRedemptions(
+    codes,
+    events.filter((e) => !!e.app_user_id),
+    linked,
+  );
 }
 
 /** Codes handed to a thread, at most one per offer (newest first). */

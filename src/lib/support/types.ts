@@ -4,6 +4,7 @@
  */
 
 import type { OfferCodeRow } from "./offer-codes";
+import type { OfferRedemption } from "./offer-redemptions";
 
 export type ThreadSource = "email" | "feedback";
 export type ThreadStatus =
@@ -312,4 +313,6 @@ export interface ThreadDetailPayload {
   revenueCatProjectId: string | null;
   /** App Store codes already handed to this thread, one per offer at most */
   offerCodes?: OfferCodeRow[];
+  /** Redemption status of those codes, by code; null when the lookup failed */
+  offerRedemptions?: Record<string, OfferRedemption> | null;
 }

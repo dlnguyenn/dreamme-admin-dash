@@ -11,6 +11,7 @@ import type {
   ThreadStatus,
 } from "@/lib/support/types";
 import type { OfferCodeCounts, OfferCodeRow, OfferName } from "@/lib/support/offer-codes";
+import type { OfferRedemption } from "@/lib/support/offer-redemptions";
 
 async function json<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => null)) as
@@ -183,6 +184,8 @@ export async function linkStripeCustomer(
 export async function fetchOfferCodes(): Promise<{
   codes: OfferCodeRow[];
   counts: OfferCodeCounts;
+  /** redemption status by code; null when the lookup failed */
+  redemptions: Record<string, OfferRedemption> | null;
 }> {
   return json(await fetch(`/api/support/offer-codes`, { cache: "no-store" }));
 }

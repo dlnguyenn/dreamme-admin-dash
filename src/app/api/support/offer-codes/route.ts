@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import {
+  getOfferRedemptions,
   listOfferCodes,
   setOfferCodeUsed,
   supportDbConfigured,
@@ -30,12 +31,17 @@ export async function GET(req: Request) {
   if (!checkIngestAuth(req)) return fail("unauthorized", 401);
   if (!supportDbConfigured()) return fail("Supabase not configured", 500);
   try {
-    const codes = await listOfferCodes();
+    const [codes, redemptions] = await Promise.all([
+      listOfferCodes(),
+      // Best effort: the list still loads without redemption status.
+      getOfferRedemptions().catch(() => null),
+    ]);
     const used = codes.filter((c) => c.used_at).length;
     return NextResponse.json({
       ok: true,
       codes,
       counts: { total: codes.length, used, free: codes.length - used },
+      redemptions,
     });
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e), 500);
