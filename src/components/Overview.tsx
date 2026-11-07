@@ -21,9 +21,9 @@ import { Card, ErrorBanner, HeroCard, StatStrip } from "./porcelain";
 import { ViewsPanel } from "./overview/ViewsPanel";
 import { AttributionPanel } from "./overview/AttributionPanel";
 import { MorningPanel } from "./overview/MorningPanel";
+import { PaidPanel } from "./overview/PaidPanel";
 import {
   OpsPanel,
-  PaidPanel,
   QueuePanel,
   SupportPanel,
   TodayPanel,
@@ -32,6 +32,203 @@ import {
 import { fmtMoney, fmtNum, fmtPct, relTime } from "./overview/shared";
 
 const REFRESH_MS = 120_000;
+
+/**
+ * Sections the Overview can hide. Stored per browser; organic views and top
+ * posts start hidden because Doublespeed is paused and they read stale.
+ */
+type SectionId =
+  | "attribution"
+  | "paid"
+  | "views"
+  | "morning"
+  | "today"
+  | "queue"
+  | "support"
+  | "ops"
+  | "topPosts";
+
+const SECTION_LABELS: Record<SectionId, string> = {
+  attribution: "Where they heard about us",
+  paid: "Paid",
+  views: "Organic views",
+  morning: "This morning’s posts",
+  today: "Going out today",
+  queue: "Account queue",
+  support: "Support",
+  ops: "Pipeline health",
+  topPosts: "Top posts",
+};
+
+const DOUBLESPEED_ONLY = new Set<SectionId>(["morning", "today", "queue"]);
+const SECTION_ORDER = (Object.keys(SECTION_LABELS) as SectionId[]).filter(
+  (id) => !(DOUBLESPEED_PAUSED && DOUBLESPEED_ONLY.has(id)),
+);
+const DEFAULT_HIDDEN: SectionId[] = ["views", "topPosts"];
+const HIDDEN_KEY = "dad.overview.hidden.v1";
+
+function useHiddenSections() {
+  const [hidden, setHidden] = React.useState<Set<SectionId>>(() => new Set(DEFAULT_HIDDEN));
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HIDDEN_KEY);
+      if (raw) {
+        const ids = (JSON.parse(raw) as string[]).filter(
+          (x): x is SectionId => x in SECTION_LABELS,
+        );
+        setHidden(new Set(ids));
+      }
+    } catch {
+      // private window or blocked storage: keep the defaults
+    }
+  }, []);
+  const toggle = React.useCallback((id: SectionId) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+      } catch {
+        // not persisted, still applies for this visit
+      }
+      return next;
+    });
+  }, []);
+  return { hidden, toggle };
+}
+
+function SectionsMenu({
+  hidden,
+  onToggle,
+}: {
+  hidden: Set<SectionId>;
+  onToggle: (id: SectionId) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const hiddenCount = SECTION_ORDER.filter((id) => hidden.has(id)).length;
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "8px 14px",
+          borderRadius: 999,
+          border: "1px solid var(--line-2)",
+          background: open ? "var(--neutral-soft)" : "transparent",
+          font: "600 13px var(--font-ui)",
+          color: "var(--ink-2)",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <Icons.Layers size={14} stroke="currentColor" />
+        Sections{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "calc(100% + 6px)",
+            zIndex: 30,
+            minWidth: 240,
+            background: "var(--surface)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 12,
+            boxShadow: "var(--shadow-card)",
+            padding: 6,
+          }}
+        >
+          <div
+            style={{
+              font: "650 10.5px var(--font-ui)",
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              padding: "6px 10px 4px",
+            }}
+          >
+            Show on Overview
+          </div>
+          {SECTION_ORDER.map((id) => (
+            <label
+              key={id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 10px",
+                borderRadius: 8,
+                font: "500 13px var(--font-ui)",
+                color: "var(--ink)",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!hidden.has(id)}
+                onChange={() => onToggle(id)}
+                style={{ accentColor: "var(--accent)", width: 15, height: 15, margin: 0 }}
+              />
+              {SECTION_LABELS[id]}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Two columns on desktop, collapsing to one when a side has nothing shown. */
+function TwoCol({
+  left,
+  right,
+  isMobile,
+}: {
+  left: React.ReactNode[];
+  right: React.ReactNode[];
+  isMobile: boolean;
+}) {
+  const l = left.filter(Boolean);
+  const r = right.filter(Boolean);
+  if (l.length === 0 && r.length === 0) return null;
+  const single = isMobile || l.length === 0 || r.length === 0;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: single ? "1fr" : "1fr 1fr",
+        gap: single ? 0 : 24,
+        alignItems: "start",
+      }}
+    >
+      {l.length > 0 && <div style={{ minWidth: 0 }}>{l}</div>}
+      {r.length > 0 && <div style={{ minWidth: 0 }}>{r}</div>}
+    </div>
+  );
+}
 
 /**
  * Manual poll. The screen already refreshes on a 2-minute timer, but trial
@@ -81,6 +278,8 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
   const [loading, setLoading] = React.useState(true);
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const { hidden, toggle } = useHiddenSections();
+  const show = (id: SectionId) => !hidden.has(id);
 
   const load = React.useCallback(async () => {
     try {
@@ -131,17 +330,20 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               : undefined
         }
         actions={
-          <RefreshButton
-            busy={refreshing}
-            onClick={async () => {
-              setRefreshing(true);
-              try {
-                await load();
-              } finally {
-                setRefreshing(false);
-              }
-            }}
-          />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <SectionsMenu hidden={hidden} onToggle={toggle} />
+            <RefreshButton
+              busy={refreshing}
+              onClick={async () => {
+                setRefreshing(true);
+                try {
+                  await load();
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+            />
+          </div>
         }
       />
 
@@ -227,68 +429,68 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
             />
           </div>
 
-          <AttributionPanel attribution={data?.attribution ?? null} />
+          {show("attribution") && (
+            <AttributionPanel attribution={data?.attribution ?? null} />
+          )}
 
-          <ViewsPanel views={data?.views ?? null} />
+          {show("paid") && (
+            <PaidPanel paid={data?.paid ?? null} onOpen={() => onNavigate("marketing")} />
+          )}
+
+          {show("views") && <ViewsPanel views={data?.views ?? null} />}
 
           {/* Did the machines run — sits under the reach numbers it feeds. */}
-          {!DOUBLESPEED_PAUSED && (
+          {!DOUBLESPEED_PAUSED && show("morning") && (
             <MorningPanel morning={data?.morning ?? null} onQueued={load} />
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: isMobile ? 0 : 24,
-              alignItems: "start",
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              {DOUBLESPEED_PAUSED ? (
+          <TwoCol
+            isMobile={isMobile}
+            left={
+              DOUBLESPEED_PAUSED
+                ? [
+                    show("support") && (
+                      <SupportPanel
+                        key="support"
+                        support={data?.support ?? null}
+                        onOpen={() => onNavigate("support")}
+                      />
+                    ),
+                  ]
+                : [
+                    show("today") && (
+                      <TodayPanel
+                        key="today"
+                        today={data?.today ?? null}
+                        onOpen={() => onNavigate("our-slideshows")}
+                      />
+                    ),
+                    show("queue") && <QueuePanel key="queue" queue={data?.queue ?? null} />,
+                  ]
+            }
+            right={[
+              !DOUBLESPEED_PAUSED && show("support") && (
                 <SupportPanel
+                  key="support"
                   support={data?.support ?? null}
                   onOpen={() => onNavigate("support")}
                 />
-              ) : (
-                <>
-                  <TodayPanel
-                    today={data?.today ?? null}
-                    onOpen={() => onNavigate("our-slideshows")}
-                  />
-                  <QueuePanel queue={data?.queue ?? null} />
-                </>
-              )}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              {!DOUBLESPEED_PAUSED && (
-                <SupportPanel
-                  support={data?.support ?? null}
-                  onOpen={() => onNavigate("support")}
-                />
-              )}
-              <OpsPanel ops={data?.ops ?? null} />
-            </div>
-          </div>
+              ),
+              show("ops") && <OpsPanel key="ops" ops={data?.ops ?? null} />,
+            ]}
+          />
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: isMobile ? 0 : 24,
-              alignItems: "start",
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <TopPostsPanel posts={data?.topPosts ?? null} />
+          {show("topPosts") && <TopPostsPanel posts={data?.topPosts ?? null} />}
+
+          {SECTION_ORDER.some((id) => hidden.has(id)) && (
+            <div style={{ marginTop: 28, font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>
+              Hidden:{" "}
+              {SECTION_ORDER.filter((id) => hidden.has(id))
+                .map((id) => SECTION_LABELS[id])
+                .join(", ")}
+              . Turn them back on from Sections at the top.
             </div>
-            <div style={{ minWidth: 0 }}>
-              <PaidPanel
-                paid={data?.paid ?? null}
-                onOpen={() => onNavigate("marketing")}
-              />
-            </div>
-          </div>
+          )}
 
           <div style={{ height: 40 }} />
         </>

@@ -318,7 +318,7 @@ export function AttributionPanel({
                         ? "1fr auto"
                         : "144px 52px 96px 1fr 72px 126px",
                       alignItems: "center",
-                      gap: isMobile ? 6 : 12,
+                      columnGap: isMobile ? 6 : 12,
                       rowGap: 4,
                     }}
                   >

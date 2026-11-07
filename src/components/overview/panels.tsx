@@ -2,7 +2,7 @@
 
 /**
  * The smaller Overview panels: today's outgoing content, support, top posts,
- * paid + alerts, and pipeline health.
+ * and pipeline health. Paid lives in PaidPanel.tsx.
  */
 
 import * as React from "react";
@@ -10,7 +10,6 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { PERSONAS, isPersonaId } from "@/lib/personas";
 import type {
   OpsCheck,
-  PaidSection,
   SupportSection,
   TodaySection,
   TopPost,
@@ -501,112 +500,6 @@ export function TopPostsPanel({ posts }: { posts: TopPost[] | null }) {
               </div>
             )}
           </>
-        )}
-      </Card>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Paid + alerts
-
-export function PaidPanel({
-  paid,
-  onOpen,
-}: {
-  paid: PaidSection | null;
-  onOpen: () => void;
-}) {
-  const isMobile = useIsMobile();
-  if (!paid) return null;
-
-  const stats: { label: string; value: string }[] = [
-    { label: "Spend", value: fmtMoney(paid.spend, 2) },
-    { label: "Installs", value: fmtNum(paid.installs) },
-    { label: "CPI", value: fmtMoney(paid.cpi, 2) },
-    { label: "Cost / trial", value: fmtMoney(paid.costPerTrial, 2) },
-  ];
-
-  return (
-    <>
-      <SectionHeader
-        family="warning"
-        icon="Dollar"
-        title="Paid"
-        meta={paid.date ? `${paid.date} (last day with spend)` : undefined}
-        right={<GoToLink label="Marketing Efficiency" onClick={onOpen} />}
-      />
-      <Card pad={isMobile ? "14px 14px" : "16px 18px"}>
-        {paid.date == null ? (
-          <EmptyState title="No recent Meta spend">
-            Nothing in <code>ad_insights_daily</code> for the last three days.
-          </EmptyState>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? 96 : 120}px, 1fr))`,
-              gap: 14,
-            }}
-          >
-            {stats.map((s) => (
-              <div key={s.label} style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    font: "650 10.5px var(--font-ui)",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    color: "var(--ink-3)",
-                    marginBottom: 6,
-                  }}
-                >
-                  {s.label}
-                </div>
-                <div
-                  style={{
-                    font: "700 20px/1 var(--font-ui)",
-                    fontVariantNumeric: "tabular-nums",
-                    color: "var(--ink)",
-                  }}
-                >
-                  {s.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {paid.alerts.length > 0 && (
-          <div style={{ display: "grid", gap: 6, marginTop: 16 }}>
-            {paid.alerts.map((a) => {
-              const family =
-                a.severity === "critical"
-                  ? "danger"
-                  : a.severity === "warn"
-                    ? "warning"
-                    : "info";
-              return (
-                <div
-                  key={a.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 9,
-                    padding: "9px 12px",
-                    borderRadius: 10,
-                    background: fam(family).soft,
-                    font: "400 12.5px/1.45 var(--font-ui)",
-                    color: fam(family).text,
-                  }}
-                >
-                  <span style={{ fontWeight: 700, flex: "none" }}>
-                    {a.campaignName ?? "Account"}
-                  </span>
-                  <span style={{ minWidth: 0 }}>{a.message}</span>
-                </div>
-              );
-            })}
-          </div>
         )}
       </Card>
     </>

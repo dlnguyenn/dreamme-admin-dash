@@ -32,6 +32,7 @@ import {
   dsPosts,
 } from "@/lib/viewsources/doublespeed";
 import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
+import { fetchPaidDaily, type PaidDaily } from "@/lib/overview-paid";
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
@@ -254,6 +255,8 @@ export interface TopPost {
 }
 
 export interface PaidSection {
+  /** Today / yesterday / a week ago / last 7 days; null when it failed. */
+  daily: PaidDaily | null;
   date: string | null;
   spend: number | null;
   installs: number | null;
@@ -1316,9 +1319,11 @@ interface AlertRow {
   campaign_name: string | null;
 }
 
-async function fetchPaid(): Promise<PaidSection> {
+async function fetchPaid(
+  rcTrialStarts: Promise<TrialStartsRow[] | null>,
+): Promise<PaidSection> {
   const since = dateWindow(3)[0];
-  const [insights, alerts] = await Promise.all([
+  const [insights, alerts, daily] = await Promise.all([
     sbGet<AdInsightRow[]>(
       `ad_insights_daily?select=date,spend,installs,trial_starts&date=gte.${since}&order=date.desc&limit=1000`,
     ),
@@ -1326,6 +1331,18 @@ async function fetchPaid(): Promise<PaidSection> {
       `marketing_alerts?select=id,severity,message,metric,campaign_name` +
         `&resolved_at=is.null&order=created_at.desc&limit=5`,
     ),
+    rcTrialStarts
+      .then((ts) =>
+        fetchPaidDaily({
+          trialStarts: ts,
+          syncedInsights: (from) =>
+            sbGet(
+              `ad_insights_daily?select=date,campaign_id,campaign_name,spend,installs,trial_starts` +
+                `&date=gte.${from}&order=date.desc&limit=5000`,
+            ),
+        }),
+      )
+      .catch(() => null),
   ]);
 
   // ad_insights_daily is one row per ad per day; roll up the most recent day
@@ -1348,6 +1365,7 @@ async function fetchPaid(): Promise<PaidSection> {
   const trialStarts = rows.reduce((s, r) => s + (Number(r.trial_starts) || 0), 0);
 
   return {
+    daily,
     date: day ?? null,
     spend: day ? spend : null,
     installs: day ? installs : null,
@@ -1491,6 +1509,8 @@ async function section<T>(
 
 export async function buildOverview(): Promise<OverviewPayload> {
   const errors: string[] = [];
+  // Shared: the hero tile and the Paid section must count trials the same way.
+  const trialStartsP = section("trial-starts", errors, fetchTrialStarts);
 
   const [
     rc,
@@ -1507,7 +1527,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     attribution,
   ] = await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
-      section("trial-starts", errors, fetchTrialStarts),
+      trialStartsP,
       section("mixpanel-onboarding", errors, fetchOnboardingStartsToday),
       section("views", errors, fetchViews),
       section("support", errors, fetchSupport),
@@ -1515,7 +1535,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       DOUBLESPEED_PAUSED ? null : section("morning", errors, fetchMorning),
       DOUBLESPEED_PAUSED ? null : section("queue", errors, fetchQueueCoverage),
       section("top-posts", errors, fetchTopPosts),
-      section("paid", errors, fetchPaid),
+      section("paid", errors, () => fetchPaid(trialStartsP)),
       section("ops", errors, fetchOps),
       section("attribution", errors, fetchAttribution),
     ]);
