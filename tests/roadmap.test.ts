@@ -6,6 +6,7 @@ import {
   endPosition,
   isOverdue,
   requestStatusForStage,
+  ticketBriefTarget,
   todayIso,
   type RoadmapItem,
 } from "@/lib/roadmap";
@@ -113,5 +114,37 @@ describe("isOverdue", () => {
 
   it("formats today as a local YYYY-MM-DD", () => {
     expect(todayIso(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+});
+
+describe("ticketBriefTarget", () => {
+  const host = "dreamme-admin-dash.vercel.app";
+  it("is null with no items, no brief, or a bad link", () => {
+    expect(ticketBriefTarget(null, host)).toBeNull();
+    expect(ticketBriefTarget([], host)).toBeNull();
+    expect(ticketBriefTarget([item({ brief_url: null })], host)).toBeNull();
+    expect(ticketBriefTarget([item({ brief_url: "  " })], host)).toBeNull();
+    expect(ticketBriefTarget([item({ brief_url: "javascript:alert(1)" })], host)).toBeNull();
+  });
+  it("opens an outside brief in a new tab", () => {
+    expect(
+      ticketBriefTarget([item({ brief_url: "https://claude.ai/artifact/abc" })], host),
+    ).toEqual({ href: "https://claude.ai/artifact/abc", newTab: true });
+  });
+  it("opens a DAD brief in place on the Roadmap", () => {
+    expect(
+      ticketBriefTarget(
+        [item({ brief_url: `https://${host}/?tab=roadmap&brief=review-prompts` })],
+        host,
+      ),
+    ).toEqual({ href: "/?tab=roadmap&brief=review-prompts", newTab: false });
+  });
+  it("uses the first item that has a brief", () => {
+    expect(
+      ticketBriefTarget(
+        [item({ id: "a" }), item({ id: "b", brief_url: "https://example.com/b" })],
+        host,
+      )?.href,
+    ).toBe("https://example.com/b");
   });
 });

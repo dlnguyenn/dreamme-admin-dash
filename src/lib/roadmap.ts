@@ -110,6 +110,23 @@ export function briefLink(origin: string, slug: string): string {
   return `${origin.replace(/\/$/, "")}/?tab=roadmap&brief=${encodeURIComponent(slug)}`;
 }
 
+/**
+ * The brief to show on a Feature Requests ticket: the first brief link on
+ * the roadmap items made from it. A DAD brief opens in place on the Roadmap
+ * (same tab); any other page opens in a new tab. Null when no item has one.
+ */
+export function ticketBriefTarget(
+  items: RoadmapItem[] | null,
+  host: string,
+): { href: string; newTab: boolean } | null {
+  const url = normalizeBriefUrl(items?.find((i) => normalizeBriefUrl(i.brief_url))?.brief_url);
+  if (!url || briefUrlError(url)) return null;
+  const slug = briefSlugFromUrl(url, host);
+  return slug
+    ? { href: `/?tab=roadmap&brief=${encodeURIComponent(slug)}`, newTab: false }
+    : { href: url, newTab: true };
+}
+
 const PRIORITY_RANK: Record<RoadmapPriority, number> = { high: 0, normal: 1, low: 2 };
 
 /**

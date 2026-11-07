@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/format";
 import {
   STAGE_LABELS,
   requestStatusForStage,
+  ticketBriefTarget,
   type RoadmapItem,
 } from "@/lib/roadmap";
 import type {
@@ -471,6 +472,11 @@ function TicketView({
   const quote = d?.quote ?? (fallbackQuote || null);
   const threadUrl = d?.threadUrl ?? matchUrl(request.description, /https?:\/\/\S+[?&]thread=[0-9a-f-]{36}/i);
   const trelloUrl = d?.trelloUrl ?? matchUrl(request.description, /https:\/\/trello\.com\/c\/[A-Za-z0-9]+/);
+  const [roadmapItems, setRoadmapItems] = useLinkedRoadmapItems(request.id);
+  const briefTarget = ticketBriefTarget(
+    roadmapItems,
+    typeof window === "undefined" ? "" : window.location.host,
+  );
 
   return (
     <>
@@ -515,6 +521,13 @@ function TicketView({
             {d?.receivedAt ? ` · asked ${formatDate(d.receivedAt)}` : ""}
           </span>
         </div>
+        {briefTarget && (
+          <div>
+            <LinkButton href={briefTarget.href} newTab={briefTarget.newTab}>
+              Read the brief
+            </LinkButton>
+          </div>
+        )}
       </div>
 
       {brief ? (
@@ -611,7 +624,12 @@ function TicketView({
       )}
 
       <Section label="Roadmap">
-        <RoadmapLink request={request} onPlanned={onPlanned} />
+        <RoadmapLink
+          request={request}
+          items={roadmapItems}
+          setItems={setRoadmapItems}
+          onPlanned={onPlanned}
+        />
       </Section>
 
       <Section label="Discord">
@@ -640,28 +658,41 @@ function TicketView({
  * Shows the roadmap item this ticket became, or a button to put it on the
  * roadmap (as Next). The roadmap API moves the ticket to "planned".
  */
-function RoadmapLink({
-  request,
-  onPlanned,
-}: {
-  request: FeatureRequest;
-  onPlanned: (status: FeatureRequestStatus) => void;
-}) {
-  const toast = useToast();
+/**
+ * The roadmap items made from a ticket (null while loading). Shared by the
+ * "Read the brief" button at the top and the Roadmap section below.
+ */
+function useLinkedRoadmapItems(
+  requestId: string,
+): [RoadmapItem[] | null, React.Dispatch<React.SetStateAction<RoadmapItem[] | null>>] {
   const [items, setItems] = React.useState<RoadmapItem[] | null>(null);
-  const [adding, setAdding] = React.useState(false);
-
   React.useEffect(() => {
     let live = true;
     setItems(null);
-    fetch(`/api/roadmap?feature_request_id=${encodeURIComponent(request.id)}`)
+    fetch(`/api/roadmap?feature_request_id=${encodeURIComponent(requestId)}`)
       .then((r) => r.json())
       .then((j) => live && setItems(j.ok ? j.items : []))
       .catch(() => live && setItems([]));
     return () => {
       live = false;
     };
-  }, [request.id]);
+  }, [requestId]);
+  return [items, setItems];
+}
+
+function RoadmapLink({
+  request,
+  items,
+  setItems,
+  onPlanned,
+}: {
+  request: FeatureRequest;
+  items: RoadmapItem[] | null;
+  setItems: (items: RoadmapItem[]) => void;
+  onPlanned: (status: FeatureRequestStatus) => void;
+}) {
+  const toast = useToast();
+  const [adding, setAdding] = React.useState(false);
 
   const add = async () => {
     const brief = request.details?.brief;
