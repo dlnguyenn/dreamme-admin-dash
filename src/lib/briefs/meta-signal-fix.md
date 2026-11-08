@@ -26,78 +26,78 @@ The result: Meta reports about $12 per trial while Singular, SKAN and the in-app
 
 ## Target state
 
-One sender per event, and for trials and paid that sender is RevenueCat. Its Meta integration has no switch to turn off its own trial event, and its docs recommend this exact setup: turn off the Meta SDK's purchase logging and let RevenueCat send the purchase events, because the two can't share an event ID. RevenueCat also sees conversions server-side, days after the app was last open. It can match users who declined tracking because the app already gives it Meta's anonymous ID (`$fbAnonId`, on 588 of 607 recent webhook events).
+One sender per event. The app's Meta SDK sends Start trial, RevenueCat sends the paid events with value. (Changed Nov 8. The Nov 6 version had RevenueCat sending trials too; see "Why the plan changed" below.)
 
 | Event | Sender after the fix | Who stops sending |
 | --- | --- | --- |
 | App install | Meta SDK and Singular (Meta dedupes installs) | nobody |
-| Start trial | RevenueCat | the app's Facebook SDK (manual call and auto-logging), Singular |
+| Start trial | Meta SDK (iOS: Meta's automatic logging; Android: the app's `logStartTrial` call) | the app's manual iOS call, RevenueCat, Singular |
 | Subscribe (paid) | RevenueCat, with value | the app, Singular |
 | Complete registration | Meta SDK | Singular |
-| Trial converted (`rc_trial_converted`) | not forwarded to Meta; stays in Singular for reporting | — |
+| Trial converted (`rc_trial_converted`) | not forwarded to Meta; stays in Singular for reporting | nobody |
 
 Singular keeps every measurement job it does today: Meta cost by placement, trials by ad set and ad, SKAN cross-check, and Android cost once configured. It just stops talking to Meta.
 
-The tradeoff: Marcus Burke measured the Meta SDK beating server-side events for in-app conversions, and Meta's docs don't say whether it credits server events from users who declined tracking as well as SDK events. The success check below tests this for us, with a fallback if it fails.
+### Why the plan changed on Nov 8
+
+The Nov 6 plan needed Meta's "Log in-app events automatically" toggle (iOS) switched off. Checked on Nov 8: it is ON and locked. Meta's tooltip says it can't change while SKAN campaigns run. The same toggle explains the SDK's extra 0.66 Start trial per trial: it auto-logs App Store trials on top of our manual call. It also has to stay on, because SKAN conversion values are set on the device by the Meta SDK, and RevenueCat's server events can't set them. Meta's AEM trial optimisation also wants install and trial from the same source. Our experts (Timothe Rey, Marcus Burke) both put the SDK first for trials. RevenueCat's Meta settings now have a per-event "Send" checkbox, so its trial event can be switched off with one click. Full reasoning: vault page `meta-attribution-architecture-decision`.
 
 ## David: app changes
 
 Repo `davngu28/DreamMe`. All of this is in `lib/SubscriptionContext.tsx` (`purchasePackage` and `purchaseDiscountedPkg`) and `lib/facebook.ts`.
 
-1. Remove every Facebook SDK `logStartTrial` and `logSubscribe` call from both purchase functions, in the trial branch (`if (pkg.product.introPrice)`) and the non-trial branch. RevenueCat now sends Start trial at trial start, and Subscribe with value when the user pays, including a day-one paid purchase.
-2. In the trial branch, also remove `logSingularSubscribe(currency, price)`. Keep `logSingularStartTrial`, and keep `logSingularSubscribe` on the non-trial path. Singular no longer forwards anything to Meta, so these calls only feed Singular's own reports.
-3. Keep the `$fbAnonId` wiring in `lib/facebook.ts` (`Purchases.setFBAnonymousID` and `collectDeviceIdentifiers` on every cold start). It is now how RevenueCat's events get matched to Meta users, so it must still run before the paywall.
-4. Keep `autoLogAppEventsEnabled` on in `app.json`. It also sends app activations, which Meta uses for installs. Dan turns off only the in-app purchase auto-logging, in Meta's app dashboard.
-5. Keep the Complete registration SDK event as it is.
-6. Ship iOS and Android together and tell Dan the release date. The before-and-after comparison in the last section needs it.
+1. iOS: remove the manual `logStartTrial` call in both purchase functions. Meta's automatic logging already sends StartTrial for App Store trials, so the manual call is the duplicate. If the call is shared code, gate it on `Platform.OS === 'android'`.
+2. Android: keep `logStartTrial`. Android's automatic logging has not been shown to send StartTrial (Android SDK events ran about 0.9 per trial, so there is no double there).
+3. Remove every Facebook SDK `logSubscribe` call, trial branch (`if (pkg.product.introPrice)`) and non-trial branch, both platforms. RevenueCat sends Subscribe with revenue for trial conversions, direct purchases and renewals.
+4. In the trial branch, also remove `logSingularSubscribe(currency, price)`. Keep `logSingularStartTrial`, and keep `logSingularSubscribe` on the non-trial path. Singular no longer forwards anything to Meta, so these calls only feed Singular's own reports.
+5. Keep the `$fbAnonId` wiring in `lib/facebook.ts` (`Purchases.setFBAnonymousID` and `collectDeviceIdentifiers` on every cold start). RevenueCat's paid events match users who declined tracking through it, so it must still run before the paywall.
+6. Keep `autoLogAppEventsEnabled` on in `app.json` and keep the Complete registration SDK event as it is.
+7. Ship iOS and Android together, store builds (no OTA: main already needs a rebuild for expo-secure-store), and tell Dan the release date before submitting. Dan's RevenueCat change and the release must land the same day so ad learning restarts once.
 
-The old step to hunt down the SDK's 1.66 Start trial per trial is gone. After the release the SDK should send almost no Start trial at all. If Events Manager still shows SDK Start trial events a week later, find what is still firing them.
+The 1.66x is explained (automatic logging plus the manual call), so there is nothing to hunt. After the release the SDK should send about one Start trial per real trial.
 
 ## Dan: Singular
 
 Singular → Attribution → Partner Configuration → Facebook → DreamMe iOS (the config set on Aug 11).
 
-1. Under events, stop sending `sng_start_trial`, `sng_subscribe` and `sng_complete_registration` to Facebook. Remove the mappings or set each to not send. This takes Singular's 596 trial copies out of Meta's feed at once.
+1. Under events, stop sending `sng_start_trial`, `sng_subscribe` and `sng_complete_registration` to Facebook.
 2. Leave the install postback on (Send All). Meta deduplicates installs, and the install postback is part of how Singular claims Meta installs for its own reports.
-3. Add a Facebook partner configuration for DreamMe Android, using the same Facebook app ID (1214186473920093), with install on and no event postbacks. This gives Singular Android attribution and cost reporting, which it has never had, without adding another sender.
-4. Do not map `rc_trial_converted` to Facebook. It stays a Singular-only cohort metric for the DAD's trial-to-paid by ad.
+3. Add a Facebook partner configuration for DreamMe Android, using the same Facebook app ID (1214186473920093), with install on and no event postbacks.
+4. Do not map `rc_trial_converted` to Facebook.
 
-These are reversible in the same screen if anything looks wrong.
-
-Status, Nov 6: all four Singular steps are done and verified in Singular's change history. iOS no longer sends the three event postbacks; the Android Facebook configuration is saved with the install postback only (it needed Meta's Install Referrer Decryption Key, which Dan pasted in). Both David cards are on the DAD Roadmap: "Meta signal fix" (Now) and "Put the ad on every Mixpanel event" (Next).
+Status, Nov 6: all four steps are done and verified in Singular's change history.
 
 ## Dan: RevenueCat
 
-RevenueCat's Meta Ads integration stays on and becomes the only sender of Start trial and Subscribe. Its docs list a fixed set of events (trial started as StartTrial; trial converted, initial purchase and renewal as Subscribe) that can be renamed but not switched off one by one. That's why the app stops sending instead. No support ticket is needed; the email sent earlier can go unanswered.
+RevenueCat → Integrations → Meta Ads. Checked Nov 8: Conversions API, dataset 1777837186267557, token valid (events return 200), "Send events when ATT consent is not authorized" ON, gross revenue, mapping Trial Started → StartTrial, Trial Converted / Initial Purchase / Renewal → Subscribe. Recent StartTrial events from users who declined tracking carry the anonymous ID, so the matching works.
 
-- In RevenueCat → Integrations → Meta Ads, confirm the integration uses the Conversions API and that "Send events when ATT consent is not authorized" is on. Without it, RevenueCat drops iOS events from users who declined tracking, about 85% of iOS.
-- Leave the event names at their defaults: StartTrial and Subscribe.
-- Leave the revenue setting as it is, so Subscribe keeps carrying its value.
+- On release day: untick the "Send" checkbox on the Trial Started row and save. Everything else stays. Reversible with one click.
+- Leave the Subscribe rows and the revenue setting as they are.
 
-Paid volume: about 700 paid conversions every four weeks, roughly 175 a week. That clears Burke's 50-a-week floor for optimizing on Subscribe on paper; how many of them Meta actually credits depends on the same open question as trials.
+RevenueCat support (Nov 6 reply) suggested renaming Trial Started to a custom name instead; the checkbox does the same thing more cleanly.
 
 ## Dan: Meta
 
-In Meta's app dashboard for app 1214186473920093, set "Log In-App Events Automatically" to No. This is RevenueCat's documented step: it stops the SDK's own purchase and trial logging while the app keeps reporting installs. It is reversible and can happen today, before the release.
+Nothing to change in Meta's app dashboard. The iOS "Log in-app events automatically" toggle stays ON (it is locked anyway) and is now the trial sender. The Android automatic purchase and subscription toggles stay as they are.
 
-In Ads Manager, nothing changes before the release. Every active ad set already optimizes for In-app start trial, which stays the right event for now.
+In Ads Manager, nothing changes before the release. Every active ad set already optimizes for In-app start trial, which stays the right event.
 
 After the release:
 
 - Expect Meta's reported cost per trial to roughly triple, to $25 to $35. That is the duplicates disappearing, not performance falling. Do not cut budget on it.
-- Expect a learning restart of one to two weeks on each ad set.
-- Statics (about 255 Meta-counted trials a week today) should still clear Burke's floor of 50 real events a week. Videos (about 90) will land near 30, so consider folding Videos into Statics or accepting slower learning there.
-- After two clean weeks, test one ad set optimized on Subscribe. Adapty's Q3 2026 benchmark puts cost per payer at $42.77 for Subscribe-optimized versus $57.32 for StartTrial-optimized. Volume is the risk, see the paid volume note above.
+- Expect a learning restart of one to two weeks on each ad set. Freeze campaign structure for two weeks.
+- Check the DAD SKAN decoder maps fine value 61 to `trial_started`. Today trials arrive as 62 because of the Subscribe-at-trial-start bug.
+- Statics should still clear 50 real trial events a week. Videos will land near 30, so consider folding Videos into Statics or accepting slower learning there.
+- After two clean weeks, test one ad set optimized on Subscribe, knowing RevenueCat's Subscribe includes renewals.
 
 ## Order of work
 
 1. Done Nov 6: Singular steps 1 to 4.
-2. Dan: the RevenueCat check and the Meta app dashboard switch. Same day, reversible, no build.
-3. David: app change, iOS and Android in one release.
-4. Dan: after release, watch Events Manager for a week before judging any ad set. SDK Start trial should fall to near zero while RevenueCat's stays at about one per trial.
-5. Both: read the success check two weeks after release.
-
-Doing step 2 before step 3 is fine. Meta's counts drop a little, then more at release.
+2. Done Nov 8: RevenueCat settings confirmed, Meta toggle checked (locked, stays on), plan switched.
+3. David: app change, iOS and Android in one release. Tell Dan the date.
+4. Dan, release day: untick RevenueCat Trial Started.
+5. Dan: watch Events Manager for a week before judging any ad set.
+6. Both: read the success check two weeks after release.
 
 ## How we know it worked
 
@@ -105,14 +105,14 @@ Two weeks after the release, in Meta Events Manager (dataset 1777837186267557), 
 
 | Check | Today | Target |
 | --- | --- | --- |
-| Start trial events per real trial | 2.96 | about 1.0, nearly all from RevenueCat |
-| Start trial from the Facebook SDK | 3,184 per 4 weeks | near 0 |
+| Start trial events per real trial | 2.96 | about 1.0, all from the Facebook SDK |
+| Start trial from the Conversions API (RevenueCat) | 1,895 per 4 weeks | 0 |
 | Start trial from Singular | 596 per 4 weeks | 0 |
 | Subscribe events vs RevenueCat paid conversions | 4.3K vs about 700 | within 20% of each other |
 | Meta-reported cost per trial vs Singular's | $12 vs $32 | within 1.3x either way |
 | Singular Android installs | 0 | matches Meta's Android install count within 30% |
 
-If Start trial is still above 1.2 per trial, something in the app still sends it. If Meta's cost per trial ends up well above Singular's (more than 1.3x), Meta isn't crediting RevenueCat's events the way it credited the SDK's. The fallback, still with no support ticket: put `logStartTrial` back in the app, turn off RevenueCat's Meta integration, and send Subscribe to Meta from our own server off `rc_events`.
+If Start trial is still above 1.2 per trial, something still double-fires (check Android automatic logging). If Subscribe runs far above RevenueCat's paid count, iOS automatic logging is sending subscriptions beside RevenueCat's. Fallback if SDK Start trial on iOS falls well under 1 per trial, or AEM trial optimisation loses eligibility in Events Manager: re-tick RevenueCat's Trial Started (one click, no build).
 
 ## David: acquisition plumbing (no new vendor)
 
