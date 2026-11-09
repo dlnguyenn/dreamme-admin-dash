@@ -52,7 +52,7 @@ Repo `davngu28/DreamMe`. All of this is in `lib/SubscriptionContext.tsx` (`purch
 4. In the trial branch, also remove `logSingularSubscribe(currency, price)`. Keep `logSingularStartTrial`, and keep `logSingularSubscribe` on the non-trial path. Singular no longer forwards anything to Meta, so these calls only feed Singular's own reports.
 5. Keep the `$fbAnonId` wiring in `lib/facebook.ts` (`Purchases.setFBAnonymousID` and `collectDeviceIdentifiers` on every cold start). RevenueCat's paid events match users who declined tracking through it, so it must still run before the paywall.
 6. Keep `autoLogAppEventsEnabled` on in `app.json` and keep the Complete registration SDK event as it is.
-7. Ship iOS and Android together, store builds (no OTA: main already needs a rebuild for expo-secure-store), and tell Dan the release date before submitting. Dan's RevenueCat change and the release must land the same day so ad learning restarts once.
+7. Ship iOS and Android together, store builds (no OTA: main already needs a rebuild for expo-secure-store), and tell Dan the release date before submitting. Dan's RevenueCat change and the release must land the same day so ad learning restarts once. Ship this on its own: the acquisition plumbing further down waits for the store build after this one.
 
 The 1.66x is explained (automatic logging plus the manual call), so there is nothing to hunt. After the release the SDK should send about one Start trial per real trial.
 
@@ -118,6 +118,8 @@ If Start trial is still above 1.2 per trial, something still double-fires (check
 
 This is the part of the AppsFlyer spec worth building, fed by sources we already have. It makes the app, RevenueCat and Mixpanel know which ad brought each user, for every install that Outlier or Meta's deferred link can name. AppsFlyer is not part of it. Branch from `main`, draft PR, David merges. Line numbers are from `main` at `a52c14a`.
 
+**Release order: start this only after the signal fix above has shipped, and put it in the next store build, not the same one.** Both touch `lib/SubscriptionContext.tsx` and `lib/metaAttribution.ts`, but the signal fix is small and urgent, this is bigger, and its iOS payoff waits on the website side lane anyway (see Coverage below).
+
 New file `lib/acquisition.ts`:
 
 1. One snapshot per install, persisted in AsyncStorage: source, status, media source, campaign and campaign ID, ad group and ad group ID, ad and ad ID, keyword, creative, `is_paid`. Blank means blank; never store `unknown` or `paid` as a value.
@@ -137,9 +139,11 @@ Do not touch: the install ping request (PR #25 owns it), `lib/att.ts`, the SKAN 
 
 Tests: `__tests__/acquisition.test.ts` for the merge rule (higher rank kept, blank keeps held values, first Meta deep link survives later launches, numeric-ID row sets `is_paid`); `__tests__/metaAttribution.test.ts` with `react-native-purchases` and `react-native-fbsdk-next` mocked (`setCampaign`, `setAdGroup`, `setAd` get IDs only, `paid` never reaches them, name-only row leaves `setAd` uncalled). The att, singular and installAttribution suites stay green.
 
-Device check on a TestFlight and internal Android build: a fresh install sends one `acquisition_data_received`; a cold start from `fb1214186473920093://authorize?utm_source=fb&utm_medium=paid&utm_campaign=111&utm_content=333&utm_term=222&utm_id=111` on a throwaway install shows `$campaign` 111, `$adGroup` 222, `$ad` 333 in RevenueCat and the same IDs in Mixpanel; an install through a `go.dreamme.life/l` click shows the server's match once the Outlier response change is live. Ships in the next store build with the app change above; no OTA.
+Device check on a TestFlight and internal Android build: a fresh install sends one `acquisition_data_received`; a cold start from `fb1214186473920093://authorize?utm_source=fb&utm_medium=paid&utm_campaign=111&utm_content=333&utm_term=222&utm_id=111` on a throwaway install shows `$campaign` 111, `$adGroup` 222, `$ad` 333 in RevenueCat and the same IDs in Mixpanel; an install through a `go.dreamme.life/l` click shows the server's match once the Outlier response change is live. Ships in the store build after the signal fix release, not the same one; no OTA.
 
 Outside the code: the Outlier response change is a separate small PR on `dlnguyenn/outlier`. Singular's device attribution callback is left out on purpose. It is a beta Singular has to switch on, and it adds little: Android already gets the campaign, ad set and ad from Meta's install referrer (PR #25), and on iOS Meta only names the ad for users who allowed tracking.
+
+**Coverage to expect.** iOS: about 0.6% of installs get a named ad today (80 of ~12,400 in 35 days, all from Meta's launch URL). `install_ping` only names ads for clicks through `go.dreamme.life/l`, which only website campaigns use, and none is running, so iOS coverage rises once the planned website side lane (~$50/day, optimised on trial) runs. Android: blank today; most Android installs should get campaign, ad set and ad once PR #25 ships in the app.
 
 ## Sources
 
