@@ -1278,11 +1278,15 @@ export async function removeEmailsFromAudience(params: {
  * Set (merge) excluded custom audiences on an ad set's targeting, preserving
  * other targeting fields. This is the suppression attach — it stops prospecting
  * from re-acquiring users already in the audience (e.g. current subscribers).
+ * With dryRun it reads the targeting and reports whether a write is needed
+ * (changed) without writing, so a dry run doesn't flag ad sets that already
+ * exclude the audience.
  */
 export async function setExcludedAudiencesOnAdSet(params: {
   adsetId: string;
   excludedAudienceIds: string[];
   accessToken?: string;
+  dryRun?: boolean;
 }): Promise<{ success: true; changed: boolean }> {
   const API_VERSION = getApiVersion();
   const existing = await metaFetchJson<{
@@ -1306,6 +1310,7 @@ export async function setExcludedAudiencesOnAdSet(params: {
   if (params.excludedAudienceIds.every((id) => currentIds.has(String(id)))) {
     return { success: true, changed: false };
   }
+  if (params.dryRun) return { success: true, changed: true };
   targeting.excluded_custom_audiences = [
     ...current.filter((a) => !params.excludedAudienceIds.includes(a.id)),
     ...params.excludedAudienceIds.map((id) => ({ id })),

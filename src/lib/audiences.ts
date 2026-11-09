@@ -466,13 +466,14 @@ export async function runAudienceSync(opts: {
   const suppressionId = audiences.find((a) => a.purpose === "suppression_active")?.audienceId ?? null;
   const attach: AudienceSyncResult["attach"] = [];
   for (const ad of prospecting) {
-    if (dryRun || !suppressionId) {
+    if (!suppressionId) {
+      // In a dry run with no audience yet, every ad set would get it once it's created.
       attach.push({ adsetId: ad.id, name: ad.name, action: dryRun ? "would_attach" : "skipped (no suppression audience)" });
       continue;
     }
     try {
-      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: ad.id, excludedAudienceIds: [suppressionId], accessToken: token });
-      attach.push({ adsetId: ad.id, name: ad.name, action: changed ? "attached" : "already_attached" });
+      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: ad.id, excludedAudienceIds: [suppressionId], accessToken: token, dryRun });
+      attach.push({ adsetId: ad.id, name: ad.name, action: attachAction(changed, dryRun) });
     } catch (e) {
       attach.push({ adsetId: ad.id, name: ad.name, action: "error", error: (e as Error).message.slice(0, 160) });
     }
@@ -496,6 +497,12 @@ export async function runAudienceSync(opts: {
   };
 }
 
+/** Label for one ad set's suppression attach: dry runs read targeting too, so they can say already_attached. */
+export function attachAction(changed: boolean, dryRun: boolean): string {
+  if (!changed) return "already_attached";
+  return dryRun ? "would_attach" : "attached";
+}
+
 /** Attach a suppression audience to discovered (or explicit) prospecting ad sets. For the MCP tool. */
 export async function attachSuppression(opts: {
   dryRun: boolean;
@@ -517,13 +524,9 @@ export async function attachSuppression(opts: {
 
   const attach: AudienceSyncResult["attach"] = [];
   for (const t of targets) {
-    if (opts.dryRun) {
-      attach.push({ adsetId: t.id, name: t.name, action: "would_attach" });
-      continue;
-    }
     try {
-      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: t.id, excludedAudienceIds: [suppressionId], accessToken: meta.token });
-      attach.push({ adsetId: t.id, name: t.name, action: changed ? "attached" : "already_attached" });
+      const { changed } = await setExcludedAudiencesOnAdSet({ adsetId: t.id, excludedAudienceIds: [suppressionId], accessToken: meta.token, dryRun: opts.dryRun });
+      attach.push({ adsetId: t.id, name: t.name, action: attachAction(changed, opts.dryRun) });
     } catch (e) {
       attach.push({ adsetId: t.id, name: t.name, action: "error", error: (e as Error).message.slice(0, 160) });
     }

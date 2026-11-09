@@ -41,4 +41,29 @@ describe("setExcludedAudiencesOnAdSet", () => {
     expect(body.targeting.geo_locations).toEqual({ countries: ["US"] });
     expect(body.targeting.excluded_custom_audiences).toEqual([{ id: "999" }, { id: "123" }]);
   });
+
+  it("dry run reads targeting but never writes", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") throw new Error("dry run must not POST");
+      return json({ targeting: { excluded_custom_audiences: [{ id: "999" }] } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const missing = await setExcludedAudiencesOnAdSet({ adsetId: "as1", excludedAudienceIds: ["123"], accessToken: "t", dryRun: true });
+    const present = await setExcludedAudiencesOnAdSet({ adsetId: "as1", excludedAudienceIds: ["999"], accessToken: "t", dryRun: true });
+
+    expect(missing).toEqual({ success: true, changed: true });
+    expect(present).toEqual({ success: true, changed: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("attachAction", () => {
+  it("labels dry and live outcomes", async () => {
+    const { attachAction } = await import("@/lib/audiences");
+    expect(attachAction(false, true)).toBe("already_attached");
+    expect(attachAction(true, true)).toBe("would_attach");
+    expect(attachAction(false, false)).toBe("already_attached");
+    expect(attachAction(true, false)).toBe("attached");
+  });
 });
