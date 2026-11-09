@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { deleteEntry, loadClipperTracker, saveEntry, validateEntry } from "@/lib/revenue-plan/clipper-tracker-data";
+import { POLICY, cached, invalidate, wantsFresh } from "@/lib/dad-cache";
 import { MissingTableError, consumerConfigured, internalConfigured } from "@/lib/revenue-plan/db";
 
 export const runtime = "nodejs";
@@ -28,7 +29,10 @@ export async function GET(req: Request) {
   const denied = guard(req);
   if (denied) return denied;
   try {
-    return NextResponse.json({ ok: true, ...(await loadClipperTracker()) });
+    const { value, meta } = await cached("plan-clipper-tracker", POLICY.daily, () => loadClipperTracker(), {
+      force: wantsFresh(req),
+    });
+    return NextResponse.json({ ok: true, ...(value as object), cache: meta });
   } catch (e) {
     return err(e);
   }
@@ -45,6 +49,7 @@ export async function POST(req: Request) {
   }
   try {
     await saveEntry(entry);
+    await invalidate("plan-");
     return NextResponse.json({ ok: true, entry });
   } catch (e) {
     return err(e instanceof MissingTableError ? new Error("clipper_campaign_weeks does not exist yet: migration 0095 is not applied") : e);
@@ -58,6 +63,7 @@ export async function DELETE(req: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) return err("week must be YYYY-MM-DD", 400);
   try {
     await deleteEntry(week);
+    await invalidate("plan-");
     return NextResponse.json({ ok: true });
   } catch (e) {
     return err(e);

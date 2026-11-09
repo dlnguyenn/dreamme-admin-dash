@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { consumerConfigured, internalConfigured } from "@/lib/revenue-plan/db";
 import { loadScorecard } from "@/lib/revenue-plan/scorecard-data";
+import { POLICY, cached, wantsFresh } from "@/lib/dad-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Supabase env missing (internal service role or CONSUMER_*)" }, { status: 500 });
   }
   try {
-    return NextResponse.json({ ok: true, ...(await loadScorecard()) });
+    const { value, meta } = await cached("plan-scorecard", POLICY.daily, () => loadScorecard(), {
+      force: wantsFresh(req),
+    });
+    return NextResponse.json({ ok: true, ...(value as object), cache: meta });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

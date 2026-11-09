@@ -7,7 +7,9 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { buildOverview, overviewDbConfigured } from "@/lib/overview";
+import { overviewDbConfigured } from "@/lib/overview";
+import { cached, wantsFresh } from "@/lib/dad-cache";
+import { cacheJobs } from "@/lib/dad-cache-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +26,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    return NextResponse.json({ ok: true, ...(await buildOverview()) });
+    // Precomputed (src/lib/dad-cache.ts); ?fresh=1 from the Refresh button recomputes.
+    const job = cacheJobs().overview;
+    const { value, meta } = await cached("overview", job.policy, job.run, { force: wantsFresh(req) });
+    return NextResponse.json({ ok: true, ...(value as object), cache: meta });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },

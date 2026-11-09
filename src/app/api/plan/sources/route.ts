@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { MissingTableError, consumerConfigured, internalConfigured } from "@/lib/revenue-plan/db";
 import { clearSourceStatusCache, sourceStatus, syncUserSources } from "@/lib/revenue-plan/user-sources";
+import { invalidate } from "@/lib/dad-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
   try {
     const result = await syncUserSources({ full });
     clearSourceStatusCache();
+    await invalidate("plan-");
     return NextResponse.json({ ok: true, ...result, status: await sourceStatus() });
   } catch (e) {
     return err(e instanceof MissingTableError ? new Error("user_sources does not exist yet: migration 0095 is not applied") : e);

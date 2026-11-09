@@ -58,16 +58,27 @@ export async function sbCount(p: Project, path: string): Promise<number> {
 
 /**
  * Every row of a filtered select (`path` must carry an order= for stable
- * pages). Pages run one at a time on purpose: rc_events is ~60 MB of mostly
- * raw payloads, and a burst of parallel offset pages (each a full scan until
- * migration 0095's index lands) hit the 8 s statement timeout.
+ * pages). Pages are fetched in waves of SB_ALL_WAVE at a time. They used to
+ * run strictly one at a time, because before rc_events had its (type,
+ * event_at) index each offset page was a full scan and a parallel burst hit
+ * the 8 s statement timeout. With the index a deep page runs in ~20 ms
+ * (checked 2026-11-09), so the cost was all network round trips: ~0.25 s
+ * each, 30+ in a row on the April Plan tabs. A small wave keeps the database
+ * load modest and stops at the first short page.
  */
+const SB_ALL_WAVE = 4;
+
 export async function sbAll<T>(p: Project, path: string, maxPages = 40): Promise<T[]> {
   const out: T[] = [];
-  for (let i = 0; i < maxPages; i++) {
-    const rows = await sbGet<T[]>(p, `${path}&limit=${PAGE_SIZE}&offset=${i * PAGE_SIZE}`);
-    out.push(...rows);
-    if (rows.length < PAGE_SIZE) return out;
+  for (let start = 0; start < maxPages; start += SB_ALL_WAVE) {
+    const wave = Array.from({ length: Math.min(SB_ALL_WAVE, maxPages - start) }, (_, k) => start + k);
+    const pages = await Promise.all(
+      wave.map((i) => sbGet<T[]>(p, `${path}&limit=${PAGE_SIZE}&offset=${i * PAGE_SIZE}`)),
+    );
+    for (const rows of pages) {
+      out.push(...rows);
+      if (rows.length < PAGE_SIZE) return out;
+    }
   }
   throw new Error(`${path.split("?")[0]}: more than ${maxPages * PAGE_SIZE} rows; narrow the window`);
 }

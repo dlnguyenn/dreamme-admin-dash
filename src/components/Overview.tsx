@@ -285,9 +285,11 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
   const { hidden, toggle } = useHiddenSections();
   const show = (id: SectionId) => !hidden.has(id);
 
-  const load = React.useCallback(async () => {
+  // fresh: skip the server cache (Refresh button, after queuing posts). The
+  // 2-minute poll reads the cached copy, which refreshes itself in the background.
+  const load = React.useCallback(async (fresh = false) => {
     try {
-      const res = await fetch("/api/overview", { cache: "no-store" });
+      const res = await fetch(fresh ? "/api/overview?fresh=1" : "/api/overview", { cache: "no-store" });
       const body = (await res.json()) as
         | ({ ok: true } & OverviewPayload)
         | { ok: false; error: string };
@@ -341,7 +343,7 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               onClick={async () => {
                 setRefreshing(true);
                 try {
-                  await load();
+                  await load(true);
                 } finally {
                   setRefreshing(false);
                 }
@@ -467,7 +469,7 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
 
           {/* Did the machines run — sits under the reach numbers it feeds. */}
           {!DOUBLESPEED_PAUSED && show("morning") && (
-            <MorningPanel morning={data?.morning ?? null} onQueued={load} />
+            <MorningPanel morning={data?.morning ?? null} onQueued={() => load(true)} />
           )}
 
           <TwoCol

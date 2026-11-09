@@ -9,16 +9,12 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { fetchChart, revenueCatConfigured } from "@/lib/vendors/revenuecat";
-import {
-  transformTrialChart,
-  type PricingExperimentResponse,
-} from "@/lib/pricing-experiment";
+import { revenueCatConfigured } from "@/lib/vendors/revenuecat";
+import { POLICY, cached, wantsFresh } from "@/lib/dad-cache";
+import { loadPricingExperiment } from "@/lib/dad-cache-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const WINDOW_DAYS = 84; // 12 weeks — covers pre-change baselines + the reads
 
 export async function GET(req: Request) {
   if (!checkIngestAuth(req)) {
@@ -31,20 +27,11 @@ export async function GET(req: Request) {
     );
   }
   try {
-    const end = new Date();
-    const start = new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
-    const chart = await fetchChart({
-      chartName: "trial_conversion_rate",
-      startDate: start.toISOString().slice(0, 10),
-      endDate: end.toISOString().slice(0, 10),
-      resolution: "week",
-      segment: "product_duration",
+    // Precomputed (src/lib/dad-cache.ts); the body is the same shape as before.
+    const { value } = await cached("pricing-experiment", POLICY.daily, loadPricingExperiment, {
+      force: wantsFresh(req),
     });
-    const body: PricingExperimentResponse = {
-      fetchedAt: new Date().toISOString(),
-      weeks: transformTrialChart(chart),
-    };
-    return NextResponse.json(body);
+    return NextResponse.json(value);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },

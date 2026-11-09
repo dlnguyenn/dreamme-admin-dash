@@ -8,9 +8,9 @@
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { internalConfigured } from "@/lib/revenue-plan/db";
-import { HOLDOUT_TESTS, defaultTest, findTest, summarize } from "@/lib/revenue-plan/switchback";
-import { fetchSwitchbackRows } from "@/lib/revenue-plan/switchback-data";
-import { metaBreakEven } from "@/lib/revenue-plan/value-per-trial-data";
+import { defaultTest, findTest } from "@/lib/revenue-plan/switchback";
+import { POLICY, cached, wantsFresh } from "@/lib/dad-cache";
+import { loadSwitchback, switchbackKey } from "@/lib/dad-cache-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,17 +27,10 @@ export async function GET(req: Request) {
   const test = id ? findTest(id) : defaultTest();
   if (!test) return NextResponse.json({ ok: false, error: `unknown test ${id}` }, { status: 404 });
   try {
-    const [rows, breakEven] = await Promise.all([fetchSwitchbackRows(test), metaBreakEven()]);
-    return NextResponse.json({
-      ok: true,
-      tests: HOLDOUT_TESTS.map((t) => ({ id: t.id, title: t.title, status: t.status, from: t.phases[0].from })),
-      today: rows.today,
-      days: rows.days,
-      names: rows.names,
-      platforms: rows.platforms,
-      sources: rows.sources,
-      summary: summarize(test, rows.days, rows.today, breakEven, rows.names),
+    const { value, meta } = await cached(switchbackKey(test.id), POLICY.daily, () => loadSwitchback(test), {
+      force: wantsFresh(req),
     });
+    return NextResponse.json({ ok: true, ...value, cache: meta });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

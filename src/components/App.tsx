@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
+import { ToastProvider } from "./ui";
 import { Gate } from "./Gate";
 import { NAV_ITEMS, Sidebar, visibleNavItems, type DashId } from "./Shell";
 import {
@@ -12,38 +14,47 @@ import {
 } from "./MobileTabBar";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { Overview } from "./Overview";
-import { ContentPipeline } from "./ContentPipeline";
-import { CaptionLibrary } from "./CaptionLibrary";
-import { HookAnalytics } from "./HookAnalytics";
-import { SpyTool } from "./SpyTool";
-import { ViralSlideshows } from "./ViralSlideshows";
-import { OurSlideshows } from "./OurSlideshows";
-import { SpendDashboard } from "./SpendDashboard";
-import { GrowthAI } from "./GrowthAI";
-import { MarketingEfficiency } from "./MarketingEfficiency";
-import { SwitchbackTest } from "./SwitchbackTest";
-import { Mmp } from "./mmp/Mmp";
-import { AprilPlan } from "./plan/AprilPlan";
-import { StoreReviews } from "./StoreReviews";
-import { CreativeAnalytics } from "./CreativeAnalytics";
-import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
-import { Roadmap } from "./Roadmap";
-import { ExperimentLog } from "./ExperimentLog";
-import { Resources } from "./Resources";
-import { Knowledge } from "./Knowledge";
-import { SynthIDResearch } from "./SynthIDResearch";
-import { ImageStudio } from "./ImageStudio";
-import { AccessoryStudio } from "./AccessoryStudio";
-import { BackgroundStudio } from "./BackgroundStudio";
-import { Integrations } from "./Integrations";
-import { ClipperAdmin } from "./ClipperAdmin";
-import { SupportInbox } from "./SupportInbox";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
-import { ToastProvider } from "./ui";
 import { API } from "@/lib/supabase";
 import { devAuthBypass } from "@/lib/dev-auth";
 import type { DashState } from "@/lib/types";
+
+// Every tab but Overview loads its code when first opened, so the first page
+// load downloads the landing screen instead of all ~30 tabs (it was one 1 MB
+// chunk). ssr: false because App is client-only behind the Gate anyway.
+function TabLoading() {
+  return (
+    <div style={{ padding: "40px 0", font: "400 13px var(--font-ui)", color: "var(--ink-3)" }}>Loading…</div>
+  );
+}
+const ContentPipeline = dynamic(() => import("./ContentPipeline").then((m) => m.ContentPipeline), { ssr: false, loading: TabLoading });
+const CaptionLibrary = dynamic(() => import("./CaptionLibrary").then((m) => m.CaptionLibrary), { ssr: false, loading: TabLoading });
+const HookAnalytics = dynamic(() => import("./HookAnalytics").then((m) => m.HookAnalytics), { ssr: false, loading: TabLoading });
+const SpyTool = dynamic(() => import("./SpyTool").then((m) => m.SpyTool), { ssr: false, loading: TabLoading });
+const ViralSlideshows = dynamic(() => import("./ViralSlideshows").then((m) => m.ViralSlideshows), { ssr: false, loading: TabLoading });
+const OurSlideshows = dynamic(() => import("./OurSlideshows").then((m) => m.OurSlideshows), { ssr: false, loading: TabLoading });
+const SpendDashboard = dynamic(() => import("./SpendDashboard").then((m) => m.SpendDashboard), { ssr: false, loading: TabLoading });
+const GrowthAI = dynamic(() => import("./GrowthAI").then((m) => m.GrowthAI), { ssr: false, loading: TabLoading });
+const MarketingEfficiency = dynamic(() => import("./MarketingEfficiency").then((m) => m.MarketingEfficiency), { ssr: false, loading: TabLoading });
+const SwitchbackTest = dynamic(() => import("./SwitchbackTest").then((m) => m.SwitchbackTest), { ssr: false, loading: TabLoading });
+const Mmp = dynamic(() => import("./mmp/Mmp").then((m) => m.Mmp), { ssr: false, loading: TabLoading });
+const AprilPlan = dynamic(() => import("./plan/AprilPlan").then((m) => m.AprilPlan), { ssr: false, loading: TabLoading });
+const StoreReviews = dynamic(() => import("./StoreReviews").then((m) => m.StoreReviews), { ssr: false, loading: TabLoading });
+const CreativeAnalytics = dynamic(() => import("./CreativeAnalytics").then((m) => m.CreativeAnalytics), { ssr: false, loading: TabLoading });
+const FeatureRequestsDashboard = dynamic(() => import("./FeatureRequestsDashboard").then((m) => m.FeatureRequestsDashboard), { ssr: false, loading: TabLoading });
+const Roadmap = dynamic(() => import("./Roadmap").then((m) => m.Roadmap), { ssr: false, loading: TabLoading });
+const ExperimentLog = dynamic(() => import("./ExperimentLog").then((m) => m.ExperimentLog), { ssr: false, loading: TabLoading });
+const Resources = dynamic(() => import("./Resources").then((m) => m.Resources), { ssr: false, loading: TabLoading });
+const Knowledge = dynamic(() => import("./Knowledge").then((m) => m.Knowledge), { ssr: false, loading: TabLoading });
+const SynthIDResearch = dynamic(() => import("./SynthIDResearch").then((m) => m.SynthIDResearch), { ssr: false, loading: TabLoading });
+const ImageStudio = dynamic(() => import("./ImageStudio").then((m) => m.ImageStudio), { ssr: false, loading: TabLoading });
+const AccessoryStudio = dynamic(() => import("./AccessoryStudio").then((m) => m.AccessoryStudio), { ssr: false, loading: TabLoading });
+const BackgroundStudio = dynamic(() => import("./BackgroundStudio").then((m) => m.BackgroundStudio), { ssr: false, loading: TabLoading });
+const Integrations = dynamic(() => import("./Integrations").then((m) => m.Integrations), { ssr: false, loading: TabLoading });
+const ClipperAdmin = dynamic(() => import("./ClipperAdmin").then((m) => m.ClipperAdmin), { ssr: false, loading: TabLoading });
+const SupportInbox = dynamic(() => import("./SupportInbox").then((m) => m.SupportInbox), { ssr: false, loading: TabLoading });
+
 
 const TWEAK_DEFAULTS: Tweaks = { theme: "light", gridSize: 4 };
 

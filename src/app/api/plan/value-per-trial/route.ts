@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
 import { consumerConfigured, internalConfigured } from "@/lib/revenue-plan/db";
 import { DEFAULT_WEEKS, loadValuePerTrial } from "@/lib/revenue-plan/value-per-trial-data";
+import { POLICY, cached, wantsFresh } from "@/lib/dad-cache";
+import { valuePerTrialKey } from "@/lib/dad-cache-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +24,10 @@ export async function GET(req: Request) {
   }
   const weeks = Math.min(26, Math.max(8, Number(new URL(req.url).searchParams.get("weeks")) || DEFAULT_WEEKS));
   try {
-    return NextResponse.json({ ok: true, ...(await loadValuePerTrial(weeks)) });
+    const { value, meta } = await cached(valuePerTrialKey(weeks), POLICY.daily, () => loadValuePerTrial(weeks), {
+      force: wantsFresh(req),
+    });
+    return NextResponse.json({ ok: true, ...(value as object), cache: meta });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

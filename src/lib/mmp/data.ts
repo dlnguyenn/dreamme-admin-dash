@@ -35,7 +35,7 @@ export interface MmpData {
 
 export async function fetchMmp(): Promise<MmpData> {
   const [snap, paid, campaigns, ads, ages, weeks, asc] = await Promise.all([
-    sbGet<Record<string, unknown>[]>("internal", "mmp_snapshot?select=*&limit=1"),
+    sbGet<Record<string, unknown>[]>("internal", "mmp_snapshot_mv?select=*&limit=1"),
     sbGet<Record<string, unknown>[]>("internal", "mmp_singular_paid?select=*&limit=1"),
     sbGet<Record<string, unknown>[]>("internal", "mmp_campaign_attribution?select=*"),
     sbGet<Record<string, unknown>[]>("internal", "mmp_ad_attribution?select=*"),
