@@ -22,6 +22,7 @@ import { ViewsPanel } from "./overview/ViewsPanel";
 import { AttributionPanel } from "./overview/AttributionPanel";
 import { MorningPanel } from "./overview/MorningPanel";
 import { PaidPanel } from "./overview/PaidPanel";
+import { MrrPanel } from "./overview/MrrPanel";
 import { NeedsAttention } from "./overview/NeedsAttention";
 import {
   OpsPanel,
@@ -39,6 +40,7 @@ const REFRESH_MS = 120_000;
  * posts start hidden because Doublespeed is paused and they read stale.
  */
 type SectionId =
+  | "mrr"
   | "attribution"
   | "paid"
   | "views"
@@ -50,6 +52,7 @@ type SectionId =
   | "topPosts";
 
 const SECTION_LABELS: Record<SectionId, string> = {
+  mrr: "MRR growth",
   attribution: "Where they heard about us",
   paid: "Paid",
   views: "Organic views",
@@ -422,7 +425,24 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
                       ? `${ns.trialStartRatePct}% of ${fmtNum(ns.onboardingStartsToday)} starts`
                       : "live",
                 },
-                { label: "MRR", value: fmtMoney(rev?.mrr) },
+                {
+                  label: "MRR",
+                  value: fmtMoney(rev?.mrr),
+                  // Last complete day's change; the MRR growth card below has the rest.
+                  delta:
+                    data?.mrr?.lastDay != null
+                      ? `${data.mrr.lastDay.change < 0 ? "−" : "+"}${fmtMoney(Math.abs(data.mrr.lastDay.change))}`
+                      : undefined,
+                  deltaFamily:
+                    data?.mrr?.lastDay == null
+                      ? undefined
+                      : data.mrr.lastDay.change > 0
+                        ? "success"
+                        : data.mrr.lastDay.change < 0
+                          ? "danger"
+                          : "neutral",
+                  note: data?.mrr?.d30 != null ? `${data.mrr.d30.pct >= 0 ? "+" : "−"}${Math.abs(data.mrr.d30.pct).toFixed(1)}% 30d` : undefined,
+                },
                 {
                   label: "Trials, 7d",
                   value: fmtNum(ns?.last7d),
@@ -432,6 +452,8 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               ]}
             />
           </div>
+
+          {show("mrr") && <MrrPanel mrr={data?.mrr ?? null} />}
 
           {show("attribution") && (
             <AttributionPanel attribution={data?.attribution ?? null} />

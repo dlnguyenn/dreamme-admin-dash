@@ -34,6 +34,7 @@ import {
 import { DOUBLESPEED_PAUSED } from "@/lib/doublespeedPause";
 import { fetchPaidDaily, type PaidDaily } from "@/lib/overview-paid";
 import { collectUrgentAlerts, type UrgentAlert } from "@/lib/overview-alerts";
+import { buildMrr, MRR_HISTORY_DAYS, type MrrRow, type MrrSection } from "@/lib/overview-mrr";
 import { buildQueueCoverage, type QueueCoverage } from "@/lib/queueCoverage";
 import { dailyUniques, mixpanelConfigured } from "@/lib/vendors/mixpanel";
 import {
@@ -282,12 +283,16 @@ export interface OpsCheck {
   state: "ok" | "late" | "missing";
 }
 
+export type { MrrSection };
+
 export interface OverviewPayload {
   generatedAt: string;
   /** Urgent items from every alert source, worst first; null if collection failed. */
   urgent: UrgentAlert[] | null;
   northStar: NorthStar | null;
   revenue: RevenueSnapshot | null;
+  /** Daily MRR changes and growth rate; null on section failure. */
+  mrr: MrrSection | null;
   views: ViewsSection | null;
   support: SupportSection | null;
   today: TodaySection | null;
@@ -326,6 +331,19 @@ async function fetchRcDaily(): Promise<RcDailyRow[]> {
     `rc_account_metrics_daily?select=date,mrr,revenue,active_trials,active_subscriptions,trial_starts,trial_conversion_rate` +
       `&date=gte.${since}&order=date.asc&limit=${WINDOW_DAYS + 1}`,
   );
+}
+
+/**
+ * MRR history for the growth card. Longer than WINDOW_DAYS because the
+ * 30-day growth trend needs 30 days of history behind each charted day.
+ */
+async function fetchMrrHistory(): Promise<MrrSection | null> {
+  const since = dateWindow(MRR_HISTORY_DAYS)[0];
+  const rows = await sbGet<MrrRow[]>(
+    `rc_account_metrics_daily?select=date,mrr,active_subscriptions,synced_at` +
+      `&date=gte.${since}&mrr=not.is.null&order=date.asc&limit=${MRR_HISTORY_DAYS + 1}`,
+  );
+  return buildMrr(rows);
 }
 
 interface TrialStartsRow {
@@ -1528,6 +1546,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     paid,
     ops,
     attribution,
+    mrr,
   ] = await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
       trialStartsP,
@@ -1541,6 +1560,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("paid", errors, () => fetchPaid(trialStartsP)),
       section("ops", errors, fetchOps),
       section("attribution", errors, fetchAttribution),
+      section("mrr", errors, fetchMrrHistory),
     ]);
 
   const northStar = buildNorthStar(trialStarts, new Date(), onboardingToday);
@@ -1561,6 +1581,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     urgent,
     northStar,
     revenue: rc ? buildRevenue(rc) : null,
+    mrr: mrr ?? null,
     views,
     support,
     today,
