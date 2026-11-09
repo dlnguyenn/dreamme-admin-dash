@@ -124,3 +124,38 @@ export function safeEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+/** A folder listing node, as the vault readers return it. */
+export interface VNode {
+  name: string;
+  type: "blob" | "tree";
+  size: number;
+  text?: string | null;
+  children?: VNode[];
+}
+
+/**
+ * Rebuilds the folder at `dir`, `depth` levels deep, from a flat file list (the snapshot manifest).
+ * Folders deeper than `depth` appear as empty trees; with `text`, files carry their inline text.
+ */
+export function treeFromFiles(files: { path: string; size: number; text?: string }[], dir: string, depth: number, text: boolean): VNode[] {
+  const root: VNode = { name: "", type: "tree", size: 0, children: [] };
+  const prefix = `${dir}/`;
+  const child = (node: VNode, name: string, make: () => VNode) => {
+    let next = node.children!.find((c) => c.name === name);
+    if (!next) node.children!.push((next = make()));
+    return next;
+  };
+  for (const f of files) {
+    if (!f.path.startsWith(prefix)) continue;
+    const parts = f.path.slice(prefix.length).split("/");
+    let node = root;
+    for (let i = 0; i < Math.min(parts.length, depth); i++) {
+      const isFile = i === parts.length - 1;
+      node = child(node, parts[i], () =>
+        isFile ? { name: parts[i], type: "blob", size: f.size, text: text ? f.text : undefined } : { name: parts[i], type: "tree", size: 0, children: [] },
+      );
+    }
+  }
+  return root.children!;
+}

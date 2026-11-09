@@ -17,6 +17,6 @@ export async function GET(req: Request) {
     const refresh = new URL(req.url).searchParams.get("refresh") === "1";
     return NextResponse.json({ ok: true, ...(await getKnowledgeIndex(refresh)) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: (e as { code?: number }).code === 503 ? 503 : 502 });
   }
 }

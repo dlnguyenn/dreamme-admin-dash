@@ -16,6 +16,6 @@ export async function GET(req: Request) {
   try {
     return NextResponse.json({ ok: true, hits: await searchKnowledge(q) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: (e as { code?: number }).code === 503 ? 503 : 502 });
   }
 }

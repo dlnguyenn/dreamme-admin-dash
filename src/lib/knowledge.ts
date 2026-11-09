@@ -1,15 +1,14 @@
 /**
- * Knowledge tab: reads Dan's Obsidian vault (private GitHub repo dlnguyenn/success-in-all-ways)
- * live through the GitHub API, so anything a Claude session files there shows up here on its own.
+ * Knowledge tab: reads Dan's Obsidian vault so anything Claude sessions file there can be read in the DAD.
  *
- * Env (Vercel):
- *   VAULT_GITHUB_TOKEN   fine-grained, read-only "Contents" on the vault repo
- *   VAULT_REPO           optional "owner/name" override
+ * Where the vault comes from, first match wins:
+ *   1. KNOWLEDGE_LOCAL_VAULT (development only): a local vault folder, read from disk.
+ *   2. VAULT_GITHUB_TOKEN: live from the private GitHub repo (VAULT_REPO, default dlnguyenn/success-in-all-ways).
+ *   3. Default: a snapshot in the private Supabase Storage bucket "knowledge-vault", uploaded by
+ *      scripts/knowledge-snapshot.mjs with the service role the DAD already has. Refreshed only when
+ *      that script runs. Vault content must never go into this repo: it is public.
  * Access uses the same check as the rest of the DAD (checkIngestAuth). Dan turned off the tab's own
  * passphrase on 2026-11-09, knowing that check can be faked with an Origin header.
- * Development only:
- *   KNOWLEDGE_LOCAL_VAULT  path to a local vault checkout; read from disk instead of GitHub.
- *                          Ignored in production builds.
  */
 import {
   isAllowedVaultPath,
@@ -17,7 +16,9 @@ import {
   parseLog,
   snippetFor,
   summaryOf,
+  treeFromFiles,
   type LogEntry,
+  type VNode,
 } from "./knowledge-shared";
 import { checkIngestAuth } from "./auth-ingest";
 
@@ -25,10 +26,17 @@ const REPO = process.env.VAULT_REPO || "dlnguyenn/success-in-all-ways";
 const [OWNER, NAME] = REPO.split("/");
 const TTL_MS = 5 * 60_000;
 const LOCAL = process.env.NODE_ENV !== "production" ? process.env.KNOWLEDGE_LOCAL_VAULT || "" : "";
+const GITHUB = !LOCAL && !!process.env.VAULT_GITHUB_TOKEN;
+// Default source: a snapshot of the vault in a private Supabase Storage bucket, uploaded by
+// scripts/knowledge-snapshot.mjs. Read with the service role the DAD already has; no extra token.
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SB_KEY = process.env.DM_INTERNAL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+export const KNOWLEDGE_BUCKET = "knowledge-vault";
 
 export type KnowledgeConfig = { ok: true } | { ok: false; missing: string[] };
 export function knowledgeConfig(): KnowledgeConfig {
-  const missing = LOCAL || process.env.VAULT_GITHUB_TOKEN ? [] : ["VAULT_GITHUB_TOKEN"];
+  if (LOCAL || GITHUB) return { ok: true };
+  const missing = [!SB_URL && "NEXT_PUBLIC_SUPABASE_URL", !SB_KEY && "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean) as string[];
   return missing.length ? { ok: false, missing } : { ok: true };
 }
 
@@ -42,13 +50,6 @@ export function knowledgeAuthError(req: Request): { status: number; error: strin
 
 // ---------------- vault access (GitHub, or local disk in development) ----------------
 
-interface VNode {
-  name: string;
-  type: "blob" | "tree";
-  size: number;
-  text?: string | null;
-  children?: VNode[];
-}
 
 const ghHeaders = () => ({
   Authorization: `Bearer ${process.env.VAULT_GITHUB_TOKEN}`,
@@ -78,6 +79,7 @@ type GqlEntry = { name: string; type: string; object?: { byteSize?: number; text
  */
 async function listTree(dir: string, depth: 1 | 2, text = false): Promise<VNode[]> {
   if (LOCAL) return localTree(dir, depth, text);
+  if (!GITHUB) return snapshotTree(dir, depth, text);
   const blob = text ? "... on Blob { byteSize text isTruncated }" : "... on Blob { byteSize }";
   const leaf = `entries { name type object { ${blob} } }`;
   const inner = depth === 2 ? `entries { name type object { ${blob} ... on Tree { ${leaf} } } }` : leaf;
@@ -95,6 +97,10 @@ async function listTree(dir: string, depth: 1 | 2, text = false): Promise<VNode[
 
 async function headCommit(): Promise<{ oid: string; date: string } | null> {
   if (LOCAL) return null;
+  if (!GITHUB) {
+    const m = await loadManifest();
+    return m.commit ? { oid: m.commit, date: m.generatedAt } : null;
+  }
   const d = await gql<{ repository: { defaultBranchRef: { target: { oid: string; committedDate: string } } | null } }>(
     `query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ defaultBranchRef{ target{ ... on Commit { oid committedDate } } } } }`,
   );
@@ -113,6 +119,13 @@ async function rawFile(path: string): Promise<Response> {
       return new Response("not found", { status: 404 });
     }
   }
+  if (!GITHUB) {
+    const m = await loadManifest();
+    const f = m.byPath.get(path);
+    if (!f) return new Response("not found", { status: 404 });
+    if (typeof f.text === "string") return new Response(f.text);
+    return storageGet(path);
+  }
   const url = `https://api.github.com/repos/${OWNER}/${NAME}/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
   return fetch(url, { headers: { ...ghHeaders(), Accept: "application/vnd.github.raw" }, cache: "no-store" });
 }
@@ -120,6 +133,43 @@ async function readText(path: string): Promise<string> {
   const res = await rawFile(path);
   if (!res.ok) throw new Error(`vault ${res.status} for ${path}`);
   return res.text();
+}
+
+// ---- Supabase snapshot ----
+interface ManifestFile {
+  path: string;
+  size: number;
+  text?: string;
+}
+interface Manifest {
+  generatedAt: string;
+  commit: string | null;
+  files: ManifestFile[];
+  byPath: Map<string, ManifestFile>;
+}
+let manifestCache: { at: number; value: Manifest } | null = null;
+
+function storageGet(path: string): Promise<Response> {
+  const url = `${SB_URL}/storage/v1/object/authenticated/${KNOWLEDGE_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`;
+  return fetch(url, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, cache: "no-store" });
+}
+
+async function loadManifest(): Promise<Manifest> {
+  if (manifestCache && Date.now() - manifestCache.at < TTL_MS) return manifestCache.value;
+  const res = await storageGet("manifest.json");
+  if (res.status === 400 || res.status === 404) {
+    throw Object.assign(new Error("no snapshot uploaded yet (run scripts/knowledge-snapshot.mjs)"), { code: 503 });
+  }
+  if (!res.ok) throw new Error(`Supabase storage ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const raw = (await res.json()) as Omit<Manifest, "byPath">;
+  const value: Manifest = { ...raw, byPath: new Map(raw.files.map((f) => [f.path, f])) };
+  manifestCache = { at: Date.now(), value };
+  return value;
+}
+
+/** The same shape listTree returns, built from the snapshot's file list. */
+async function snapshotTree(dir: string, depth: number, text: boolean): Promise<VNode[]> {
+  return treeFromFiles((await loadManifest()).files, dir, depth, text);
 }
 
 async function localTree(dir: string, depth: number, text: boolean): Promise<VNode[]> {

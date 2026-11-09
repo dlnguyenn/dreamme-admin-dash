@@ -154,7 +154,7 @@ export function Knowledge() {
       <PageHeader
         eyebrow="Knowledge"
         title="What we've learned"
-        subtitle="Playbooks, research and notes Claude has filed in the vault, read live. Anything new a session files shows up here within five minutes."
+        subtitle={`Playbooks, research and notes Claude has filed in the vault.${index?.commit ? ` Snapshot taken ${new Date(index.commit.date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.` : ""}`}
         actions={
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <SearchBox value={q} onChange={setQ} busy={searching} />
@@ -210,7 +210,7 @@ export function Knowledge() {
           )}
           {index?.commit && (
             <Muted style={{ marginTop: 28 }}>
-              Vault {index.repo} at {index.commit.oid.slice(0, 7)}, last change {new Date(index.commit.date).toLocaleString()}.
+              Vault at {index.commit.oid.slice(0, 7)}, {new Date(index.commit.date).toLocaleString()}. To refresh, run node scripts/knowledge-snapshot.mjs in the DAD folder.
             </Muted>
           )}
         </>

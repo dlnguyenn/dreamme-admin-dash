@@ -7,6 +7,7 @@ import {
   safeEqual,
   snippetFor,
   summaryOf,
+  treeFromFiles,
   wikiLinksToMarkdown,
 } from "@/lib/knowledge-shared";
 import { parseMarkdown } from "@/lib/mini-markdown";
@@ -89,5 +90,32 @@ describe("mini-markdown blockquotes", () => {
     expect(blocks.map((b) => b.t)).toEqual(["p", "quote", "p"]);
     const q = blocks[1] as { t: "quote"; children: { t: string }[] };
     expect(q.children.map((b) => b.t)).toEqual(["p", "ul"]);
+  });
+});
+
+describe("treeFromFiles (snapshot manifest -> folder listing)", () => {
+  const files = [
+    { path: "wiki/a.md", size: 3, text: "aaa" },
+    { path: "wiki/data/lib/x.html", size: 9 },
+    { path: "raw-sources/documents/expert-feeds/2026/2026-11-08.md", size: 5 },
+    { path: "raw-sources/documents/expert-feeds/backfill/li/eric.md", size: 7 },
+  ];
+  it("lists one level with text, and folders as trees", () => {
+    const t = treeFromFiles(files, "wiki", 1, true);
+    expect(t).toEqual([
+      { name: "a.md", type: "blob", size: 3, text: "aaa" },
+      { name: "data", type: "tree", size: 0, children: [] },
+    ]);
+  });
+  it("lists two levels and leaves deeper folders empty", () => {
+    const t = treeFromFiles(files, "raw-sources/documents/expert-feeds", 2, false);
+    expect(t.map((n) => n.name)).toEqual(["2026", "backfill"]);
+    expect(t[0].children).toEqual([{ name: "2026-11-08.md", type: "blob", size: 5, text: undefined }]);
+    expect(t[1].children).toEqual([{ name: "li", type: "tree", size: 0, children: [] }]);
+  });
+  it("ignores other folders", () => {
+    expect(treeFromFiles(files, "wiki/data", 2, false)).toEqual([
+      { name: "lib", type: "tree", size: 0, children: [{ name: "x.html", type: "blob", size: 9, text: undefined }] },
+    ]);
   });
 });
