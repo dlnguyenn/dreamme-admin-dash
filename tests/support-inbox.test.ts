@@ -1350,6 +1350,25 @@ describe("storeGuidance: no account matched", async () => {
   });
 });
 
+describe("FREE_VERSION_GUIDANCE: the Meet Sushi first link", async () => {
+  const { FREE_VERSION_GUIDANCE } = await import("@/lib/support/triage");
+  const { readFileSync } = await import("node:fs");
+  it("names the link as it appears on the paywall and where it sits", () => {
+    expect(FREE_VERSION_GUIDANCE).toContain('"... or meet Sushi first!"');
+    expect(FREE_VERSION_GUIDANCE).toContain("under the Start trial button");
+    expect(FREE_VERSION_GUIDANCE).toContain("Delete Account");
+  });
+  it("is scoped to cases where it helps, never a dodge", () => {
+    expect(FREE_VERSION_GUIDANCE).toMatch(/stuck on, or can't get past, the paywall/);
+    expect(FREE_VERSION_GUIDANCE).toMatch(/Do NOT mention it to someone who is already subscribed/);
+    expect(FREE_VERSION_GUIDANCE).toMatch(/Never claim the free version includes any particular feature/);
+  });
+  it("is part of the drafting system prompt", () => {
+    const src = readFileSync("src/lib/support/triage.ts", "utf8");
+    expect(src).toMatch(/\$\{FREE_VERSION_GUIDANCE\}\s+This is the target voice/);
+  });
+});
+
 describe("cleanDraft: plain-text replies", async () => {
   const { cleanDraft } = await import("@/lib/support/triage");
   it("strips markdown bold so asterisks never reach the customer", () => {

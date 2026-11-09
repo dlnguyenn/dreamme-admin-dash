@@ -272,6 +272,21 @@ These steps work for a free trial or a paid subscription, and we do not know whi
 If they asked for a REFUND, also include Apple's https://reportaproblem.apple.com steps (Apple decides), and say that if it was a Google Play purchase they can reply and Dan will look into it.
 Neither draft may just ask a question.`;
 
+/**
+ * The onboarding paywall has a free way past it: the small "... or meet
+ * Sushi first!" link under the Start trial button opens the free version
+ * (exploration mode, `app/onboarding/paywall.tsx` handleMeetSushiFirst).
+ * Settings, including Delete Account, is reachable from there. Dan wants
+ * drafts to mention it wherever it helps. Exported for unit tests.
+ */
+export const FREE_VERSION_GUIDANCE = `FREE VERSION ("Meet Sushi first"): the paywall at the end of onboarding has a small link just under the Start trial button that says "... or meet Sushi first!" (if they gave their companion a different name, the link shows that name). Tapping it skips the trial and opens the free version of DreamMe, no payment needed, and from there Profile > Settings works as normal, including Delete Account at the bottom.
+Mention it, in one or two plain sentences, whenever it actually helps this person:
+- they are stuck on, or can't get past, the paywall or subscription screen;
+- they can't reach Settings, their profile or the rest of the app without paying (for example to delete their account themselves);
+- they want to look around or try DreamMe before starting a trial, can't afford it, or don't want to pay but would like to keep using it;
+- they cancelled or are cancelling and seem to want to keep using the app.
+Do NOT mention it to someone who is already subscribed and using the app, in a pure refund or billing-dispute reply where it would read as a dodge, or when it has nothing to do with their message. Never claim the free version includes any particular feature, and never present it as a substitute for doing what they asked (if Dan is handling a cancel or deletion, still say so).`;
+
 export async function triageThread(params: {
   subject: string | null;
   fromEmail: string | null;
@@ -330,6 +345,8 @@ Dan's voice rules (strict):
 - Never promise features or timelines. Never give medical advice; suggest talking to their provider for dosing/medical questions.
 - If the user asked a how-to question, answer it concretely.
 - The two drafts should be genuinely different takes (e.g. one short and punchy, one that explains a little more), not paraphrases. BOTH must sound bubbly and upbeat, neither is the "flat" option.
+
+${FREE_VERSION_GUIDANCE}
 
 This is the target voice, match this energy:
 "Hi Jo! Great news, I've gone ahead and cancelled your trial, so you won't be charged on July 31. Thanks so much for giving DreamMe a try, and if you ever fancy jumping back in you are always welcome!"
