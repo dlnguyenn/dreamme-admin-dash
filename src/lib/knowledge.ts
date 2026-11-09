@@ -4,9 +4,9 @@
  *
  * Env (Vercel):
  *   VAULT_GITHUB_TOKEN   fine-grained, read-only "Contents" on the vault repo
- *   KNOWLEDGE_PASSWORD   passphrase the tab asks for. The DAD's own password gate runs only in the
- *                        browser, and this tab serves private notes, so these routes check their own.
  *   VAULT_REPO           optional "owner/name" override
+ * Access uses the same check as the rest of the DAD (checkIngestAuth). Dan turned off the tab's own
+ * passphrase on 2026-11-09, knowing that check can be faked with an Origin header.
  * Development only:
  *   KNOWLEDGE_LOCAL_VAULT  path to a local vault checkout; read from disk instead of GitHub.
  *                          Ignored in production builds.
@@ -15,11 +15,11 @@ import {
   isAllowedVaultPath,
   parseFrontmatter,
   parseLog,
-  safeEqual,
   snippetFor,
   summaryOf,
   type LogEntry,
 } from "./knowledge-shared";
+import { checkIngestAuth } from "./auth-ingest";
 
 const REPO = process.env.VAULT_REPO || "dlnguyenn/success-in-all-ways";
 const [OWNER, NAME] = REPO.split("/");
@@ -28,19 +28,15 @@ const LOCAL = process.env.NODE_ENV !== "production" ? process.env.KNOWLEDGE_LOCA
 
 export type KnowledgeConfig = { ok: true } | { ok: false; missing: string[] };
 export function knowledgeConfig(): KnowledgeConfig {
-  const need = LOCAL ? ["KNOWLEDGE_PASSWORD"] : ["VAULT_GITHUB_TOKEN", "KNOWLEDGE_PASSWORD"];
-  const missing = need.filter((k) => !process.env[k]);
+  const missing = LOCAL || process.env.VAULT_GITHUB_TOKEN ? [] : ["VAULT_GITHUB_TOKEN"];
   return missing.length ? { ok: false, missing } : { ok: true };
 }
 
 /** null = allowed; otherwise the HTTP status and message to return. */
 export function knowledgeAuthError(req: Request): { status: number; error: string } | null {
+  if (!checkIngestAuth(req)) return { status: 401, error: "unauthorized" };
   const cfg = knowledgeConfig();
   if (!cfg.ok) return { status: 503, error: `not configured: ${cfg.missing.join(", ")}` };
-  const key = req.headers.get("x-knowledge-key") ?? "";
-  if (!key || !safeEqual(key, process.env.KNOWLEDGE_PASSWORD as string)) {
-    return { status: 401, error: "wrong passphrase" };
-  }
   return null;
 }
 

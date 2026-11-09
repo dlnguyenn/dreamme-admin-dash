@@ -3,7 +3,7 @@
 /**
  * Knowledge: everything Claude sessions have filed in Dan's vault, readable in the DAD.
  * Library (artifact snapshots + the growth library), What's new (the log), the wiki, and expert feeds.
- * Data is read live from the vault repo by /api/knowledge*, behind a passphrase of its own.
+ * Data is read live from the vault repo by /api/knowledge* (same access check as the rest of the DAD).
  */
 import * as React from "react";
 import { PageHeader } from "./Shell";
@@ -17,7 +17,6 @@ import { useIsMobile } from "@/lib/useIsMobile";
 
 type Sub = "library" | "new" | "wiki" | "feeds";
 const SUB_KEY = "dad.knowledge.sub.v1";
-const KEY_KEY = "dad.knowledge.key.v1";
 
 interface LibraryItem { path: string; title: string; description: string; topic: string; updated: string | null; url: string | null; bytes: number; notes: string | null; pinned?: boolean }
 interface PageMeta { path: string; slug: string; title: string; type: string | null; updated: string | null; tags: string[]; private: boolean; bytes: number; summary: string }
@@ -49,9 +48,8 @@ function writeLocal(k: string, v: string | null) {
   } catch {}
 }
 
-async function kfetch(url: string, key: string): Promise<Response> {
-  const res = await fetch(url, { headers: { "x-knowledge-key": key }, cache: "no-store" });
-  if (res.status === 401) throw Object.assign(new Error("wrong passphrase"), { code: 401 });
+async function kfetch(url: string): Promise<Response> {
+  const res = await fetch(url, { cache: "no-store" });
   if (res.status === 503) {
     const j = await res.json().catch(() => ({}));
     throw Object.assign(new Error(j.error ?? "not configured"), { code: 503 });
@@ -63,7 +61,6 @@ const kb = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max
 
 export function Knowledge() {
   const isMobile = useIsMobile();
-  const [key, setKey] = React.useState<string | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
   const [index, setIndex] = React.useState<Index | null>(null);
   const [error, setError] = React.useState<{ msg: string; code?: number } | null>(null);
@@ -75,7 +72,6 @@ export function Knowledge() {
   const [searching, setSearching] = React.useState(false);
 
   React.useEffect(() => {
-    setKey(readLocal(KEY_KEY));
     const s = readLocal(SUB_KEY);
     if (s === "library" || s === "new" || s === "wiki" || s === "feeds") setSub(s);
     setHydrated(true);
@@ -86,30 +82,25 @@ export function Knowledge() {
 
   const load = React.useCallback(
     async (refresh = false) => {
-      if (!key) return;
       setLoading(true);
       setError(null);
       try {
-        const res = await kfetch(`/api/knowledge${refresh ? "?refresh=1" : ""}`, key);
+        const res = await kfetch(`/api/knowledge${refresh ? "?refresh=1" : ""}`);
         const j = await res.json();
         if (!res.ok || !j.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
         setIndex(j as Index);
       } catch (e) {
         const err = e as Error & { code?: number };
-        if (err.code === 401) {
-          writeLocal(KEY_KEY, null);
-          setKey(null);
-        }
         setError({ msg: err.message, code: err.code });
       } finally {
         setLoading(false);
       }
     },
-    [key],
+    [],
   );
   React.useEffect(() => {
-    if (key) void load();
-  }, [key, load]);
+    void load();
+  }, [load]);
 
   // ?tab=knowledge&page=<slug> deep links open that wiki page.
   React.useEffect(() => {
@@ -121,7 +112,6 @@ export function Knowledge() {
 
   // Debounced search.
   React.useEffect(() => {
-    if (!key) return;
     const term = q.trim();
     if (term.length < 2) {
       setHits(null);
@@ -131,7 +121,7 @@ export function Knowledge() {
     setSearching(true);
     const t = setTimeout(async () => {
       try {
-        const res = await kfetch(`/api/knowledge/search?q=${encodeURIComponent(term)}`, key);
+        const res = await kfetch(`/api/knowledge/search?q=${encodeURIComponent(term)}`);
         const j = await res.json();
         if (live) setHits(j.ok ? (j.hits as Hit[]) : []);
       } catch {
@@ -144,7 +134,7 @@ export function Knowledge() {
       live = false;
       clearTimeout(t);
     };
-  }, [q, key]);
+  }, [q]);
 
   const openPage = React.useCallback(
     (slug: string) => {
@@ -155,7 +145,6 @@ export function Knowledge() {
   );
 
   if (!hydrated) return null;
-  if (!key) return <Unlock error={error} onUnlock={(k) => { writeLocal(KEY_KEY, k); setError(null); setKey(k); }} />;
 
   const since14 = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
   const recentPages = index?.pages.filter((p) => (p.updated ?? "") >= since14) ?? [];
@@ -172,22 +161,17 @@ export function Knowledge() {
             <Button variant="ghost" icon={<Icons.Refresh />} onClick={() => void load(true)} disabled={loading}>
               {loading ? "Loading…" : "Refresh"}
             </Button>
-            <Button
-              variant="ghost"
-              icon={<Icons.Lock />}
-              onClick={() => {
-                writeLocal(KEY_KEY, null);
-                setKey(null);
-                setIndex(null);
-              }}
-            >
-              Lock
-            </Button>
           </div>
         }
       />
 
-      {error && <ErrorBanner>Couldn&apos;t load the vault: {error.msg}</ErrorBanner>}
+      {error && (
+        <ErrorBanner>
+          {error.code === 503
+            ? `The vault isn't connected yet (${error.msg}). Add it in Vercel, then redeploy.`
+            : `Couldn't load the vault: ${error.msg}`}
+        </ErrorBanner>
+      )}
 
       {hits ? (
         <SearchResults
@@ -232,65 +216,15 @@ export function Knowledge() {
         </>
       )}
 
-      {open?.kind === "md" && key && (
-        <MarkdownReader
-          path={open.path}
-          title={open.title}
-          k={key}
-          onClose={() => setOpen(null)}
-          onOpenPage={openPage}
-        />
+      {open?.kind === "md" && (
+        <MarkdownReader path={open.path} title={open.title} onClose={() => setOpen(null)} onOpenPage={openPage} />
       )}
-      {open?.kind === "html" && key && <HtmlReader item={open.item} k={key} onClose={() => setOpen(null)} />}
+      {open?.kind === "html" && <HtmlReader item={open.item} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
 // ---------------- pieces ----------------
-
-function Unlock({ error, onUnlock }: { error: { msg: string; code?: number } | null; onUnlock: (k: string) => void }) {
-  const [v, setV] = React.useState("");
-  return (
-    <div style={{ maxWidth: 460 }}>
-      <PageHeader eyebrow="Knowledge" title="What we've learned" />
-      <div style={card}>
-        <div style={{ font: "600 15px var(--font-ui)", marginBottom: 6 }}>Unlock the vault</div>
-        <p style={{ font: "400 13px/1.55 var(--font-ui)", color: "var(--ink-2)", margin: "0 0 14px" }}>
-          This tab shows private notes, so it has its own passphrase, checked on the server. It&apos;s remembered on this device until you lock it.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (v.trim()) onUnlock(v.trim());
-          }}
-          style={{ display: "flex", gap: 8 }}
-        >
-          <input
-            type="password"
-            autoFocus
-            value={v}
-            onChange={(e) => setV(e.target.value)}
-            placeholder="Passphrase"
-            aria-label="Knowledge passphrase"
-            style={input}
-          />
-          <Button variant="primary" onClick={() => v.trim() && onUnlock(v.trim())}>
-            Unlock
-          </Button>
-        </form>
-        {error && (
-          <p style={{ font: "500 12.5px var(--font-ui)", color: "var(--accent)", margin: "10px 0 0" }}>
-            {error.code === 503
-              ? `The vault isn't connected yet (${error.msg}). Add the Vercel env vars, then redeploy.`
-              : error.code === 401
-                ? "That passphrase didn't work."
-                : error.msg}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function SearchBox({ value, onChange, busy }: { value: string; onChange: (v: string) => void; busy: boolean }) {
   return (
@@ -593,14 +527,14 @@ function Overlay({ title, eyebrowText, actions, onClose, wide, children }: { tit
   );
 }
 
-function useDoc(path: string, k: string) {
+function useDoc(path: string) {
   const [text, setText] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
     let live = true;
     setText(null);
     setError(null);
-    kfetch(`/api/knowledge/doc?path=${encodeURIComponent(path)}`, k)
+    kfetch(`/api/knowledge/doc?path=${encodeURIComponent(path)}`)
       .then(async (res) => {
         const body = await res.text();
         if (!res.ok) throw new Error(body.slice(0, 200) || `HTTP ${res.status}`);
@@ -610,12 +544,12 @@ function useDoc(path: string, k: string) {
     return () => {
       live = false;
     };
-  }, [path, k]);
+  }, [path]);
   return { text, error };
 }
 
-function MarkdownReader({ path, title, k, onClose, onOpenPage }: { path: string; title: string; k: string; onClose: () => void; onOpenPage: (slug: string) => void }) {
-  const { text, error } = useDoc(path, k);
+function MarkdownReader({ path, title, onClose, onOpenPage }: { path: string; title: string; onClose: () => void; onOpenPage: (slug: string) => void }) {
+  const { text, error } = useDoc(path);
   const parsed = React.useMemo(() => {
     if (text === null) return null;
     const { meta, body: raw } = parseFrontmatter(text);
@@ -651,8 +585,8 @@ function MarkdownReader({ path, title, k, onClose, onOpenPage }: { path: string;
   );
 }
 
-function HtmlReader({ item, k, onClose }: { item: LibraryItem; k: string; onClose: () => void }) {
-  const { text, error } = useDoc(item.path, k);
+function HtmlReader({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
+  const { text, error } = useDoc(item.path);
   return (
     <Overlay
       wide
@@ -676,7 +610,7 @@ function HtmlReader({ item, k, onClose }: { item: LibraryItem; k: string; onClos
       {text === null && !error && <Muted style={{ padding: 20 }}>Loading {kb(item.bytes)}…</Muted>}
       {text !== null && (
         // A unique-origin sandbox (no allow-same-origin): the page's scripts run, but they can't
-        // read the DAD's storage, cookies or passphrase.
+        // read the DAD's storage or cookies.
         <iframe
           title={item.title}
           srcDoc={text}
