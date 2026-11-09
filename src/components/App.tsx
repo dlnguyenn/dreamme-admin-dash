@@ -29,6 +29,7 @@ import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Roadmap } from "./Roadmap";
 import { Resources } from "./Resources";
+import { Knowledge } from "./Knowledge";
 import { SynthIDResearch } from "./SynthIDResearch";
 import { ImageStudio } from "./ImageStudio";
 import { AccessoryStudio } from "./AccessoryStudio";
@@ -347,6 +348,8 @@ export function App() {
     screen = role === "admin" ? <Roadmap /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
+  } else if (current === "knowledge") {
+    screen = role === "admin" ? <Knowledge /> : <ComingSoon item={currentItem} />;
   } else if (current === "resources") {
     screen = <Resources isAdmin={role === "admin"} />;
   } else if (current === "synthid-research") {

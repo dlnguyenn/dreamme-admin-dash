@@ -129,8 +129,23 @@ export function BriefReader({ slug, onClose }: { slug: string; onClose: () => vo
   );
 }
 
-function BlockView({ block }: { block: Block }) {
+export function BlockView({ block }: { block: Block }) {
   switch (block.t) {
+    case "quote":
+      return (
+        <blockquote
+          style={{
+            margin: "10px 0",
+            padding: "2px 0 2px 14px",
+            borderLeft: "3px solid var(--line)",
+            color: "var(--ink-2)",
+          }}
+        >
+          {block.children.map((b, i) => (
+            <BlockView key={i} block={b} />
+          ))}
+        </blockquote>
+      );
     case "h":
       return block.level <= 2 ? (
         <h2 style={{ fontSize: 17, fontWeight: 600, margin: "26px 0 8px" }}>
@@ -191,7 +206,7 @@ function BlockView({ block }: { block: Block }) {
   }
 }
 
-function Inlines({ items }: { items: Inline[] }) {
+export function Inlines({ items }: { items: Inline[] }) {
   return (
     <>
       {items.map((x, i) => {

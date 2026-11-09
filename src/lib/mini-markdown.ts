@@ -1,7 +1,7 @@
 /**
  * A small Markdown parser for briefs shown in the DAD (src/lib/briefs).
  * Covers what our briefs use: # to ### headings, paragraphs, - and 1. lists
- * with one nested level, pipe tables, `code`, **bold** and [links](url).
+ * with one nested level, pipe tables, > blockquotes, `code`, **bold** and [links](url).
  * Pure, so it is unit-tested; BriefReader.tsx turns the blocks into React.
  */
 
@@ -20,7 +20,8 @@ export type Block =
   | { t: "h"; level: 1 | 2 | 3; children: Inline[] }
   | { t: "p"; children: Inline[] }
   | { t: "ul" | "ol"; items: ListItem[] }
-  | { t: "table"; head: Inline[][]; rows: Inline[][][] };
+  | { t: "table"; head: Inline[][]; rows: Inline[][][] }
+  | { t: "quote"; children: Block[] };
 
 /** Only http(s), mailto and same-site paths become links; anything else stays text. */
 export function safeHref(href: string): string | null {
@@ -90,6 +91,19 @@ export function parseMarkdown(src: string): Block[] {
       // A blank line ends a list unless the next line continues it.
       const next = lines.slice(i + 1).find((l) => l.trim());
       if (list && !(next && LIST.test(next))) flushList();
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      flushPara();
+      flushList();
+      const inner: string[] = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        inner.push(lines[i].replace(/^\s*>\s?/, ""));
+        i++;
+      }
+      i--;
+      blocks.push({ t: "quote", children: parseMarkdown(inner.join("\n")) });
       continue;
     }
 

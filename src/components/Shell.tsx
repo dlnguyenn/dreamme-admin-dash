@@ -6,6 +6,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 
 export type DashId =
   | "overview"
+  | "knowledge"
   | "content"
   | "captions"
   | "analytics"
@@ -50,6 +51,8 @@ export const NAV_ITEMS: NavItem[] = [
   // visibleNavItems/allowed[0] bounce in App.tsx sends viewers to Content
   // Pipeline with no extra branching.
   { id: "overview", label: "Overview", icon: "Sparkles", status: "live", desc: "Everything at a glance", adminOnly: true, group: "Home" },
+  // adminOnly, and its API routes also check a passphrase of their own (the vault holds private notes).
+  { id: "knowledge", label: "Knowledge", icon: "BookmarkFilled", status: "live", desc: "Playbooks, research and notes from the vault", adminOnly: true },
   { id: "content", label: "Content Pipeline", icon: "Sun", status: "live", desc: "Daily 3-persona output", group: "Content" },
   { id: "captions", label: "Caption Library", icon: "Chat", status: "live", desc: "All captions, searchable" },
   { id: "analytics", label: "Posting Analytics", icon: "Chart", status: "soon", desc: "Views, engagement, growth", adminOnly: true },
