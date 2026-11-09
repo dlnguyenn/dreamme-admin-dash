@@ -28,6 +28,7 @@ import { StoreReviews } from "./StoreReviews";
 import { CreativeAnalytics } from "./CreativeAnalytics";
 import { FeatureRequestsDashboard } from "./FeatureRequestsDashboard";
 import { Roadmap } from "./Roadmap";
+import { ExperimentLog } from "./ExperimentLog";
 import { Resources } from "./Resources";
 import { Knowledge } from "./Knowledge";
 import { SynthIDResearch } from "./SynthIDResearch";
@@ -346,6 +347,8 @@ export function App() {
     screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "roadmap") {
     screen = role === "admin" ? <Roadmap /> : <ComingSoon item={currentItem} />;
+  } else if (current === "experiments") {
+    screen = role === "admin" ? <ExperimentLog /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "knowledge") {

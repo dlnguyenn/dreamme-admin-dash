@@ -435,3 +435,37 @@ export async function fetchPaidCustomersWithEmail(params: {
   );
   return result;
 }
+
+// ---- Experiments (Experiments tab live status) --------------------------
+
+export interface RcExperiment {
+  id: string;
+  display_name: string;
+  status: string;
+  started_at: string | null;
+  stopped_at: string | null;
+  enrollment_percentage: number | null;
+}
+
+/**
+ * Every RevenueCat Experiment in the project (configuration only, no
+ * results). Needs the key's project_configuration:experiments:read scope.
+ */
+export async function fetchExperiments(maxRetries = 2): Promise<RcExperiment[]> {
+  const projectId = getProjectId();
+  if (!projectId) throw new Error("REVENUECAT_PROJECT_ID not set");
+  const out: RcExperiment[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const body = await rcFetchJson<{ items?: RcExperiment[]; next_page?: string | null }>(
+      `/projects/${projectId}/experiments`,
+      { limit: "100", starting_after: startingAfter },
+      maxRetries,
+    );
+    const items = body.items ?? [];
+    out.push(...items);
+    if (!body.next_page || items.length === 0) break;
+    startingAfter = items[items.length - 1].id;
+  }
+  return out;
+}
