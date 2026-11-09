@@ -2,8 +2,9 @@
  * Experiments tab (src/lib/experiment-log.ts).
  *
  * GET  — every entry, newest first, plus live RevenueCat status for entries
- *        with an rc_experiment_id (`rc`, keyed by id). An RC failure is
- *        reported in `rcError` and never fails the list.
+ *        with an rc_experiment_id (`rc`, keyed by id). Entries whose RC
+ *        experiment started or stopped are moved along first (`synced`). An
+ *        RC failure is reported in `rcError` and never fails the list.
  * POST — add an entry. Claude sessions call this with the ingest token:
  *        curl -X POST $DAD/api/experiments -H "x-dreamme-secret: $INGEST_TOKEN"
  *          -H "content-type: application/json" -d '{"title":"…","kind":"change",…}'
@@ -12,14 +13,9 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { spGet, spPost, supportDbConfigured } from "@/lib/support/db";
-import { fetchExperiments, revenueCatConfigured } from "@/lib/vendors/revenuecat";
-import {
-  dateRangeError,
-  sortEntries,
-  type ExperimentEntry,
-  type RcExperimentState,
-} from "@/lib/experiment-log";
+import { spPost, supportDbConfigured } from "@/lib/support/db";
+import { dateRangeError, sortEntries, type ExperimentEntry } from "@/lib/experiment-log";
+import { loadAndSyncExperimentLog } from "@/lib/experiment-log-sync";
 import { CreateEntry, cleanEntry } from "@/lib/experiment-log-schema";
 
 export const runtime = "nodejs";
@@ -38,44 +34,12 @@ function guard(req: Request): NextResponse | null {
 const fail = (e: unknown) =>
   NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
 
-async function rcStates(
-  entries: ExperimentEntry[],
-): Promise<{ rc: Record<string, RcExperimentState>; rcError: string | null }> {
-  const wanted = new Set(entries.map((e) => e.rc_experiment_id).filter((x): x is string => !!x));
-  if (wanted.size === 0) return { rc: {}, rcError: null };
-  if (!revenueCatConfigured()) return { rc: {}, rcError: "RevenueCat key not configured" };
-  try {
-    const all = await fetchExperiments();
-    const rc: Record<string, RcExperimentState> = {};
-    for (const x of all) {
-      if (!wanted.has(x.id)) continue;
-      rc[x.id] = {
-        id: x.id,
-        status: x.status,
-        started_at: x.started_at ?? null,
-        stopped_at: x.stopped_at ?? null,
-        enrollment_percentage: x.enrollment_percentage ?? null,
-      };
-    }
-    return { rc, rcError: null };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return {
-      rc: {},
-      rcError: /experiments:read/.test(msg)
-        ? "The RevenueCat API key can't read experiments (needs the experiments:read permission)"
-        : msg.slice(0, 200),
-    };
-  }
-}
-
 export async function GET(req: Request) {
   const bad = guard(req);
   if (bad) return bad;
   try {
-    const entries = sortEntries(await spGet<ExperimentEntry[]>("experiment_log?select=*&limit=1000"));
-    const { rc, rcError } = await rcStates(entries);
-    return NextResponse.json({ ok: true, entries, rc, rcError });
+    const { entries, rc, rcError, synced } = await loadAndSyncExperimentLog();
+    return NextResponse.json({ ok: true, entries: sortEntries(entries), rc, rcError, synced });
   } catch (e) {
     return fail(e);
   }

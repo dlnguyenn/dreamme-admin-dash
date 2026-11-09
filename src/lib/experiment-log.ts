@@ -191,3 +191,34 @@ export interface RcExperimentState {
   stopped_at: string | null;
   enrollment_percentage: number | null;
 }
+
+/**
+ * What an entry should change to match its RevenueCat experiment, or null.
+ * RC moves draft -> running -> stopped (paused in between leaves us alone):
+ *  - RC running: a planned/draft entry becomes running, start date filled in.
+ *  - RC stopped: a planned/draft/running entry becomes stopped, end date filled.
+ * Dates are only filled when empty, so a hand-entered date wins, and a
+ * "decided" entry is never touched: that's a human call made after the stop.
+ */
+export function rcSyncPatch(
+  e: Pick<ExperimentEntry, "status" | "start_date" | "end_date">,
+  rc: RcExperimentState,
+): Partial<Pick<ExperimentEntry, "status" | "start_date" | "end_date">> | null {
+  if (e.status === "decided") return null;
+  const day = (iso: string | null) => (iso ? iso.slice(0, 10) : null);
+  const patch: Partial<Pick<ExperimentEntry, "status" | "start_date" | "end_date">> = {};
+  const rcStatus = rc.status.toLowerCase();
+  if (rcStatus === "running" || rcStatus === "paused") {
+    if (rcStatus === "running" && (e.status === "planned" || e.status === "draft")) patch.status = "running";
+    if (!e.start_date && rc.started_at) patch.start_date = day(rc.started_at);
+  } else if (rcStatus === "stopped") {
+    if (e.status !== "stopped") patch.status = "stopped";
+    if (!e.start_date && rc.started_at) patch.start_date = day(rc.started_at);
+    if (!e.end_date && rc.stopped_at) patch.end_date = day(rc.stopped_at);
+  }
+  // Never write an end before the start.
+  const start = patch.start_date ?? e.start_date;
+  const end = patch.end_date ?? e.end_date;
+  if (start && end && end < start) delete patch.end_date;
+  return Object.keys(patch).length ? patch : null;
+}

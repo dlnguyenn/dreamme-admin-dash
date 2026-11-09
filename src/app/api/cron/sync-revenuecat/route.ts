@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
+import { loadAndSyncExperimentLog } from "@/lib/experiment-log-sync";
 import {
   fetchChart,
   fetchOverview,
@@ -214,9 +215,20 @@ export async function GET(req: Request) {
     );
   }
 
+  // Experiments tab: move entries whose RC experiment started or stopped, so
+  // the log follows RC even on days nobody opens the tab. Never fails the sync.
+  let experimentLog: unknown;
+  try {
+    const r = await loadAndSyncExperimentLog();
+    experimentLog = { synced: r.synced, rcError: r.rcError };
+  } catch (e) {
+    experimentLog = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   return NextResponse.json({
     ok: true,
     overview,
+    experimentLog,
     accountRows: accountRows.length,
     adRows: adRows.length,
     window: { since: startDate, until: endDate },

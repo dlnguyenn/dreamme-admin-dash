@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dateRangeError,
+  rcSyncPatch,
   dateRangeLabel,
   daysRunning,
   sortEntries,
@@ -89,6 +90,41 @@ describe("request schema", () => {
       rc_experiment_id: null,
       owner: null,
       title: "t",
+    });
+  });
+});
+
+describe("rcSyncPatch", () => {
+  const rc = (status: string, started_at: string | null = null, stopped_at: string | null = null) => ({
+    id: "exp1",
+    status,
+    started_at,
+    stopped_at,
+    enrollment_percentage: 100,
+  });
+
+  it("starts a draft entry when RC starts, filling the start date", () => {
+    expect(rcSyncPatch({ status: "draft", start_date: null, end_date: null }, rc("running", "2026-11-20T15:00:00Z"))).toEqual({
+      status: "running",
+      start_date: "2026-11-20",
+    });
+  });
+
+  it("stops a running entry when RC stops, keeping a hand-entered start", () => {
+    expect(
+      rcSyncPatch({ status: "running", start_date: "2026-11-19", end_date: null }, rc("stopped", "2026-11-20T15:00:00Z", "2026-12-20T09:00:00Z")),
+    ).toEqual({ status: "stopped", end_date: "2026-12-20" });
+  });
+
+  it("leaves decided entries, matching entries and drafts alone", () => {
+    expect(rcSyncPatch({ status: "decided", start_date: null, end_date: null }, rc("stopped", "2026-11-20T00:00:00Z"))).toBeNull();
+    expect(rcSyncPatch({ status: "running", start_date: "2026-11-20", end_date: null }, rc("running", "2026-11-20T00:00:00Z"))).toBeNull();
+    expect(rcSyncPatch({ status: "draft", start_date: null, end_date: null }, rc("draft"))).toBeNull();
+  });
+
+  it("doesn't change status while RC is paused, but fills a missing start", () => {
+    expect(rcSyncPatch({ status: "running", start_date: null, end_date: null }, rc("paused", "2026-11-20T00:00:00Z"))).toEqual({
+      start_date: "2026-11-20",
     });
   });
 });
