@@ -5,7 +5,7 @@
  * wiki/revenue-100k-question.md, Decision). Can DreamMe reach $100k gross in
  * April with Meta spend no higher than what its trials earn back in 12 months?
  *
- * Sub-views: Scorecard (April forecast, drift, Jan 15 checkpoints), Value
+ * Sub-views: Todo (Dan's action items, ticked by hand), Scorecard (April forecast, drift, Jan 15 checkpoints), Value
  * per trial (what each channel can pay for an extra trial), Clippers (the
  * pay-per-view relaunch against its stop rule), Experiments (A/B tests) and
  * P&L (monthly contribution). The Meta holdout lives on its own tab (Meta
@@ -21,10 +21,11 @@ import { ClipperTracker } from "./ClipperTracker";
 import { Scorecard } from "./Scorecard";
 import { Experiments } from "./Experiments";
 import { PnL } from "./PnL";
+import { Todos } from "./Todos";
 import type { SourceStatus } from "@/lib/revenue-plan/user-sources";
 
-type View = "scorecard" | "value" | "clippers" | "experiments" | "pnl";
-const VIEWS: View[] = ["scorecard", "value", "clippers", "experiments", "pnl"];
+type View = "todo" | "scorecard" | "value" | "clippers" | "experiments" | "pnl";
+const VIEWS: View[] = ["todo", "scorecard", "value", "clippers", "experiments", "pnl"];
 const VIEW_KEY = "dreamme.aprilPlan.view";
 
 export function AprilPlan() {
@@ -51,12 +52,13 @@ export function AprilPlan() {
         title="April Plan"
         subtitle="Tracking for $100k gross in April 2027 with Meta spend no higher than what its trials earn back in 12 months. Net is gross x0.84 (Apple's real 15%), never RC proceeds."
         actions={
-          // Five views don't fit a phone: the switcher scrolls instead of clipping.
+          // Six views don't fit a phone: the switcher scrolls instead of clipping.
           <div style={{ maxWidth: "100%", overflowX: "auto" }}>
             <Segmented
               value={view}
               onChange={pick}
               options={[
+                { value: "todo", label: "Todo" },
                 { value: "scorecard", label: "Scorecard" },
                 { value: "value", label: "Value per trial" },
                 { value: "clippers", label: "Clippers" },
@@ -68,6 +70,7 @@ export function AprilPlan() {
         }
       />
       <SourcesBanner onSynced={() => setRefreshKey((k) => k + 1)} />
+      {view === "todo" && <Todos />}
       {view === "scorecard" && <Scorecard key={`s${refreshKey}`} />}
       {view === "value" && <ValuePerTrial key={`v${refreshKey}`} />}
       {view === "clippers" && <ClipperTracker key={`c${refreshKey}`} />}
