@@ -158,7 +158,7 @@ describe("trial-emails: copy rules", () => {
       platform: "ios",
       ctaUrl: "https://x/go",
       unsubscribeUrl: "https://x/unsub",
-      imageUrl: "https://x/img.png",
+      assets: { sushi: "https://x/s.png", icon: "https://x/i.png", font: "https://x/f.ttf" },
     }),
   );
   it("no em dashes anywhere, signed as co-founder, unsubscribe and CTA twice in every email", () => {
@@ -176,7 +176,9 @@ describe("trial-emails: copy rules", () => {
     const v = allVariants();
     const off = all[v.findIndex((x) => x.kind === "day0" && x.cancelled)];
     const on = all[v.findIndex((x) => x.kind === "day0" && !x.cancelled)];
-    expect(off.text).toContain("you won't be charged");
-    expect(on.text).toContain("Your trial is free until Monday, Nov 23");
+    expect(off.text).toContain("You won't be charged");
+    expect(off.text).not.toContain("Free until");
+    expect(on.text).toContain("Free until Monday, Nov 23");
+    expect(on.text).toContain("Nothing is charged before then");
   });
 });

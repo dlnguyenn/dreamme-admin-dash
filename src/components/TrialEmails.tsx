@@ -351,7 +351,7 @@ function Previews() {
           <iframe
             title="Email preview at phone width"
             src={`/api/trial-emails/preview?v=${v}`}
-            style={{ width: "100%", height: 760, border: 0, display: "block" }}
+            style={{ width: "100%", height: 900, border: 0, display: "block" }}
           />
         </Card>
       </div>

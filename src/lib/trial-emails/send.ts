@@ -7,7 +7,7 @@
  */
 import nodemailer from "nodemailer";
 import { makeToken, type EmailKind } from "./core";
-import { renderEmail, type EmailInput, type RenderedEmail } from "./content";
+import { renderEmail, type EmailAssets, type EmailInput, type RenderedEmail } from "./content";
 
 const SMTP_USER = process.env.SUPPORT_IMAP_USER ?? "dan@dreamme.life";
 const SMTP_PASS = process.env.DREAMME_SMTP_PASS ?? "";
@@ -24,8 +24,12 @@ export function linksFor(otid: string, kind: EmailKind, base = publicBase()) {
   return {
     ctaUrl: `${base}/api/trial-emails/go?t=${makeToken(otid, kind)}`,
     unsubscribeUrl: `${base}/api/trial-emails/unsubscribe?t=${makeToken(otid, "unsub")}`,
-    imageUrl: `${base}/email/sushi-waving.png`,
+    assets: assetsFor(base),
   };
+}
+
+export function assetsFor(base = publicBase()): EmailAssets {
+  return { sushi: `${base}/email/sushi-waving.png`, icon: `${base}/email/app-icon.png`, font: `${base}/email/jellee.ttf` };
 }
 
 export const mailerReady = () => !!SMTP_USER && !!SMTP_PASS;
@@ -61,12 +65,12 @@ export async function sendEmail(
 }
 
 export function render(
-  input: Omit<EmailInput, "ctaUrl" | "unsubscribeUrl" | "imageUrl">,
+  input: Omit<EmailInput, "ctaUrl" | "unsubscribeUrl" | "assets">,
   otid: string,
   base?: string,
-  imageUrl?: string,
+  assets?: Partial<EmailAssets>,
 ) {
   const links = linksFor(otid, input.kind, base);
-  if (imageUrl) links.imageUrl = imageUrl;
+  if (assets) links.assets = { ...links.assets, ...assets };
   return { email: renderEmail({ ...input, ...links }), links };
 }

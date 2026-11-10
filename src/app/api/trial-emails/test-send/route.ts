@@ -33,8 +33,12 @@ export async function POST(req: Request) {
       : MAIN;
   // Embed Sushi when the file is on disk (local runs), so a test sent before
   // the deploy still shows the image; production sends use the hosted copy.
-  const local = path.join(process.cwd(), "public", "email", "sushi-waving.png");
-  const inline = existsSync(local);
+  const dir = path.join(process.cwd(), "public", "email");
+  const inline = existsSync(path.join(dir, "sushi-waving.png"));
+  const attachments = [
+    { filename: "sushi.png", path: path.join(dir, "sushi-waving.png"), cid: "sushi-waving" },
+    { filename: "dreamme.png", path: path.join(dir, "app-icon.png"), cid: "app-icon" },
+  ];
   const sent: string[] = [];
   for (const i of pick) {
     const v = variants[i];
@@ -51,13 +55,13 @@ export async function POST(req: Request) {
       },
       "test",
       undefined,
-      inline ? "cid:sushi-waving" : undefined,
+      inline ? { sushi: "cid:sushi-waving", icon: "cid:app-icon" } : undefined,
     );
     await sendEmail(
       TEST_RECIPIENT,
       { ...email, subject: `[Test] ${email.subject}` },
       links.unsubscribeUrl,
-      inline ? [{ filename: "sushi.png", path: local, cid: "sushi-waving" }] : undefined,
+      inline ? attachments : undefined,
     );
     sent.push(v.label);
   }
