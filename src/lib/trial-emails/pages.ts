@@ -3,7 +3,7 @@
  * Users see these on their phone, so they carry DreamMe's look, not the DAD's.
  */
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
-const INK = "#1A3550";
+const INK = "#2E2622"; // espresso, matches the emails
 
 export const APP_DEEP_LINK = "dreamme://";
 export const APP_STORE_URL = "https://apps.apple.com/app/id6755569693";
@@ -16,13 +16,13 @@ export function page(title: string, body: string, extraHead = ""): Response {
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(title)}</title>${extraHead}
 <style>
-body{margin:0;background:#FFFFFF;color:${INK};font:400 17px/1.5 ${FONT};}
+body{margin:0;background:#F6F2EC;color:${INK};font:400 17px/1.5 ${FONT};}
 main{max-width:420px;margin:0 auto;padding:48px 24px;text-align:center;}
 h1{font:600 22px/1.3 ${FONT};margin:16px 0 8px;}
 p{margin:0 0 20px;}
-.btn{display:inline-block;background:${INK};color:#FFFFFF;text-decoration:none;font:600 17px ${FONT};padding:14px 28px;border-radius:12px;border:0;cursor:pointer;}
-.small{font-size:14px;color:#4A5B6E;}
-.small a{color:#4A5B6E;}
+.btn{display:inline-block;background:${INK};color:#FBF7F2;text-decoration:none;font:600 17px ${FONT};padding:14px 28px;border-radius:12px;border:0;cursor:pointer;}
+.small{font-size:14px;color:#6B5E55;}
+.small a{color:#6B5E55;}
 img{width:96px;height:auto;}
 </style></head><body><main>${body}</main></body></html>`;
   return new Response(html, {

@@ -10,8 +10,8 @@
  * real welcome emails (Duolingo: mascot first, one ask, one big button;
  * Strava: brand header, colour hero, numbered steps; Calm: white cards on a
  * tinted page) in DreamMe's brand palette (DreamMe_Brand_Guidelines.pdf:
- * Ocean Sky backgrounds, Deep Sea buttons with Seafoam White text, Midnight
- * Depth text, Coral Bloom for progress). Headlines use Jellee (the store
+ * first Ocean Sky / Deep Sea, then reworked to warm neutrals with Sushi's
+ * coral as the one accent after Dan found the blue off). Headlines use Jellee (the store
  * listing face) where the mail app loads web fonts (Apple Mail), system bold
  * elsewhere. Table layout and inline styles only, so Gmail keeps it.
  *
@@ -247,17 +247,20 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 // Brand palette (DreamMe_Brand_Guidelines.pdf). Email clients don't support
 // CSS variables, so these are literal on purpose.
 const C = {
-  page: "#F0FAFF", // Seafoam White
-  hero: "#B8E4F0", // Ocean Sky
+  // Warm neutral palette (Dan 2026-11-10: "more lux and neutral, the blue is
+  // throwing me off"). Restrained strategy: tinted neutrals + Sushi's coral as
+  // the one accent. Contrast on white: ink 14.8:1, ink2 5.9:1.
+  page: "#F6F2EC", // warm oat
+  hero: "#EDE4D8", // sand (matches the hero GIF ground)
   card: "#FFFFFF",
-  ink: "#1A3550", // Midnight Depth
-  ink2: "#3E5A74", // Midnight Depth, lighter, for secondary text (5.9:1 on white)
-  cta: "#2D5F8A", // Deep Sea
-  ctaText: "#F0FAFF",
-  coral: "#F4826A", // Coral Bloom (progress)
-  panel: "#EAF6FB", // Ocean Sky, light
-  good: "#E4F3EA", // Sea Kelp, light
-  goodInk: "#25603E", // Sea Kelp, dark
+  ink: "#2E2622", // espresso
+  ink2: "#6B5E55", // warm taupe, secondary text
+  cta: "#2E2622", // espresso button
+  ctaText: "#FBF7F2",
+  coral: "#D9705A", // Sushi coral, step numbers and today's dot
+  panel: "#F6F0E8", // light oat panels
+  good: "#EDF1E7", // sage, the "you won't be charged" panel
+  goodInk: "#3D5A39",
 };
 const SANS = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
 const DISPLAY = `'Jellee', ${SANS}`;
@@ -324,7 +327,7 @@ function weekHtml(items: { when: string; what: string }[]): string {
   const rows = items
     .map(
       (x, n) => `<tr>
-<td width="12" valign="top" style="padding:7px 12px 0 0;"><div style="width:10px;height:10px;border-radius:5px;background:${n === 0 ? C.coral : C.hero};"></div></td>
+<td width="12" valign="top" style="padding:7px 12px 0 0;"><div style="width:10px;height:10px;border-radius:5px;background:${n === 0 ? C.coral : "#D9CBB8"};"></div></td>
 <td valign="top" style="padding:0 0 12px;font-family:${SANS};font-size:16px;line-height:22px;color:${C.ink};"><strong>${esc(x.when)}</strong><br>${esc(
         x.what.charAt(0).toUpperCase() + x.what.slice(1),
       )}</td>

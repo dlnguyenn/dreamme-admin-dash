@@ -12,9 +12,9 @@ SRC = "C:/Users/Dan/Documents/DreamMe/claude/store-listings/search-card-2026-11/
 OUT = sys.argv[1]  # usage: python scripts/make-trial-email-hero.py public/email
 
 W, H = 480, 480  # 2x of 240x240
-SKY = (184, 228, 240)  # Ocean Sky
-PAGE = (240, 250, 255)  # Seafoam White (page behind the card)
-GOLD = (245, 166, 35)
+SKY = (237, 228, 216)  # warm sand (was Ocean Sky; Dan 2026-11-10: more lux and neutral)
+PAGE = (246, 242, 236)  # warm oat (page behind the card)
+GOLD = (201, 162, 74)  # muted gold
 WHITE = (255, 255, 255)
 CORAL = (244, 130, 106)
 FRAMES = 16
@@ -64,7 +64,7 @@ def make(pose: str, floaters: str, name: str):
         im = Image.new("RGBA", (W, H), SKY + (255,))
         d = ImageDraw.Draw(im, "RGBA")
         # soft bubble ring behind Sushi (the brand cover's circles)
-        d.ellipse([150, 70, 560, 480], fill=(205, 237, 246, 255))
+        d.ellipse([150, 70, 560, 480], fill=(246, 240, 232, 255))
         # floaters rising
         for x, ph, s in floats:
             p = (t + ph) % 1.0
@@ -72,8 +72,8 @@ def make(pose: str, floaters: str, name: str):
             alpha = min(1.0, p * 4) * min(1.0, (1 - p) * 3)
             xx = x + 8 * math.sin(2 * math.pi * (p * 2 + ph))
             if floaters == "bubbles":
-                d.ellipse([xx - s, y - s, xx + s, y + s], outline=WHITE + (int(220 * alpha),), width=3)
-                d.ellipse([xx - s * 0.35, y - s * 0.55, xx - s * 0.05, y - s * 0.25], fill=WHITE + (int(200 * alpha),))
+                d.ellipse([xx - s, y - s, xx + s, y + s], outline=(196, 178, 156) + (int(220 * alpha),), width=3)
+                d.ellipse([xx - s * 0.35, y - s * 0.55, xx - s * 0.05, y - s * 0.25], fill=(255, 255, 255) + (int(230 * alpha),))
             else:
                 heart(d, xx, y, s * 1.5, CORAL, 0.9 * alpha)
         # Sushi: bob and sway
