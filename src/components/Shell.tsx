@@ -23,6 +23,7 @@ export type DashId =
   | "mmp"
   | "plan"
   | "stepdown"
+  | "trial-emails"
   | "creatives"
   | "roadmap"
   | "requests"
@@ -69,6 +70,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "plan", label: "April Plan", icon: "Chart", status: "live", desc: "Scorecard, value per trial, clippers, experiments, P&L", adminOnly: true },
   // id kept as "stepdown" so old ?tab=stepdown links still land here.
   { id: "stepdown", label: "Meta Switchback", icon: "Flask", status: "live", desc: "Meta holdout: spend vs plan, cost per extra trial", adminOnly: true },
+  { id: "trial-emails", label: "Trial Emails", icon: "Send", status: "live", desc: "Day-0 and day-1 trialist emails, half held back", adminOnly: true },
   { id: "creatives", label: "Creatives", icon: "Image", status: "live", desc: "Meta ad performance + qualified CPA", adminOnly: true },
   { id: "roadmap", label: "Roadmap", icon: "Grid", status: "live", desc: "What we're building now, next and later", adminOnly: true, group: "Product" },
   { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true },

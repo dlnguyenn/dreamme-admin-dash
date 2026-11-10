@@ -38,6 +38,7 @@ const SpendDashboard = dynamic(() => import("./SpendDashboard").then((m) => m.Sp
 const GrowthAI = dynamic(() => import("./GrowthAI").then((m) => m.GrowthAI), { ssr: false, loading: TabLoading });
 const MarketingEfficiency = dynamic(() => import("./MarketingEfficiency").then((m) => m.MarketingEfficiency), { ssr: false, loading: TabLoading });
 const SwitchbackTest = dynamic(() => import("./SwitchbackTest").then((m) => m.SwitchbackTest), { ssr: false, loading: TabLoading });
+const TrialEmails = dynamic(() => import("./TrialEmails").then((m) => m.TrialEmails), { ssr: false, loading: TabLoading });
 const Mmp = dynamic(() => import("./mmp/Mmp").then((m) => m.Mmp), { ssr: false, loading: TabLoading });
 const AprilPlan = dynamic(() => import("./plan/AprilPlan").then((m) => m.AprilPlan), { ssr: false, loading: TabLoading });
 const StoreReviews = dynamic(() => import("./StoreReviews").then((m) => m.StoreReviews), { ssr: false, loading: TabLoading });
@@ -354,6 +355,8 @@ export function App() {
     screen = role === "admin" ? <AprilPlan /> : <ComingSoon item={currentItem} />;
   } else if (current === "stepdown") {
     screen = role === "admin" ? <SwitchbackTest /> : <ComingSoon item={currentItem} />;
+  } else if (current === "trial-emails") {
+    screen = role === "admin" ? <TrialEmails /> : <ComingSoon item={currentItem} />;
   } else if (current === "creatives") {
     screen = role === "admin" ? <CreativeAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "roadmap") {
