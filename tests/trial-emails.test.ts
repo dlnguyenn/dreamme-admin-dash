@@ -189,3 +189,34 @@ describe("trial-emails: copy rules", () => {
     expect(on.text).toContain("Nothing is charged before then");
   });
 });
+
+describe("trial-emails: themes", () => {
+  it("blue and lux both render, each with its own banner colour and art", () => {
+    const base = {
+      kind: "day1" as const,
+      cta: "side_effect" as const,
+      cancelled: false,
+      aboutToStart: false,
+      firstName: "Jamie",
+      fish: "Sushi",
+      trialEnd: "Monday, Nov 23",
+      platform: "ios" as const,
+      ctaUrl: "https://x/go",
+      unsubscribeUrl: "https://x/unsub",
+      assets: {
+        heroDay0: "h0",
+        heroDay1: "h1",
+        icon: "i",
+        font: "f",
+        moods: { great: "g", okay: "o", rough: "r", tired: "t" },
+      },
+    };
+    const blue = renderEmail({ ...base, theme: "blue" }).html;
+    const lux = renderEmail({ ...base, theme: "lux" }).html;
+    expect(blue).toContain("#2D5F8A");
+    expect(lux).toContain("#E6DCCF");
+    expect(lux).not.toContain("#2D5F8A");
+    // no cards nested inside the sheet: panels are gone
+    for (const h of [blue, lux]) expect(h).not.toMatch(/border-radius:16px/);
+  });
+});

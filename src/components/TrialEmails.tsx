@@ -296,6 +296,7 @@ function Body({ d, scope, setScope }: { d: Summary; scope: Scope; setScope: (s: 
 function Previews() {
   const [list, setList] = React.useState<{ index: number; label: string }[]>([]);
   const [v, setV] = React.useState(0);
+  const [theme, setTheme] = React.useState<"blue" | "lux">("lux");
   const [meta, setMeta] = React.useState<{ subject: string; preview: string } | null>(null);
   React.useEffect(() => {
     fetch("/api/trial-emails/preview?list=1")
@@ -304,11 +305,11 @@ function Previews() {
       .catch(() => {});
   }, []);
   React.useEffect(() => {
-    fetch(`/api/trial-emails/preview?v=${v}&format=meta`)
+    fetch(`/api/trial-emails/preview?v=${v}&theme=${theme}&format=meta`)
       .then((r) => r.json())
       .then((b) => setMeta(b.ok ? b : null))
       .catch(() => setMeta(null));
-  }, [v]);
+  }, [v, theme]);
   if (!list.length) return null;
   return (
     <>
@@ -339,6 +340,17 @@ function Previews() {
               </option>
             ))}
           </select>
+          <div style={{ marginTop: 12 }}>
+            <Segmented
+              size="sm"
+              value={theme}
+              onChange={(x) => setTheme(x as "blue" | "lux")}
+              options={[
+                { value: "lux", label: "Lux" },
+                { value: "blue", label: "Blue" },
+              ]}
+            />
+          </div>
           {meta && (
             <div style={{ marginTop: 16, font: "400 14px/1.5 var(--font-ui)", color: "var(--ink)" }}>
               <div style={{ color: "var(--ink-3)", fontSize: 12.5 }}>Subject</div>
@@ -354,7 +366,7 @@ function Previews() {
         <Card pad={0} style={{ width: 375, maxWidth: "100%", overflow: "hidden", flex: "none" }}>
           <iframe
             title="Email preview at phone width"
-            src={`/api/trial-emails/preview?v=${v}`}
+            src={`/api/trial-emails/preview?v=${v}&theme=${theme}`}
             style={{ width: "100%", height: 900, border: 0, display: "block" }}
           />
         </Card>

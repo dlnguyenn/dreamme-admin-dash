@@ -5,6 +5,8 @@ Cropped from the shot-day Live Activity scenes in the app repo
 blue water shifted to warm sand so the tiles match the neutral email palette.
 Sushi (coral/cream), sand, coral and greenery keep their colours.
 
+Writes mood-<name>-blue.png (scenes as drawn) and mood-<name>-lux.png (water shifted to sand).
+
 usage: python scripts/make-trial-email-moods.py <dir with the four scene PNGs> public/email
 """
 import sys
@@ -32,10 +34,12 @@ def neutralize(im: Image.Image) -> Image.Image:
     return Image.fromarray(cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB))
 
 
-for name, (file, box) in CROPS.items():
-    tile = neutralize(Image.open(f"{SRC}/{file}").crop(box)).resize((160, 160), Image.LANCZOS).convert("RGBA")
-    mask = Image.new("L", (160, 160), 0)
-    ImageDraw.Draw(mask).ellipse([0, 0, 159, 159], fill=255)
-    tile.putalpha(mask)
-    tile.save(f"{OUT}/mood-{name}.png", optimize=True)
+for theme in ("blue", "lux"):
+    for name, (file, box) in CROPS.items():
+        crop = Image.open(f"{SRC}/{file}").crop(box)
+        tile = (neutralize(crop) if theme == "lux" else crop.convert("RGB")).resize((160, 160), Image.LANCZOS).convert("RGBA")
+        mask = Image.new("L", (160, 160), 0)
+        ImageDraw.Draw(mask).ellipse([0, 0, 159, 159], fill=255)
+        tile.putalpha(mask)
+        tile.save(f"{OUT}/mood-{name}-{theme}.png", optimize=True)
 print("ok")

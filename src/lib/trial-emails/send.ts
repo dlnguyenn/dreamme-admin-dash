@@ -7,7 +7,7 @@
  */
 import nodemailer from "nodemailer";
 import { makeToken, type EmailKind } from "./core";
-import { renderEmail, type EmailAssets, type EmailInput, type RenderedEmail } from "./content";
+import { LIVE_THEME, renderEmail, type EmailAssets, type EmailInput, type EmailTheme, type RenderedEmail } from "./content";
 
 const SMTP_USER = process.env.SUPPORT_IMAP_USER ?? "dan@dreamme.life";
 const SMTP_PASS = process.env.DREAMME_SMTP_PASS ?? "";
@@ -20,24 +20,24 @@ export function publicBase(): string {
   return (process.env.TRIAL_EMAIL_PUBLIC_URL || "https://dreamme-admin-dash.vercel.app").replace(/\/$/, "");
 }
 
-export function linksFor(otid: string, kind: EmailKind, base = publicBase()) {
+export function linksFor(otid: string, kind: EmailKind, base = publicBase(), theme: EmailTheme = LIVE_THEME) {
   return {
     ctaUrl: `${base}/api/trial-emails/go?t=${makeToken(otid, kind)}`,
     unsubscribeUrl: `${base}/api/trial-emails/unsubscribe?t=${makeToken(otid, "unsub")}`,
-    assets: assetsFor(base),
+    assets: assetsFor(base, theme),
   };
 }
 
-export function assetsFor(base = publicBase()): EmailAssets {
+export function assetsFor(base = publicBase(), theme: EmailTheme = LIVE_THEME): EmailAssets {
   return {
-    heroDay0: `${base}/email/hero-day0.gif`,
-    heroDay1: `${base}/email/hero-day1.gif`,
+    heroDay0: `${base}/email/hero-day0-${theme}.gif`,
+    heroDay1: `${base}/email/hero-day1-${theme}.gif`,
     icon: `${base}/email/app-icon.png`,
     moods: {
-      great: `${base}/email/mood-great.png`,
-      okay: `${base}/email/mood-okay.png`,
-      rough: `${base}/email/mood-rough.png`,
-      tired: `${base}/email/mood-tired.png`,
+      great: `${base}/email/mood-great-${theme}.png`,
+      okay: `${base}/email/mood-okay-${theme}.png`,
+      rough: `${base}/email/mood-rough-${theme}.png`,
+      tired: `${base}/email/mood-tired-${theme}.png`,
     },
     font: `${base}/email/jellee.ttf`,
   };
@@ -81,7 +81,7 @@ export function render(
   base?: string,
   assets?: Partial<EmailAssets>,
 ) {
-  const links = linksFor(otid, input.kind, base);
+  const links = linksFor(otid, input.kind, base, input.theme ?? LIVE_THEME);
   if (assets) links.assets = { ...links.assets, ...assets };
   return { email: renderEmail({ ...input, ...links }), links };
 }

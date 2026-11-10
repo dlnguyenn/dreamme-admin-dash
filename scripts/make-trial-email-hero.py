@@ -2,19 +2,24 @@
 
 Sushi big and bleeding off the right/bottom edge, bobbing and swaying; gold
 sparkles twinkle; bubbles (day 0) or little hearts (day 1) drift up.
-Flat Ocean Sky ground, top-right corner rounded into the page colour.
+Flat ground in the theme's banner colour, top-right corner rounded into the
+page colour. One file per theme (blue, lux) and day.
+
+usage: python scripts/make-trial-email-hero.py public/email
 """
 import math
 import sys
 from PIL import Image, ImageDraw, ImageFilter
 
 SRC = "C:/Users/Dan/Documents/DreamMe/claude/store-listings/search-card-2026-11/source/v6/"
-OUT = sys.argv[1]  # usage: python scripts/make-trial-email-hero.py public/email
+OUT = sys.argv[1]
 
 W, H = 480, 480  # 2x of 240x240
-SKY = (237, 228, 216)  # warm sand (was Ocean Sky; Dan 2026-11-10: more lux and neutral)
-PAGE = (246, 242, 236)  # warm oat (page behind the card)
-GOLD = (201, 162, 74)  # muted gold
+# Must match THEMES in src/lib/trial-emails/content.ts (hero, page).
+THEMES = {
+    "blue": {"sky": (45, 95, 138), "page": (234, 245, 250), "gold": (245, 166, 35), "bubble": (184, 228, 240)},
+    "lux": {"sky": (230, 220, 207), "page": (244, 240, 234), "gold": (201, 162, 74), "bubble": (196, 178, 156)},
+}
 WHITE = (255, 255, 255)
 CORAL = (244, 130, 106)
 FRAMES = 16
@@ -36,8 +41,10 @@ def heart(d: ImageDraw.ImageDraw, cx, cy, s, color, alpha):
     d.polygon([(cx - 2 * r + 1, cy - r * 0.45), (cx + 2 * r - 1, cy - r * 0.45), (cx, cy + s * 0.75)], fill=color + (a,))
 
 
-def make(pose: str, floaters: str, name: str):
+def make(pose: str, floaters: str, name: str, theme: str):
     pose_name = pose
+    pal = THEMES[theme]
+    SKY, PAGE, GOLD = pal["sky"], pal["page"], pal["gold"]
     sushi = Image.open(SRC + pose).convert("RGBA")
     sushi = sushi.crop(sushi.getbbox())
     scale = 470 / sushi.height
@@ -64,7 +71,6 @@ def make(pose: str, floaters: str, name: str):
         im = Image.new("RGBA", (W, H), SKY + (255,))
         d = ImageDraw.Draw(im, "RGBA")
         # soft bubble ring behind Sushi (the brand cover's circles)
-        d.ellipse([150, 70, 560, 480], fill=(246, 240, 232, 255))
         # floaters rising
         for x, ph, s in floats:
             p = (t + ph) % 1.0
@@ -72,7 +78,7 @@ def make(pose: str, floaters: str, name: str):
             alpha = min(1.0, p * 4) * min(1.0, (1 - p) * 3)
             xx = x + 8 * math.sin(2 * math.pi * (p * 2 + ph))
             if floaters == "bubbles":
-                d.ellipse([xx - s, y - s, xx + s, y + s], outline=(196, 178, 156) + (int(220 * alpha),), width=3)
+                d.ellipse([xx - s, y - s, xx + s, y + s], outline=pal["bubble"] + (int(220 * alpha),), width=3)
                 d.ellipse([xx - s * 0.35, y - s * 0.55, xx - s * 0.05, y - s * 0.25], fill=(255, 255, 255) + (int(230 * alpha),))
             else:
                 heart(d, xx, y, s * 1.5, CORAL, 0.9 * alpha)
@@ -99,6 +105,7 @@ def make(pose: str, floaters: str, name: str):
     q[0].save(f"{OUT}/{name}.gif", save_all=True, append_images=q[1:], duration=MS, loop=0, optimize=True, disposal=1)
 
 
-make("clean_sushiwaving.png", "bubbles", "hero-day0")
-make("clean_sushi_smiling_heart.png", "hearts", "hero-day1")
+for theme in THEMES:
+    make("clean_sushiwaving.png", "bubbles", f"hero-day0-{theme}", theme)
+    make("clean_sushi_smiling_heart.png", "hearts", f"hero-day1-{theme}", theme)
 print("ok")

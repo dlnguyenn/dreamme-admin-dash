@@ -47,6 +47,8 @@ export interface EmailInput {
   ctaUrl: string;
   unsubscribeUrl: string;
   assets: EmailAssets;
+  /** "blue" or "lux"; defaults to LIVE_THEME */
+  theme?: EmailTheme;
 }
 
 export interface RenderedEmail {
@@ -90,11 +92,11 @@ function steps(cta: Cta): string[] {
   }
 }
 
-const STEPS_TITLE: Record<Cta, string> = {
-  shot: "Takes about 30 seconds",
-  shot_day: "Takes about 30 seconds",
-  side_effect: "Takes about 20 seconds",
-  weight: "Takes about 20 seconds",
+const STEPS_LEAD: Record<Cta, string> = {
+  shot: "It takes about 30 seconds:",
+  shot_day: "It takes about 30 seconds:",
+  side_effect: "It takes about 20 seconds:",
+  weight: "It takes about 20 seconds:",
 };
 
 /** The ask: the bold action and why it matters (the how is in the steps). */
@@ -244,107 +246,152 @@ function bodyFor(i: EmailInput): Body {
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// Brand palette (DreamMe_Brand_Guidelines.pdf). Email clients don't support
-// CSS variables, so these are literal on purpose.
-const C = {
-  // Warm neutral palette (Dan 2026-11-10: "more lux and neutral, the blue is
-  // throwing me off"). Restrained strategy: tinted neutrals + Sushi's coral as
-  // the one accent. Contrast on white: ink 14.8:1, ink2 5.9:1.
-  page: "#F6F2EC", // warm oat
-  hero: "#EDE4D8", // sand (matches the hero GIF ground)
-  card: "#FFFFFF",
-  ink: "#2E2622", // espresso
-  ink2: "#6B5E55", // warm taupe, secondary text
-  cta: "#2E2622", // espresso button
-  ctaText: "#FBF7F2",
-  coral: "#D9705A", // Sushi coral, step numbers and today's dot
-  panel: "#F6F0E8", // light oat panels
-  good: "#EDF1E7", // sage, the "you won't be charged" panel
-  goodInk: "#3D5A39",
+/**
+ * Two looks on one layout (Dan 2026-11-10: "follow the Impeccable guidelines,
+ * give me a blue and a lux version"). Impeccable rules applied: no cards inside
+ * the sheet (the old step/mood/trial panels were nested cards), no small label
+ * above a block (each became a sentence), colour owns a region (the banner)
+ * instead of scattering accents, balanced headline breaks, 4.5:1 body contrast,
+ * secondary text tinted from the palette, never plain grey.
+ * Email clients don't support CSS variables, so these are literal on purpose.
+ */
+export type EmailTheme = "blue" | "lux";
+export const EMAIL_THEMES: EmailTheme[] = ["blue", "lux"];
+/** The look live sends use. Dan picks between the two; lux until he does. */
+export const LIVE_THEME: EmailTheme = "lux";
+
+interface Palette {
+  page: string;
+  hero: string; // must match the hero GIF ground
+  heroInk: string;
+  sheet: string;
+  ink: string;
+  ink2: string;
+  cta: string;
+  ctaText: string;
+  /** step-number discs: tinted coral disc, deep coral numeral */
+  discBg: string;
+  discInk: string;
+  dotNow: string;
+  dot: string;
+}
+
+const THEMES: Record<EmailTheme, Palette> = {
+  // Committed: the brand's Deep Sea owns the banner, Seafoam ground, Midnight
+  // Depth text, Sushi coral for progress (DreamMe_Brand_Guidelines.pdf).
+  // Contrast: heroInk on hero 6.4:1, ink 12.9:1, ink2 6.3:1, discInk on disc 5.2:1.
+  blue: {
+    page: "#EAF5FA",
+    hero: "#2D5F8A",
+    heroInk: "#F0FAFF",
+    sheet: "#FFFFFF",
+    ink: "#1A3550",
+    ink2: "#46617A",
+    cta: "#2D5F8A",
+    ctaText: "#F0FAFF",
+    discBg: "#FDE6E0",
+    discInk: "#A9452F",
+    dotNow: "#E8735C",
+    dot: "#B8E4F0",
+  },
+  // Restrained: warm pearl ground, champagne banner, espresso text and button,
+  // Sushi coral as the one accent. Display stays Jellee (not a serif), which
+  // keeps it off Impeccable's "cream + serif + terracotta" default look.
+  // Contrast: heroInk on hero 11.6:1, ink 14.8:1, ink2 5.9:1, discInk on disc 5.6:1.
+  lux: {
+    page: "#F4F0EA",
+    hero: "#E6DCCF",
+    heroInk: "#2E2622",
+    sheet: "#FFFFFF",
+    ink: "#2E2622",
+    ink2: "#6B5E55",
+    cta: "#2E2622",
+    ctaText: "#FBF7F2",
+    discBg: "#F6E3DA",
+    discInk: "#97432F",
+    dotNow: "#D9705A",
+    dot: "#D9CBB8",
+  },
 };
+
 const SANS = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
 const DISPLAY = `'Jellee', ${SANS}`;
-const P = `margin:0 0 16px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.ink};`;
+const pStyle = (C: Palette) => `margin:0 0 18px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.ink};`;
 
-function paraHtml(p: Para, style = P): string {
+function paraHtml(C: Palette, p: Para, extra = ""): string {
   const inner = p.map((r) => (typeof r === "string" ? esc(r) : `<strong>${esc(r.b)}</strong>`)).join("");
-  return `<p style="${style}">${inner}</p>`;
+  return `<p style="${pStyle(C)}${extra}">${inner}</p>`;
 }
 const paraText = (p: Para) => p.map((r) => (typeof r === "string" ? r : r.b)).join("");
 
-function buttonHtml(label: string, url: string): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;"><tr>
+function buttonHtml(C: Palette, label: string, url: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 30px;"><tr>
 <td align="center" bgcolor="${C.cta}" style="border-radius:14px;background:${C.cta};">
-<a href="${esc(url)}" style="display:block;padding:16px 20px;font-family:${SANS};font-size:17px;font-weight:700;line-height:22px;color:${C.ctaText};text-decoration:none;border-radius:14px;">${esc(label)}</a>
+<a href="${esc(url)}" style="display:block;padding:17px 20px;font-family:${SANS};font-size:17px;font-weight:700;line-height:22px;color:${C.ctaText};text-decoration:none;border-radius:14px;">${esc(label)}</a>
 </td></tr></table>`;
 }
 
-function stepsHtml(title: string, items: string[]): string {
+/** The in-app path as a plain numbered list on the sheet (no panel). */
+function stepsHtml(C: Palette, lead: string, items: string[]): string {
   const rows = items
     .map(
       (t, n) => `<tr>
-<td width="28" valign="top" style="padding:0 12px 12px 0;">
-<div style="width:28px;height:28px;border-radius:14px;background:${C.coral};color:#FFFFFF;font-family:${SANS};font-size:14px;font-weight:700;line-height:28px;text-align:center;">${n + 1}</div>
+<td width="30" valign="top" style="padding:0 12px 14px 0;">
+<div style="width:30px;height:30px;border-radius:15px;background:${C.discBg};color:${C.discInk};font-family:${SANS};font-size:15px;font-weight:700;line-height:30px;text-align:center;">${n + 1}</div>
 </td>
-<td valign="top" style="padding:3px 0 12px;font-family:${SANS};font-size:16px;line-height:22px;color:${C.ink};">${esc(t)}</td>
+<td valign="top" style="padding:4px 0 14px;font-family:${SANS};font-size:16px;line-height:22px;color:${C.ink};">${esc(t)}</td>
 </tr>`,
     )
     .join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;background:${C.panel};border-radius:16px;"><tr><td style="padding:18px 18px 6px;">
-<p style="margin:0 0 14px;font-family:${SANS};font-size:13px;font-weight:700;line-height:18px;color:${C.ink2};">${esc(title)}</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table>
-</td></tr></table>`;
+  return `${paraHtml(C, [lead], "margin-bottom:14px;")}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 6px;">${rows}</table>`;
 }
 
-function noteHtml(n: Note): string {
-  const bg = n.tone === "good" ? C.good : C.panel;
-  const ink = n.tone === "good" ? C.goodInk : C.ink;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;background:${bg};border-radius:16px;"><tr><td style="padding:16px 18px;">
-<p style="margin:0 0 4px;font-family:${SANS};font-size:16px;font-weight:700;line-height:22px;color:${ink};">${esc(n.title)}</p>
-<p style="margin:0;font-family:${SANS};font-size:15px;line-height:22px;color:${ink};">${esc(n.body)}</p>
-</td></tr></table>`;
+/** Trial date or no-charge note: a sentence with a bold lead, not a box. */
+function noteHtml(C: Palette, n: Note): string {
+  return paraHtml(C, [{ b: `${n.title}.` }, ` ${n.body}`]);
 }
 
 const MOOD_LABEL: Record<Mood, string> = { great: "Great", okay: "Okay", rough: "Rough", tired: "Tired" };
 const moodUrl = (ctaUrl: string, m: Mood) => `${ctaUrl}${ctaUrl.includes("?") ? "&" : "?"}m=${m}`;
 
 /** Headspace-style mood row: four Sushi tiles, each opens the app (and records the tap). */
-function moodRowHtml(ctaUrl: string, tiles: Record<Mood, string>): string {
+function moodRowHtml(C: Palette, ctaUrl: string, tiles: Record<Mood, string>): string {
   const cells = MOODS.map(
     (m) => `<td align="center" valign="top" width="25%" style="padding:0 2px;">
 <a href="${esc(moodUrl(ctaUrl, m))}" style="text-decoration:none;color:${C.ink};display:block;">
-<img src="${esc(tiles[m])}" width="64" height="64" alt="${MOOD_LABEL[m]}" style="display:block;margin:0 auto 6px;border:0;width:64px;height:64px;border-radius:32px;">
-<span style="font-family:${SANS};font-size:14px;font-weight:700;line-height:18px;color:${C.ink};">${MOOD_LABEL[m]}</span>
+<img src="${esc(tiles[m])}" width="68" height="68" alt="${MOOD_LABEL[m]}" style="display:block;margin:0 auto 8px;border:0;width:68px;height:68px;border-radius:34px;">
+<span style="font-family:${SANS};font-size:15px;font-weight:700;line-height:20px;color:${C.ink};">${MOOD_LABEL[m]}</span>
 </a></td>`,
   ).join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;background:${C.panel};border-radius:16px;"><tr><td style="padding:16px 10px 14px;">
-<p style="margin:0 0 12px;font-family:${SANS};font-size:13px;font-weight:700;line-height:18px;color:${C.ink2};text-align:center;">Tap how you feel today</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>
-</td></tr></table>`;
+  return `${paraHtml(C, ["Tap how you feel today:"], "margin-bottom:14px;")}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;"><tr>${cells}</tr></table>`;
 }
 
-function weekHtml(items: { when: string; what: string }[]): string {
+function weekHtml(C: Palette, items: { when: string; what: string }[]): string {
   const rows = items
     .map(
       (x, n) => `<tr>
-<td width="12" valign="top" style="padding:7px 12px 0 0;"><div style="width:10px;height:10px;border-radius:5px;background:${n === 0 ? C.coral : "#D9CBB8"};"></div></td>
-<td valign="top" style="padding:0 0 12px;font-family:${SANS};font-size:16px;line-height:22px;color:${C.ink};"><strong>${esc(x.when)}</strong><br>${esc(
+<td width="12" valign="top" style="padding:7px 12px 0 0;"><div style="width:10px;height:10px;border-radius:5px;background:${n === 0 ? C.dotNow : C.dot};"></div></td>
+<td valign="top" style="padding:0 0 14px;font-family:${SANS};font-size:16px;line-height:22px;color:${C.ink};"><strong>${esc(x.when)}</strong><br>${esc(
         x.what.charAt(0).toUpperCase() + x.what.slice(1),
       )}</td>
 </tr>`,
     )
     .join("");
-  return `<p style="${P}margin-bottom:12px;font-weight:700;">Here's the rest of your free week</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;">${rows}</table>`;
+  return `${paraHtml(C, [{ b: "Here's the rest of your free week:" }], "margin:8px 0 14px;")}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px;">${rows}</table>`;
 }
 
 export function renderEmail(i: EmailInput): RenderedEmail {
+  const C = THEMES[i.theme ?? LIVE_THEME];
   const { subject, preview } = subjectFor(i);
   const hero = heroFor(i);
   const b = bodyFor(i);
   const button = BUTTON[i.cta];
   const greeting = `Hi ${i.firstName}!`;
   const a = i.assets;
+  const moodRow = i.kind === "day1" && i.cta === "side_effect";
 
   const html = `<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8">
@@ -355,7 +402,9 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 <style>
 @font-face{font-family:'Jellee';src:url('${esc(a.font)}') format('truetype');font-weight:400;font-style:normal;}
 :root{color-scheme:light only;supported-color-schemes:light only;}
-@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:20px !important;padding-right:20px !important}.title{font-size:22px !important;line-height:26px !important}.herotext{padding:14px 4px 14px 20px !important}}
+h1{text-wrap:balance;}
+p{text-wrap:pretty;}
+@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:22px !important;padding-right:22px !important}.title{font-size:24px !important;line-height:28px !important}.herotext{padding:16px 4px 16px 22px !important}}
 </style></head>
 <body style="margin:0;padding:0;background:${C.page};-webkit-text-size-adjust:100%;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preview)}&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;</div>
@@ -372,8 +421,8 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 
 <tr><td style="padding:0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr>
-<td width="54%" valign="middle" bgcolor="${C.hero}" class="herotext" style="width:54%;background:${C.hero};border-radius:24px 0 0 0;padding:20px 8px 20px 26px;">
-<h1 class="title" style="margin:0;font-family:${DISPLAY};font-size:28px;line-height:33px;font-weight:400;color:${C.ink};">${esc(hero.title)}</h1>
+<td width="54%" valign="middle" bgcolor="${C.hero}" class="herotext" style="width:54%;background:${C.hero};border-radius:24px 0 0 0;padding:22px 8px 22px 28px;">
+<h1 class="title" style="margin:0;font-family:${DISPLAY};font-size:30px;line-height:35px;font-weight:400;color:${C.heroInk};">${esc(hero.title)}</h1>
 </td>
 <td width="46%" valign="bottom" bgcolor="${C.hero}" style="width:46%;background:${C.hero};border-radius:0 24px 0 0;padding:0;line-height:0;font-size:0;">
 <img src="${esc(i.kind === "day0" ? a.heroDay0 : a.heroDay1)}" width="240" alt="${esc(i.fish)}, the DreamMe fish, ${i.kind === "day0" ? "waving hello" : "holding a heart"}" style="display:block;border:0;width:100%;max-width:240px;height:auto;margin-left:auto;">
@@ -381,38 +430,36 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 </tr></table>
 </td></tr>
 
-<tr><td bgcolor="${C.card}" class="pad" style="background:${C.card};border-radius:0 0 24px 24px;padding:26px 28px 8px;">
-${paraHtml([greeting])}
-${b.intro.map((p) => paraHtml(p)).join("\n")}
-${i.kind === "day1" && i.cta === "side_effect" ? moodRowHtml(i.ctaUrl, a.moods) : ""}
-${paraHtml(b.askPara)}
-${stepsHtml(STEPS_TITLE[i.cta], steps(i.cta))}
-${buttonHtml(button, i.ctaUrl)}
-${b.note ? noteHtml(b.note) : ""}
-${b.after.map((p) => paraHtml(p)).join("\n")}
-${b.week ? weekHtml(b.week) : ""}
-${b.closing.map((p) => paraHtml(p)).join("\n")}
-${b.signoff ? paraHtml([b.signoff]) : ""}
-<p style="margin:0 0 4px;font-family:${SANS};font-size:16px;line-height:22px;font-weight:700;color:${C.ink};">Dan</p>
-<p style="margin:0 0 20px;font-family:${SANS};font-size:15px;line-height:20px;color:${C.ink2};">Co-founder, DreamMe</p>
-<p style="margin:0 0 24px;font-family:${SANS};font-size:15px;line-height:22px;color:${C.ink};">P.S. Here's that link again: <a href="${esc(i.ctaUrl)}" style="color:${C.cta};font-weight:700;text-decoration:underline;">${esc(button)}</a></p>
+<tr><td bgcolor="${C.sheet}" class="pad" style="background:${C.sheet};border-radius:0 0 24px 24px;padding:30px 30px 10px;">
+${paraHtml(C, [greeting])}
+${b.intro.map((p) => paraHtml(C, p)).join("\n")}
+${moodRow ? moodRowHtml(C, i.ctaUrl, a.moods) : ""}
+${paraHtml(C, b.askPara)}
+${stepsHtml(C, STEPS_LEAD[i.cta], steps(i.cta))}
+${buttonHtml(C, button, i.ctaUrl)}
+${b.note ? noteHtml(C, b.note) : ""}
+${b.after.map((p) => paraHtml(C, p)).join("\n")}
+${b.week ? weekHtml(C, b.week) : ""}
+${b.closing.map((p) => paraHtml(C, p)).join("\n")}
+${b.signoff ? paraHtml(C, [b.signoff]) : ""}
+<p style="margin:6px 0 2px;font-family:${SANS};font-size:16px;line-height:22px;font-weight:700;color:${C.ink};">Dan</p>
+<p style="margin:0 0 22px;font-family:${SANS};font-size:15px;line-height:20px;color:${C.ink2};">Co-founder, DreamMe</p>
+<p style="margin:0 0 24px;font-family:${SANS};font-size:15px;line-height:22px;color:${C.ink};">P.S. Here's that link again: <a href="${esc(i.ctaUrl)}" style="color:${C.ink};font-weight:700;text-decoration:underline;text-underline-offset:3px;">${esc(button)}</a></p>
 </td></tr>
 
-<tr><td align="center" style="padding:22px 12px 0;">
+<tr><td align="center" style="padding:24px 12px 0;">
 <p style="margin:0 0 6px;font-family:${SANS};font-size:13px;line-height:19px;color:${C.ink2};">DreamMe, your GLP-1 companion</p>
-<p style="margin:0;font-family:${SANS};font-size:13px;line-height:19px;color:${C.ink2};">You're getting this because you started a DreamMe free trial.<br><a href="${esc(i.unsubscribeUrl)}" style="color:${C.ink2};text-decoration:underline;">Unsubscribe</a></p>
+<p style="margin:0;font-family:${SANS};font-size:13px;line-height:19px;color:${C.ink2};">You're getting this because you started a DreamMe free trial.<br><a href="${esc(i.unsubscribeUrl)}" style="color:${C.ink2};text-decoration:underline;text-underline-offset:2px;">Unsubscribe</a></p>
 </td></tr>
 
 </table>
 </td></tr></table>
 </body></html>`;
 
-  const lines: string[] = [hero.title, hero.sub, "", greeting, "", ...b.intro.flatMap((p) => [paraText(p), ""]), paraText(b.askPara), ""];
-  if (i.kind === "day1" && i.cta === "side_effect") {
-    lines.push("Tap how you feel today:", ...MOODS.map((m) => `- ${MOOD_LABEL[m]}: ${moodUrl(i.ctaUrl, m)}`), "");
-  }
-  lines.push(`${STEPS_TITLE[i.cta]}:`, ...steps(i.cta).map((s, n) => `${n + 1}. ${s}`), "", `${button}: ${i.ctaUrl}`, "");
-  if (b.note) lines.push(b.note.title, b.note.body, "");
+  const lines: string[] = [hero.title, hero.sub, "", greeting, "", ...b.intro.flatMap((p) => [paraText(p), ""])];
+  if (moodRow) lines.push("Tap how you feel today:", ...MOODS.map((m) => `- ${MOOD_LABEL[m]}: ${moodUrl(i.ctaUrl, m)}`), "");
+  lines.push(paraText(b.askPara), "", STEPS_LEAD[i.cta], ...steps(i.cta).map((s, n) => `${n + 1}. ${s}`), "", `${button}: ${i.ctaUrl}`, "");
+  if (b.note) lines.push(`${b.note.title}. ${b.note.body}`, "");
   for (const p of b.after) lines.push(paraText(p), "");
   if (b.week) {
     lines.push("Here's the rest of your free week:");

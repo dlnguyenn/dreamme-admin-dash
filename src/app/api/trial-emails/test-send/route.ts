@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { checkCronAuth } from "@/lib/auth-ingest";
-import { allVariants } from "@/lib/trial-emails/content";
+import { EMAIL_THEMES, LIVE_THEME, allVariants, type EmailTheme } from "@/lib/trial-emails/content";
 import { TEST_RECIPIENT, trialEndLabel } from "@/lib/trial-emails/core";
 import { mailerReady, render, sendEmail } from "@/lib/trial-emails/send";
 
@@ -33,13 +33,15 @@ export async function POST(req: Request) {
       : MAIN;
   // Embed Sushi when the file is on disk (local runs), so a test sent before
   // the deploy still shows the image; production sends use the hosted copy.
+  const t = url.searchParams.get("theme");
+  const theme: EmailTheme = EMAIL_THEMES.includes(t as EmailTheme) ? (t as EmailTheme) : LIVE_THEME;
   const dir = path.join(process.cwd(), "public", "email");
-  const inline = existsSync(path.join(dir, "hero-day0.gif"));
+  const inline = existsSync(path.join(dir, `hero-day0-${theme}.gif`));
   const attachments = (kind: "day0" | "day1") => [
-    { filename: "sushi.gif", path: path.join(dir, `hero-${kind}.gif`), cid: `hero-${kind}` },
+    { filename: "sushi.gif", path: path.join(dir, `hero-${kind}-${theme}.gif`), cid: `hero-${kind}` },
     { filename: "dreamme.png", path: path.join(dir, "app-icon.png"), cid: "app-icon" },
     ...(kind === "day1"
-      ? (["great", "okay", "rough", "tired"] as const).map((m) => ({ filename: `${m}.png`, path: path.join(dir, `mood-${m}.png`), cid: `mood-${m}` }))
+      ? (["great", "okay", "rough", "tired"] as const).map((m) => ({ filename: `${m}.png`, path: path.join(dir, `mood-${m}-${theme}.png`), cid: `mood-${m}` }))
       : []),
   ];
   const sent: string[] = [];
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
         fish: "Sushi",
         trialEnd: trialEndLabel(new Date().toISOString()),
         platform: "ios",
+        theme,
       },
       "test",
       undefined,
@@ -69,11 +72,11 @@ export async function POST(req: Request) {
     );
     await sendEmail(
       TEST_RECIPIENT,
-      { ...email, subject: `[Test] ${email.subject}` },
+      { ...email, subject: `[Test ${theme}] ${email.subject}` },
       links.unsubscribeUrl,
       inline ? attachments(v.kind) : undefined,
     );
     sent.push(v.label);
   }
-  return NextResponse.json({ ok: true, to: TEST_RECIPIENT, sent });
+  return NextResponse.json({ ok: true, to: TEST_RECIPIENT, theme, sent });
 }

@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
-import { allVariants } from "@/lib/trial-emails/content";
+import { EMAIL_THEMES, allVariants, type EmailTheme } from "@/lib/trial-emails/content";
 import { trialEndLabel } from "@/lib/trial-emails/core";
 import { render } from "@/lib/trial-emails/send";
 
@@ -21,6 +21,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, variants: variants.map((v, i) => ({ index: i, label: v.label })) });
   }
   const v = variants[Number(url.searchParams.get("v") ?? 0)] ?? variants[0];
+  const t = url.searchParams.get("theme");
+  const theme = EMAIL_THEMES.includes(t as EmailTheme) ? (t as EmailTheme) : undefined;
   const { email } = render(
     {
       kind: v.kind,
@@ -31,6 +33,7 @@ export async function GET(req: Request) {
       fish: "Sushi",
       trialEnd: trialEndLabel(new Date().toISOString()),
       platform: "ios",
+      theme,
     },
     "preview",
     url.origin,
