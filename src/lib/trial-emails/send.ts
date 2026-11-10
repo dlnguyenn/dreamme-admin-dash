@@ -29,7 +29,12 @@ export function linksFor(otid: string, kind: EmailKind, base = publicBase()) {
 }
 
 export function assetsFor(base = publicBase()): EmailAssets {
-  return { sushi: `${base}/email/sushi-waving.png`, icon: `${base}/email/app-icon.png`, font: `${base}/email/jellee.ttf` };
+  return {
+    heroDay0: `${base}/email/hero-day0.gif`,
+    heroDay1: `${base}/email/hero-day1.gif`,
+    icon: `${base}/email/app-icon.png`,
+    font: `${base}/email/jellee.ttf`,
+  };
 }
 
 export const mailerReady = () => !!SMTP_USER && !!SMTP_PASS;

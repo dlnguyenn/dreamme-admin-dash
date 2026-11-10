@@ -158,7 +158,7 @@ describe("trial-emails: copy rules", () => {
       platform: "ios",
       ctaUrl: "https://x/go",
       unsubscribeUrl: "https://x/unsub",
-      assets: { sushi: "https://x/s.png", icon: "https://x/i.png", font: "https://x/f.ttf" },
+      assets: { heroDay0: "https://x/h0.gif", heroDay1: "https://x/h1.gif", icon: "https://x/i.png", font: "https://x/f.ttf" },
     }),
   );
   it("no em dashes anywhere, signed as co-founder, unsubscribe and CTA twice in every email", () => {

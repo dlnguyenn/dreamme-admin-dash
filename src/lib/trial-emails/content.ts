@@ -24,7 +24,9 @@
 import type { Cta, EmailKind, Platform } from "./core";
 
 export interface EmailAssets {
-  sushi: string;
+  /** animated hero art (right half of the banner): waving Sushi for day 0, heart Sushi for day 1 */
+  heroDay0: string;
+  heroDay1: string;
   icon: string;
   /** Jellee .ttf; Apple Mail loads it, Gmail ignores it */
   font: string;
@@ -330,7 +332,7 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 <style>
 @font-face{font-family:'Jellee';src:url('${esc(a.font)}') format('truetype');font-weight:400;font-style:normal;}
 :root{color-scheme:light only;supported-color-schemes:light only;}
-@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:20px !important;padding-right:20px !important}.title{font-size:26px !important;line-height:31px !important}}
+@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:20px !important;padding-right:20px !important}.title{font-size:22px !important;line-height:26px !important}.herotext{padding:14px 4px 14px 20px !important}}
 </style></head>
 <body style="margin:0;padding:0;background:${C.page};-webkit-text-size-adjust:100%;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preview)}&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;</div>
@@ -345,13 +347,18 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 </tr></table>
 </td></tr>
 
-<tr><td bgcolor="${C.hero}" align="center" class="pad" style="background:${C.hero};border-radius:24px 24px 0 0;padding:28px 28px 26px;">
-<img src="${esc(a.sushi)}" width="150" alt="${esc(i.fish)} waving hello" style="display:block;margin:0 auto 14px;border:0;width:150px;height:auto;">
-<h1 class="title" style="margin:0 0 8px;font-family:${DISPLAY};font-size:28px;line-height:34px;font-weight:400;color:${C.ink};">${esc(hero.title)}</h1>
-<p style="margin:0;font-family:${SANS};font-size:16px;line-height:22px;color:${C.cta};">${esc(hero.sub)}</p>
+<tr><td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr>
+<td width="54%" valign="middle" bgcolor="${C.hero}" class="herotext" style="width:54%;background:${C.hero};border-radius:24px 0 0 0;padding:20px 8px 20px 26px;">
+<h1 class="title" style="margin:0;font-family:${DISPLAY};font-size:28px;line-height:33px;font-weight:400;color:${C.ink};">${esc(hero.title)}</h1>
+</td>
+<td width="46%" valign="bottom" bgcolor="${C.hero}" style="width:46%;background:${C.hero};border-radius:0 24px 0 0;padding:0;line-height:0;font-size:0;">
+<img src="${esc(i.kind === "day0" ? a.heroDay0 : a.heroDay1)}" width="240" alt="${esc(i.fish)}, the DreamMe fish, ${i.kind === "day0" ? "waving hello" : "holding a heart"}" style="display:block;border:0;width:100%;max-width:240px;height:auto;margin-left:auto;">
+</td>
+</tr></table>
 </td></tr>
 
-<tr><td bgcolor="${C.card}" class="pad" style="background:${C.card};border-radius:0 0 24px 24px;padding:28px 28px 8px;">
+<tr><td bgcolor="${C.card}" class="pad" style="background:${C.card};border-radius:0 0 24px 24px;padding:26px 28px 8px;">
 ${paraHtml([greeting])}
 ${b.intro.map((p) => paraHtml(p)).join("\n")}
 ${paraHtml(b.askPara)}
