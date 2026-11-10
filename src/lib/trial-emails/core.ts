@@ -15,6 +15,10 @@ export type Arm = "email" | "holdout";
 export type EmailKind = "day0" | "day1";
 export type Platform = "ios" | "android";
 export type Cta = "shot" | "shot_day" | "side_effect" | "weight";
+export const MOODS = ["great", "okay", "rough", "tired"] as const;
+export type Mood = (typeof MOODS)[number];
+export const isMood = (m: string | null | undefined): m is Mood => !!m && (MOODS as readonly string[]).includes(m);
+
 export type TrialStatus = "active" | "auto_renew_off" | "converted" | "expired" | "refunded";
 
 const H = 3_600_000;

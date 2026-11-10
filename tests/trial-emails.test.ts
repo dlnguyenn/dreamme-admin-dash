@@ -158,7 +158,13 @@ describe("trial-emails: copy rules", () => {
       platform: "ios",
       ctaUrl: "https://x/go",
       unsubscribeUrl: "https://x/unsub",
-      assets: { heroDay0: "https://x/h0.gif", heroDay1: "https://x/h1.gif", icon: "https://x/i.png", font: "https://x/f.ttf" },
+      assets: {
+        heroDay0: "https://x/h0.gif",
+        heroDay1: "https://x/h1.gif",
+        icon: "https://x/i.png",
+        font: "https://x/f.ttf",
+        moods: { great: "https://x/g.png", okay: "https://x/o.png", rough: "https://x/r.png", tired: "https://x/t.png" },
+      },
     }),
   );
   it("no em dashes anywhere, signed as co-founder, unsubscribe and CTA twice in every email", () => {
@@ -166,7 +172,8 @@ describe("trial-emails: copy rules", () => {
       for (const part of [e.subject, e.preview, e.text, e.html]) expect(part).not.toMatch(/—/);
       expect(e.text).toContain("Co-founder, DreamMe");
       expect(e.html).toContain("https://x/unsub");
-      expect(e.html.split("https://x/go").length - 1).toBe(2);
+      // button + P.S. link, plus four mood tiles on the day-1 "how are you feeling" version
+      expect([2, 6]).toContain(e.html.split("https://x/go").length - 1);
       // A double quote inside style="..." ends the attribute and drops every style after it.
       for (const m of e.html.matchAll(/style="([^"]*)"/g)) expect(m[1]).not.toMatch(/font:[^;]*$/);
       expect(e.html).not.toContain('"Segoe');

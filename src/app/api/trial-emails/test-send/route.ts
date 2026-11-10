@@ -38,6 +38,9 @@ export async function POST(req: Request) {
   const attachments = (kind: "day0" | "day1") => [
     { filename: "sushi.gif", path: path.join(dir, `hero-${kind}.gif`), cid: `hero-${kind}` },
     { filename: "dreamme.png", path: path.join(dir, "app-icon.png"), cid: "app-icon" },
+    ...(kind === "day1"
+      ? (["great", "okay", "rough", "tired"] as const).map((m) => ({ filename: `${m}.png`, path: path.join(dir, `mood-${m}.png`), cid: `mood-${m}` }))
+      : []),
   ];
   const sent: string[] = [];
   for (const i of pick) {
@@ -55,7 +58,14 @@ export async function POST(req: Request) {
       },
       "test",
       undefined,
-      inline ? { heroDay0: "cid:hero-day0", heroDay1: "cid:hero-day1", icon: "cid:app-icon" } : undefined,
+      inline
+        ? {
+            heroDay0: "cid:hero-day0",
+            heroDay1: "cid:hero-day1",
+            icon: "cid:app-icon",
+            moods: { great: "cid:mood-great", okay: "cid:mood-okay", rough: "cid:mood-rough", tired: "cid:mood-tired" },
+          }
+        : undefined,
     );
     await sendEmail(
       TEST_RECIPIENT,

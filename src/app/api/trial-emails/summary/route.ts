@@ -74,6 +74,8 @@ export async function GET(req: Request) {
       };
     });
     const unsubscribed = emailRows.filter((r) => r.unsubscribed_at).length;
+    const moods: Record<string, number> = {};
+    for (const r of emailRows) if (r.day1_mood) moods[r.day1_mood] = (moods[r.day1_mood] ?? 0) + 1;
 
     // Pace and the first fair read (5-point and 3-point lifts).
     const perArm = Math.min(arms.all.email.assigned, arms.all.holdout.assigned);
@@ -99,6 +101,7 @@ export async function GET(req: Request) {
       reads,
       sends,
       unsubscribed,
+      moods,
       pace: {
         days,
         perArmPerDay: days >= 1 ? perArm / days : null,

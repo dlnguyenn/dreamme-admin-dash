@@ -46,6 +46,7 @@ interface Summary {
   reads: Record<Scope, { paid14d: Read | null; cancel48h: Read | null }>;
   sends: { kind: "day0" | "day1"; sent: number; clicked: number; skips: Record<string, number>; variants: Record<string, number> }[];
   unsubscribed: number;
+  moods?: Record<string, number>;
   pace: { days: number; perArmPerDay: number | null; need5: number; need3: number; read5: string | null; read3: string | null; base: number };
 }
 
@@ -251,6 +252,9 @@ function Body({ d, scope, setScope }: { d: Summary; scope: Scope; setScope: (s: 
         </table>
       </Card>
       <p style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", margin: "8px 2px 0" }}>
+        {d.moods && Object.keys(d.moods).length > 0
+          ? `Day-1 moods tapped: ${["great", "okay", "rough", "tired"].map((m) => `${m} ${int(d.moods![m] ?? 0)}`).join(", ")}. `
+          : ""}
         Each rate counts only trials old enough for its window. Everyone assigned is counted in their arm, emailed or not.
         {r.cancel48h ? ` Cancelled in 48h: ${signedPts(r.cancel48h.diff)} for the emailed arm (95% ${signedPts(r.cancel48h.low)} to ${signedPts(r.cancel48h.high)}).` : ""}
       </p>

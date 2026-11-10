@@ -156,6 +156,7 @@ export interface AssignmentRow {
   day1_variant?: string | null;
   day0_first_click_at?: string | null;
   day1_first_click_at?: string | null;
+  day1_mood?: string | null;
   clicks?: number;
   unsubscribed_at?: string | null;
 }
@@ -224,7 +225,7 @@ export async function listAssignments(): Promise<AssignmentRow[]> {
   const out: AssignmentRow[] = [];
   for (let offset = 0; ; offset += 1000) {
     const page = await spGet<AssignmentRow[]>(
-      `trial_email_assignments?select=arm,platform,trial_start_at,assigned_at,email_on_file,journey_stage,day0_sent_at,day0_skip_reason,day0_variant,day1_sent_at,day1_skip_reason,day1_variant,day0_first_click_at,day1_first_click_at,clicks,unsubscribed_at&experiment=eq.${EXPERIMENT}&order=trial_start_at.asc&limit=1000&offset=${offset}`,
+      `trial_email_assignments?select=arm,platform,trial_start_at,assigned_at,email_on_file,journey_stage,day0_sent_at,day0_skip_reason,day0_variant,day1_sent_at,day1_skip_reason,day1_variant,day0_first_click_at,day1_first_click_at,day1_mood,clicks,unsubscribed_at&experiment=eq.${EXPERIMENT}&order=trial_start_at.asc&limit=1000&offset=${offset}`,
     );
     out.push(...page);
     if (page.length < 1000) break;

@@ -33,6 +33,12 @@ export function assetsFor(base = publicBase()): EmailAssets {
     heroDay0: `${base}/email/hero-day0.gif`,
     heroDay1: `${base}/email/hero-day1.gif`,
     icon: `${base}/email/app-icon.png`,
+    moods: {
+      great: `${base}/email/mood-great.png`,
+      okay: `${base}/email/mood-okay.png`,
+      rough: `${base}/email/mood-rough.png`,
+      tired: `${base}/email/mood-tired.png`,
+    },
     font: `${base}/email/jellee.ttf`,
   };
 }

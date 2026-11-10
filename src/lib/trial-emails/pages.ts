@@ -31,8 +31,9 @@ img{width:96px;height:auto;}
 }
 
 /** Button hand-off: counts the click (POST from script, so link scanners that only GET don't count) and opens the app. */
-export function goPage(token: string): Response {
+export function goPage(token: string, mood: string | null = null): Response {
   const t = JSON.stringify(token);
+  const m = JSON.stringify(mood ? `&m=${encodeURIComponent(mood)}` : "");
   return page(
     "Opening DreamMe",
     `<img src="/email/sushi-waving.png" alt="">
@@ -42,7 +43,7 @@ export function goPage(token: string): Response {
 <p class="small">Not on this phone? Get it on the <a href="${APP_STORE_URL}">App Store</a> or <a href="${PLAY_URL}">Google Play</a>.</p>
 <script>
 (function(){
-  try { fetch(location.pathname + "?t=" + encodeURIComponent(${t}), { method: "POST", keepalive: true }); } catch (e) {}
+  try { fetch(location.pathname + "?t=" + encodeURIComponent(${t}) + ${m}, { method: "POST", keepalive: true }); } catch (e) {}
   setTimeout(function(){ location.href = ${JSON.stringify(APP_DEEP_LINK)}; }, 250);
 })();
 </script>`,

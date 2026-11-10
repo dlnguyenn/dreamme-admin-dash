@@ -21,13 +21,15 @@
  * shows a "Set up your shot schedule" card with a "Set schedule" button
  * (ShotDayCard) until a schedule exists.
  */
-import type { Cta, EmailKind, Platform } from "./core";
+import { MOODS, type Cta, type EmailKind, type Mood, type Platform } from "./core";
 
 export interface EmailAssets {
   /** animated hero art (right half of the banner): waving Sushi for day 0, heart Sushi for day 1 */
   heroDay0: string;
   heroDay1: string;
   icon: string;
+  /** round Sushi mood tiles for the day-1 "how are you feeling?" row (Live Activity art) */
+  moods: Record<Mood, string>;
   /** Jellee .ttf; Apple Mail loads it, Gmail ignores it */
   font: string;
 }
@@ -300,6 +302,24 @@ function noteHtml(n: Note): string {
 </td></tr></table>`;
 }
 
+const MOOD_LABEL: Record<Mood, string> = { great: "Great", okay: "Okay", rough: "Rough", tired: "Tired" };
+const moodUrl = (ctaUrl: string, m: Mood) => `${ctaUrl}${ctaUrl.includes("?") ? "&" : "?"}m=${m}`;
+
+/** Headspace-style mood row: four Sushi tiles, each opens the app (and records the tap). */
+function moodRowHtml(ctaUrl: string, tiles: Record<Mood, string>): string {
+  const cells = MOODS.map(
+    (m) => `<td align="center" valign="top" width="25%" style="padding:0 2px;">
+<a href="${esc(moodUrl(ctaUrl, m))}" style="text-decoration:none;color:${C.ink};display:block;">
+<img src="${esc(tiles[m])}" width="64" height="64" alt="${MOOD_LABEL[m]}" style="display:block;margin:0 auto 6px;border:0;width:64px;height:64px;border-radius:32px;">
+<span style="font-family:${SANS};font-size:14px;font-weight:700;line-height:18px;color:${C.ink};">${MOOD_LABEL[m]}</span>
+</a></td>`,
+  ).join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;background:${C.panel};border-radius:16px;"><tr><td style="padding:16px 10px 14px;">
+<p style="margin:0 0 12px;font-family:${SANS};font-size:13px;font-weight:700;line-height:18px;color:${C.ink2};text-align:center;">Tap how you feel today</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>
+</td></tr></table>`;
+}
+
 function weekHtml(items: { when: string; what: string }[]): string {
   const rows = items
     .map(
@@ -361,6 +381,7 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 <tr><td bgcolor="${C.card}" class="pad" style="background:${C.card};border-radius:0 0 24px 24px;padding:26px 28px 8px;">
 ${paraHtml([greeting])}
 ${b.intro.map((p) => paraHtml(p)).join("\n")}
+${i.kind === "day1" && i.cta === "side_effect" ? moodRowHtml(i.ctaUrl, a.moods) : ""}
 ${paraHtml(b.askPara)}
 ${stepsHtml(STEPS_TITLE[i.cta], steps(i.cta))}
 ${buttonHtml(button, i.ctaUrl)}
@@ -384,6 +405,9 @@ ${b.signoff ? paraHtml([b.signoff]) : ""}
 </body></html>`;
 
   const lines: string[] = [hero.title, hero.sub, "", greeting, "", ...b.intro.flatMap((p) => [paraText(p), ""]), paraText(b.askPara), ""];
+  if (i.kind === "day1" && i.cta === "side_effect") {
+    lines.push("Tap how you feel today:", ...MOODS.map((m) => `- ${MOOD_LABEL[m]}: ${moodUrl(i.ctaUrl, m)}`), "");
+  }
   lines.push(`${STEPS_TITLE[i.cta]}:`, ...steps(i.cta).map((s, n) => `${n + 1}. ${s}`), "", `${button}: ${i.ctaUrl}`, "");
   if (b.note) lines.push(b.note.title, b.note.body, "");
   for (const p of b.after) lines.push(paraText(p), "");

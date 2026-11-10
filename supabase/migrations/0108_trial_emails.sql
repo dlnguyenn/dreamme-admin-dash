@@ -65,6 +65,8 @@ create table if not exists public.trial_email_assignments (
 
   day0_first_click_at     timestamptz,
   day1_first_click_at     timestamptz,
+  -- Day-1 "how are you feeling?" row: first mood tapped (great/okay/rough/tired)
+  day1_mood               text,
   clicks                  integer     not null default 0,
   unsubscribed_at         timestamptz
 );
