@@ -1,4 +1,4 @@
--- 0108: trial emails — day-0 and day-1 emails to new trialists, 50% held out.
+-- 0109: trial emails — day-0 and day-1 emails to new trialists, 50% held out.
 --
 -- WHAT: every new App Store / Play trial (production, real user id, no earlier
 -- purchase) gets an arm on a hash of its app_user_id: half `email`, half

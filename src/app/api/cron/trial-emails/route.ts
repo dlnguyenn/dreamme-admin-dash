@@ -1,5 +1,5 @@
 /**
- * Trial emails sender — fired every 5 minutes by pg_cron (migration 0108)
+ * Trial emails sender — fired every 5 minutes by pg_cron (migration 0109)
  * while trial_email_config.enabled is true. Bearer CRON_SECRET only.
  *
  * Each run:

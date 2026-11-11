@@ -7,7 +7,7 @@
  * that matters (paid within 14 days, email arm against holdout) with the
  * sample size beside it. Bottom: every email variant rendered at phone width.
  * Data: GET /api/trial-emails/summary. The on/off switch is deliberately not
- * here (see migration 0108).
+ * here (see migration 0109).
  */
 
 import * as React from "react";
