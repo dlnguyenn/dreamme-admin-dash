@@ -253,8 +253,8 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
  */
 export type EmailTheme = "blue" | "lux";
 export const EMAIL_THEMES: EmailTheme[] = ["blue", "lux"];
-/** The look live sends use. Dan picks between the two; lux until he does. */
-export const LIVE_THEME: EmailTheme = "lux";
+/** The look live sends use. Dan chose blue on 2026-11-11. */
+export const LIVE_THEME: EmailTheme = "blue";
 
 interface Palette {
   page: string;

@@ -296,7 +296,7 @@ function Body({ d, scope, setScope }: { d: Summary; scope: Scope; setScope: (s: 
 function Previews() {
   const [list, setList] = React.useState<{ index: number; label: string }[]>([]);
   const [v, setV] = React.useState(0);
-  const [theme, setTheme] = React.useState<"blue" | "lux">("lux");
+  const [theme, setTheme] = React.useState<"blue" | "lux">("blue");
   const [meta, setMeta] = React.useState<{ subject: string; preview: string } | null>(null);
   React.useEffect(() => {
     fetch("/api/trial-emails/preview?list=1")
@@ -346,8 +346,8 @@ function Previews() {
               value={theme}
               onChange={(x) => setTheme(x as "blue" | "lux")}
               options={[
+                { value: "blue", label: "Blue (live)" },
                 { value: "lux", label: "Lux" },
-                { value: "blue", label: "Blue" },
               ]}
             />
           </div>
