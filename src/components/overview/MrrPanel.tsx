@@ -184,7 +184,8 @@ export function MrrPanel({ mrr }: { mrr: MrrSection | null }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "1.25fr 1fr",
+            // minmax(0, …): the charts must not hold their column open past the window.
+            gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1.25fr) minmax(0, 1fr)",
             gap: isMobile ? 22 : 28,
             marginTop: 18,
           }}
@@ -303,7 +304,7 @@ function DailyChangeChart({ daily }: { daily: MrrDay[] }) {
       </Tooltip>
       <div ref={ref} style={{ position: "relative", height: PLOT_H }} onMouseLeave={() => setHover(null)}>
         {width > 0 && days.length > 0 && (
-          <svg width={width} height={PLOT_H} style={{ display: "block", overflow: "visible" }}>
+          <svg width={width} height={PLOT_H} style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
             {hover != null && (
               <rect x={x(hover)} y={0} width={step} height={PLOT_H} rx={4} fill="var(--surface-2)" />
             )}
@@ -430,7 +431,7 @@ function GrowthRateChart({ growth }: { growth: MrrGrowthPoint[] }) {
         onMouseLeave={() => setHover(null)}
       >
         {width > 0 && growth.length > 1 && (
-          <svg width={width} height={PLOT_H} style={{ display: "block", overflow: "visible" }}>
+          <svg width={width} height={PLOT_H} style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
             {ticks.map((t) => (
               <g key={t}>
                 <line

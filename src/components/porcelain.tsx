@@ -585,6 +585,49 @@ export function KpiCard({
   );
 }
 
+/** The cue on a tile that opens a panel: a short label and a chevron that turns when open. */
+function OpenCue({ label, open, color }: { label?: string; open: boolean; color: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        marginLeft: "auto",
+        font: "600 11.5px var(--font-ui)",
+        letterSpacing: 0,
+        textTransform: "none",
+        color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+      <span
+        aria-hidden
+        style={{
+          display: "inline-flex",
+          transform: open ? "rotate(180deg)" : "none",
+          transition: "transform 180ms cubic-bezier(.2,.8,.2,1)",
+        }}
+      >
+        {Icons.ChevronDown({ size: 13, strokeWidth: 2.2 })}
+      </span>
+    </span>
+  );
+}
+
+/** Button reset so a whole tile can be the control without looking like a form button. */
+const tileButton: React.CSSProperties = {
+  appearance: "none",
+  border: "none",
+  margin: 0,
+  font: "inherit",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+  width: "100%",
+};
+
 /** One hero card max per screen (near-black, white number). */
 export function HeroCard({
   label,
@@ -593,6 +636,10 @@ export function HeroCard({
   deltaUp,
   spark,
   note,
+  onOpen,
+  open = false,
+  openLabel,
+  controls,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -601,6 +648,12 @@ export function HeroCard({
   deltaUp?: boolean;
   spark?: number[];
   note?: React.ReactNode;
+  /** Makes the whole card a button that opens a panel. */
+  onOpen?: () => void;
+  open?: boolean;
+  openLabel?: string;
+  /** id of the panel it opens, for aria-controls. */
+  controls?: string;
 }) {
   let sparkSvg: React.ReactNode = null;
   if (spark && spark.length > 1) {
@@ -635,9 +688,14 @@ export function HeroCard({
       </svg>
     );
   }
+  const Root = onOpen ? "button" : "div";
   return (
-    <div
+    <Root
+      {...(onOpen
+        ? { type: "button" as const, onClick: onOpen, "aria-expanded": open, "aria-controls": controls, className: "dm-tile dm-tile-hero" }
+        : {})}
       style={{
+        ...(onOpen ? tileButton : {}),
         background: "var(--hero-bg)",
         color: "var(--hero-ink)",
         borderRadius: 16,
@@ -654,9 +712,13 @@ export function HeroCard({
           letterSpacing: "0.06em",
           textTransform: "uppercase",
           color: "var(--hero-mut)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
-        {label}
+        <span>{label}</span>
+        {onOpen && <OpenCue label={openLabel} open={open} color="var(--hero-ink)" />}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span
@@ -689,7 +751,7 @@ export function HeroCard({
           {note}
         </div>
       )}
-    </div>
+    </Root>
   );
 }
 
@@ -705,6 +767,11 @@ export function StatStrip({
     delta?: React.ReactNode;
     deltaFamily?: Family;
     note?: React.ReactNode;
+    /** Makes the cell a button that opens a panel. */
+    onOpen?: () => void;
+    open?: boolean;
+    openLabel?: string;
+    controls?: string;
   }[];
   minColWidth?: number;
 }) {
@@ -720,10 +787,16 @@ export function StatStrip({
         overflow: "hidden",
       }}
     >
-      {stats.map((s, i) => (
-        <div
+      {stats.map((s, i) => {
+        const Cell = s.onOpen ? "button" : "div";
+        return (
+        <Cell
           key={i}
+          {...(s.onOpen
+            ? { type: "button" as const, onClick: s.onOpen, "aria-expanded": !!s.open, "aria-controls": s.controls, className: "dm-tile dm-tile-cell" }
+            : {})}
           style={{
+            ...(s.onOpen ? { ...tileButton, background: s.open ? "var(--surface-2)" : undefined } : {}),
             padding: "16px 18px",
             borderLeft: i ? "1px solid var(--line)" : "none",
             display: "flex",
@@ -741,9 +814,13 @@ export function StatStrip({
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            {s.label}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</span>
+            {s.onOpen && <OpenCue label={s.openLabel} open={!!s.open} color="var(--accent-text)" />}
           </div>
           <div
             style={{
@@ -782,8 +859,9 @@ export function StatStrip({
               </span>
             )}
           </div>
-        </div>
-      ))}
+        </Cell>
+        );
+      })}
     </div>
   );
 }

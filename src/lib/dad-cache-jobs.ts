@@ -15,6 +15,7 @@ import { fetchChart } from "@/lib/vendors/revenuecat";
 import { transformTrialChart, type PricingExperimentResponse } from "@/lib/pricing-experiment";
 import { fetchMmp } from "@/lib/mmp/data";
 import { fetchMetaLive } from "@/lib/mmp/meta-live";
+import { cachedAttribution, loadTrialInsights } from "@/lib/trial-insights-data";
 
 export interface CacheJob {
   policy: CachePolicy;
@@ -74,6 +75,11 @@ export function cacheJobs(): Record<string, CacheJob> {
     "plan-scorecard": { policy: POLICY.daily, run: () => loadScorecard() },
     "pricing-experiment": { policy: POLICY.daily, run: () => loadPricingExperiment() },
     mmp: { policy: POLICY.daily, run: () => loadMmpPayload() },
+  };
+  // After overview-attribution, which it reads through the cache.
+  jobs["trial-insights"] = {
+    policy: POLICY.live,
+    run: () => loadTrialInsights(cachedAttribution(jobs["overview-attribution"])),
   };
   const test = defaultTest();
   if (test) jobs[switchbackKey(test.id)] = { policy: POLICY.daily, run: () => loadSwitchback(test) };

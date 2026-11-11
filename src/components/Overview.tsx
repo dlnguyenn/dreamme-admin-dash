@@ -32,6 +32,8 @@ import {
   TopPostsPanel,
 } from "./overview/panels";
 import { fmtMoney, fmtNum, fmtPct, relTime } from "./overview/shared";
+import { TRIAL_PANEL_ID, TrialInsightPanel, type TrialPanel } from "./overview/TrialInsightPanel";
+import type { TrialInsights } from "@/lib/trial-insights";
 
 const REFRESH_MS = 120_000;
 
@@ -284,10 +286,24 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
   const [refreshing, setRefreshing] = React.useState(false);
   const { hidden, toggle } = useHiddenSections();
   const show = (id: SectionId) => !hidden.has(id);
+  // Clicking the yesterday tile or the today tile opens its panel under the row.
+  const [trialPanel, setTrialPanel] = React.useState<TrialPanel | null>(null);
+  const [insights, setInsights] = React.useState<TrialInsights | null>(null);
+  const [insightsError, setInsightsError] = React.useState<string | null>(null);
+  const togglePanel = (p: TrialPanel) => setTrialPanel((cur) => (cur === p ? null : p));
 
   // fresh: skip the server cache (Refresh button, after queuing posts). The
   // 2-minute poll reads the cached copy, which refreshes itself in the background.
   const load = React.useCallback(async (fresh = false) => {
+    // Trial insights load beside the overview and never block it.
+    fetch(fresh ? "/api/overview/trial-insights?fresh=1" : "/api/overview/trial-insights", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((b: { ok: boolean; error?: string } & TrialInsights) => {
+        if (!b.ok) throw new Error(b.error ?? "failed");
+        setInsights(b);
+        setInsightsError(null);
+      })
+      .catch((e) => setInsightsError(e instanceof Error ? e.message : String(e)));
     try {
       const res = await fetch(fresh ? "/api/overview?fresh=1" : "/api/overview", { cache: "no-store" });
       const body = (await res.json()) as
@@ -397,6 +413,10 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               }
               deltaUp={(ns?.deltaPct ?? 0) >= 0}
               spark={ns?.spark}
+              onOpen={() => togglePanel("why")}
+              open={trialPanel === "why"}
+              openLabel="Why it moved"
+              controls={TRIAL_PANEL_ID}
               note={
                 ns?.stale
                   ? "No RevenueCat webhook events landed for yesterday — check the pipeline"
@@ -422,10 +442,17 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
                   // needs 202px and "starts · ET" breaks the first time
                   // onboarding hits four digits, so this is the longest form
                   // that survives a spike day: 115px at 100.0% of 1,013.
+                  // The pace estimate; the onboarding ratio moved into the panel.
+                  // "on pace for 1,234" is 98px, inside the 124px cell.
                   note:
-                    ns?.trialStartRatePct != null && ns.onboardingStartsToday != null
-                      ? `${ns.trialStartRatePct}% of ${fmtNum(ns.onboardingStartsToday)} starts`
-                      : "live",
+                    insights?.pace && !insights.pace.early
+                      ? `on pace for ${fmtNum(insights.pace.projected)}`
+                      : ns?.trialStartRatePct != null && ns.onboardingStartsToday != null
+                        ? `${ns.trialStartRatePct}% of ${fmtNum(ns.onboardingStartsToday)} starts`
+                        : "live",
+                  onOpen: () => togglePanel("pace"),
+                  open: trialPanel === "pace",
+                  controls: TRIAL_PANEL_ID,
                 },
                 {
                   label: "MRR",
@@ -454,6 +481,15 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
               ]}
             />
           </div>
+
+          {trialPanel && (
+            <TrialInsightPanel
+              panel={trialPanel}
+              insights={insights}
+              error={insightsError}
+              onboardingToday={ns?.onboardingStartsToday ?? null}
+            />
+          )}
 
           {show("mrr") && <MrrPanel mrr={data?.mrr ?? null} />}
 
