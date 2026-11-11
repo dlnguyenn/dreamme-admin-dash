@@ -167,16 +167,12 @@ function subjectFor(i: EmailInput): { subject: string; preview: string } {
 
 /** The big line under Sushi and the one under it. */
 function heroFor(i: EmailInput): { title: string; sub: string } {
-  const named = i.firstName !== "there";
-  if (i.cancelled) return { title: "Your free week is still on!", sub: "Here's how to make the most of it." };
-  if (i.kind === "day0") {
-    return {
-      title: named ? `Welcome to DreamMe, ${i.firstName}!` : "Welcome to DreamMe!",
-      sub: "Your free trial is on. Here's the one thing to do today.",
-    };
-  }
-  if (i.cta === "side_effect") return { title: "How are you feeling today?", sub: "A 20-second check-in helps the rest of your week make sense." };
-  return { title: `Day 2 with ${i.fish}`, sub: "One quick thing today and you're all set." };
+  // taste-skill: the first screen carries one hard fact (a date), and the
+  // banner names the thing instead of greeting (the letter already says Hi).
+  if (i.cancelled) return { title: "Your free week is still on!", sub: `All yours until ${i.trialEnd}` };
+  if (i.kind === "day0") return { title: "Your free week starts now", sub: `Free until ${i.trialEnd}` };
+  if (i.cta === "side_effect") return { title: "How are you feeling today?", sub: "Day 2 of your 7-day free trial" };
+  return { title: `Day 2 with ${i.fish}`, sub: "Day 2 of your 7-day free trial" };
 }
 
 type Note = { tone: "info" | "good"; title: string; body: string };
@@ -199,7 +195,7 @@ function bodyFor(i: EmailInput): Body {
   const noCharge: Note = {
     tone: "good",
     title: "You won't be charged",
-    body: `Your trial is set not to renew, and you still have everything until ${i.trialEnd}. If DreamMe earns a spot in your week, you can turn it back on in your ${store} subscriptions before then, and everything you've logged stays put.`,
+    body: `Your trial is set not to renew. If DreamMe earns a spot in your week, you can turn it back on in your ${store} subscriptions before ${i.trialEnd}, and everything you've logged stays put.`,
   };
 
   if (i.kind === "day0") {
@@ -207,8 +203,8 @@ function bodyFor(i: EmailInput): Body {
       ["Dan here, co-founder of DreamMe. Thank you so much for giving us a try!"],
     ];
     const lead = i.cancelled
-      ? "Since the week is yours anyway, here's the one thing I'd do with it: "
-      : "If you only do one thing today, make it this: ";
+      ? "Since the week is yours anyway, the one thing I'd do with it is "
+      : "The one thing to do today is ";
     const askPara: Para = [...(done ? [`${done} `] : []), lead, { b: a.action }, a.why];
     const note: Note = i.cancelled
       ? noCharge
@@ -225,7 +221,7 @@ function bodyFor(i: EmailInput): Body {
   const askPara: Para =
     i.cta === "side_effect"
       ? ["Nausea, low appetite, tired, or nothing at all, ", { b: a.action }, a.why]
-      : [`${done ?? ""} The one thing left that makes ${i.fish} really useful: `.trimStart(), { b: a.action }, a.why];
+      : [`${done ?? ""} The one thing left is to `.trimStart(), { b: a.action }, a.why];
   const after: Para[] = [];
   if (i.aboutToStart && i.cta === "side_effect") {
     after.push([`Haven't had your first shot yet? Log how you feel today anyway. It gives you a "before" to compare against.`]);
@@ -264,6 +260,8 @@ interface Palette {
   page: string;
   hero: string; // must match the hero GIF ground
   heroInk: string;
+  /** the banner's fact line, tinted from the banner */
+  heroSub: string;
   sheet: string;
   ink: string;
   ink2: string;
@@ -284,6 +282,7 @@ const THEMES: Record<EmailTheme, Palette> = {
     page: "#EAF5FA",
     hero: "#2D5F8A",
     heroInk: "#F0FAFF",
+    heroSub: "#CFE6F2", // 5.0:1 on Deep Sea
     sheet: "#FFFFFF",
     ink: "#1A3550",
     ink2: "#46617A",
@@ -302,6 +301,7 @@ const THEMES: Record<EmailTheme, Palette> = {
     page: "#F4F0EA",
     hero: "#E6DCCF",
     heroInk: "#2E2622",
+    heroSub: "#5E5148", // 5.6:1 on champagne
     sheet: "#FFFFFF",
     ink: "#2E2622",
     ink2: "#6B5E55",
@@ -404,7 +404,7 @@ export function renderEmail(i: EmailInput): RenderedEmail {
 :root{color-scheme:light only;supported-color-schemes:light only;}
 h1{text-wrap:balance;}
 p{text-wrap:pretty;}
-@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:22px !important;padding-right:22px !important}.title{font-size:24px !important;line-height:28px !important}.herotext{padding:16px 4px 16px 22px !important}}
+@media (max-width:480px){.outer{padding:12px 10px 28px !important}.pad{padding-left:22px !important;padding-right:22px !important}.title{font-size:24px !important;line-height:28px !important}.herosub{font-size:14px !important;line-height:18px !important}.herotext{padding:16px 4px 16px 22px !important}}
 </style></head>
 <body style="margin:0;padding:0;background:${C.page};-webkit-text-size-adjust:100%;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preview)}&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;&#8202;&#847;</div>
@@ -422,7 +422,8 @@ p{text-wrap:pretty;}
 <tr><td style="padding:0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr>
 <td width="54%" valign="middle" bgcolor="${C.hero}" class="herotext" style="width:54%;background:${C.hero};border-radius:24px 0 0 0;padding:22px 8px 22px 28px;">
-<h1 class="title" style="margin:0;font-family:${DISPLAY};font-size:30px;line-height:35px;font-weight:400;color:${C.heroInk};">${esc(hero.title)}</h1>
+<h1 class="title" style="margin:0 0 10px;font-family:${DISPLAY};font-size:30px;line-height:35px;font-weight:400;color:${C.heroInk};">${esc(hero.title)}</h1>
+<p class="herosub" style="margin:0;font-family:${SANS};font-size:15px;line-height:20px;font-weight:600;color:${C.heroSub};">${esc(hero.sub)}</p>
 </td>
 <td width="46%" valign="bottom" bgcolor="${C.hero}" style="width:46%;background:${C.hero};border-radius:0 24px 0 0;padding:0;line-height:0;font-size:0;">
 <img src="${esc(i.kind === "day0" ? a.heroDay0 : a.heroDay1)}" width="240" alt="${esc(i.fish)}, the DreamMe fish, ${i.kind === "day0" ? "waving hello" : "holding a heart"}" style="display:block;border:0;width:100%;max-width:240px;height:auto;margin-left:auto;">
@@ -448,7 +449,6 @@ ${b.signoff ? paraHtml(C, [b.signoff]) : ""}
 </td></tr>
 
 <tr><td align="center" style="padding:24px 12px 0;">
-<p style="margin:0 0 6px;font-family:${SANS};font-size:13px;line-height:19px;color:${C.ink2};">DreamMe, your GLP-1 companion</p>
 <p style="margin:0;font-family:${SANS};font-size:13px;line-height:19px;color:${C.ink2};">You're getting this because you started a DreamMe free trial.<br><a href="${esc(i.unsubscribeUrl)}" style="color:${C.ink2};text-decoration:underline;text-underline-offset:2px;">Unsubscribe</a></p>
 </td></tr>
 

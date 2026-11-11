@@ -185,6 +185,7 @@ describe("trial-emails: copy rules", () => {
     const on = all[v.findIndex((x) => x.kind === "day0" && !x.cancelled)];
     expect(off.text).toContain("You won't be charged");
     expect(off.text).not.toContain("Free until");
+    expect(on.text).not.toMatch(/make it this:/);
     expect(on.text).toContain("Free until Monday, Nov 23");
     expect(on.text).toContain("Nothing is charged before then");
   });
