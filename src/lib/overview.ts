@@ -359,9 +359,17 @@ interface TrialStartsRow {
 async function fetchTrialStarts(): Promise<TrialStartsRow[]> {
   // Eastern, to match how migration 0060 buckets the view.
   const since = easternDateOffset(WINDOW_DAYS - 1);
-  return sbGet<TrialStartsRow[]>(
-    `rc_trial_starts_daily?select=date,trial_starts&date=gte.${since}&order=date.asc&limit=${WINDOW_DAYS + 1}`,
-  );
+  const path = `rc_trial_starts_daily?select=date,trial_starts&date=gte.${since}&order=date.asc&limit=${WINDOW_DAYS + 1}`;
+  // One retry on a statement timeout: under load this read used to cross
+  // PostgREST's 8 s limit and blank the hero card and the Paid table's trials
+  // (2026-11-10). Migration 0108's index makes that rare; the retry covers
+  // the rest.
+  try {
+    return await sbGet<TrialStartsRow[]>(path);
+  } catch (e) {
+    if (!/57014|statement timeout/.test(e instanceof Error ? e.message : String(e))) throw e;
+    return sbGet<TrialStartsRow[]>(path);
+  }
 }
 
 // ---------------------------------------------------------------------------
