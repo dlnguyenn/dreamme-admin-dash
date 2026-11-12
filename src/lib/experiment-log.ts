@@ -183,7 +183,31 @@ export function rcExperimentUrl(id: string): string {
   return `https://app.revenuecat.com/projects/c9e74a6c/experiments/${encodeURIComponent(id)}`;
 }
 
-/** Live RevenueCat state for an entry, as returned by the API. */
+/**
+ * A timestamp as RevenueCat's API v2 sends it: a number, milliseconds since
+ * epoch. ISO text is read too, so either shape works.
+ */
+export type RcTimestamp = number | string | null | undefined;
+
+/** ISO text for a RevenueCat timestamp, or null when it's empty or unreadable. */
+export function rcTimestampToIso(value: RcTimestamp): string | null {
+  if (value == null || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** The UTC day (YYYY-MM-DD) of a RevenueCat timestamp, or null. */
+export function rcDay(value: RcTimestamp): string | null {
+  // ISO text already starts with its day; keep it as written.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const iso = rcTimestampToIso(value);
+  return iso ? iso.slice(0, 10) : null;
+}
+
+/**
+ * Live RevenueCat state for an entry, as our API returns it. The timestamps
+ * are ISO text here: the server converts RevenueCat's numbers before sending.
+ */
 export interface RcExperimentState {
   id: string;
   status: string;
@@ -202,19 +226,20 @@ export interface RcExperimentState {
  */
 export function rcSyncPatch(
   e: Pick<ExperimentEntry, "status" | "start_date" | "end_date">,
-  rc: RcExperimentState,
+  rc: { status: string; started_at: RcTimestamp; stopped_at: RcTimestamp },
 ): Partial<Pick<ExperimentEntry, "status" | "start_date" | "end_date">> | null {
   if (e.status === "decided") return null;
-  const day = (iso: string | null) => (iso ? iso.slice(0, 10) : null);
+  const started = rcDay(rc.started_at);
+  const stopped = rcDay(rc.stopped_at);
   const patch: Partial<Pick<ExperimentEntry, "status" | "start_date" | "end_date">> = {};
   const rcStatus = rc.status.toLowerCase();
   if (rcStatus === "running" || rcStatus === "paused") {
     if (rcStatus === "running" && (e.status === "planned" || e.status === "draft")) patch.status = "running";
-    if (!e.start_date && rc.started_at) patch.start_date = day(rc.started_at);
+    if (!e.start_date && started) patch.start_date = started;
   } else if (rcStatus === "stopped") {
     if (e.status !== "stopped") patch.status = "stopped";
-    if (!e.start_date && rc.started_at) patch.start_date = day(rc.started_at);
-    if (!e.end_date && rc.stopped_at) patch.end_date = day(rc.stopped_at);
+    if (!e.start_date && started) patch.start_date = started;
+    if (!e.end_date && stopped) patch.end_date = stopped;
   }
   // Never write an end before the start.
   const start = patch.start_date ?? e.start_date;

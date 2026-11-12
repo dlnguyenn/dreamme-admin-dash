@@ -7,7 +7,7 @@
  */
 import { spGet, spPatch } from "@/lib/support/db";
 import { fetchExperiments, revenueCatConfigured } from "@/lib/vendors/revenuecat";
-import { rcSyncPatch, type ExperimentEntry, type RcExperimentState } from "@/lib/experiment-log";
+import { rcSyncPatch, rcTimestampToIso, type ExperimentEntry, type RcExperimentState } from "@/lib/experiment-log";
 
 export interface RcSyncResult {
   entries: ExperimentEntry[];
@@ -31,8 +31,9 @@ export async function loadAndSyncExperimentLog(): Promise<RcSyncResult> {
       rc[x.id] = {
         id: x.id,
         status: x.status,
-        started_at: x.started_at ?? null,
-        stopped_at: x.stopped_at ?? null,
+        // RevenueCat sends these as numbers; the page and the sync rules read ISO text.
+        started_at: rcTimestampToIso(x.started_at),
+        stopped_at: rcTimestampToIso(x.stopped_at),
         enrollment_percentage: x.enrollment_percentage ?? null,
       };
     }

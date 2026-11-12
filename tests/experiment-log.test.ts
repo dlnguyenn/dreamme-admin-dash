@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   dateRangeError,
+  rcDay,
   rcSyncPatch,
+  rcTimestampToIso,
   dateRangeLabel,
   daysRunning,
   sortEntries,
@@ -94,8 +96,31 @@ describe("request schema", () => {
   });
 });
 
+describe("RevenueCat timestamps", () => {
+  // RevenueCat's API v2 sends milliseconds since epoch.
+  const lateEvening = Date.UTC(2026, 10, 20, 23, 57, 9);
+
+  it("reads a number (milliseconds since epoch) as its UTC day", () => {
+    expect(rcDay(lateEvening)).toBe("2026-11-20");
+    expect(rcTimestampToIso(lateEvening)).toBe("2026-11-20T23:57:09.000Z");
+  });
+
+  it("reads ISO text", () => {
+    expect(rcDay("2026-11-20T23:57:09.913Z")).toBe("2026-11-20");
+    expect(rcDay("2026-11-20")).toBe("2026-11-20");
+    expect(rcTimestampToIso("2026-11-20T23:57:09.913Z")).toBe("2026-11-20T23:57:09.913Z");
+  });
+
+  it("gives null for nothing or for something unreadable, without throwing", () => {
+    for (const empty of [null, undefined, "", "not a date", Number.NaN]) {
+      expect(rcDay(empty)).toBeNull();
+      expect(rcTimestampToIso(empty)).toBeNull();
+    }
+  });
+});
+
 describe("rcSyncPatch", () => {
-  const rc = (status: string, started_at: string | null = null, stopped_at: string | null = null) => ({
+  const rc = (status: string, started_at: number | string | null = null, stopped_at: number | string | null = null) => ({
     id: "exp1",
     status,
     started_at,
@@ -107,6 +132,20 @@ describe("rcSyncPatch", () => {
     expect(rcSyncPatch({ status: "draft", start_date: null, end_date: null }, rc("running", "2026-11-20T15:00:00Z"))).toEqual({
       status: "running",
       start_date: "2026-11-20",
+    });
+  });
+
+  it("takes RC's dates as numbers (milliseconds since epoch)", () => {
+    const started = Date.UTC(2026, 10, 20, 23, 57);
+    const stopped = Date.UTC(2026, 11, 20, 9, 0);
+    expect(rcSyncPatch({ status: "draft", start_date: null, end_date: null }, rc("running", started))).toEqual({
+      status: "running",
+      start_date: "2026-11-20",
+    });
+    expect(rcSyncPatch({ status: "running", start_date: null, end_date: null }, rc("stopped", started, stopped))).toEqual({
+      status: "stopped",
+      start_date: "2026-11-20",
+      end_date: "2026-12-20",
     });
   });
 

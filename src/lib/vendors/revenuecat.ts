@@ -442,8 +442,9 @@ export interface RcExperiment {
   id: string;
   display_name: string;
   status: string;
-  started_at: string | null;
-  stopped_at: string | null;
+  /** A number: milliseconds since epoch. Typed loosely so ISO text is read too. */
+  started_at: number | string | null;
+  stopped_at: number | string | null;
   enrollment_percentage: number | null;
 }
 
