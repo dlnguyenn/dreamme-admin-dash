@@ -112,7 +112,9 @@ const dot = (s: string) => (s.endsWith("…") || s.endsWith(".") ? s : `${s}.`);
 
 /** First sentence, short enough to stay one or two lines in a panel row. */
 function firstSentence(text: string, max = 100): string {
-  const one = text.trim().split("\n")[0].split(".")[0].trim();
+  // A full stop only ends a sentence when whitespace or the end follows it,
+  // otherwise "$9.99" and "retain_monthly_50_3m: 7.99" lose their decimals.
+  const one = text.trim().split("\n")[0].split(/\.(?:\s|$)/)[0].trim();
   return one.length > max ? `${one.slice(0, max - 1).trimEnd()}…` : one;
 }
 

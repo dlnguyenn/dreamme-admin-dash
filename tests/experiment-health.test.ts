@@ -399,3 +399,23 @@ describe("reading RevenueCat's results payload", () => {
     expect(r.startRate.changePct).toBe(50);
   });
 });
+
+describe("clipping a sentence", () => {
+  it("keeps decimals in prices, which a naive split on '.' would cut", () => {
+    const [h] = buildExperimentHealth(
+      inputs({
+        entries: [
+          entry({ kind: "change", what_changed: "Play monthly went from $9.99 to $14.99 in the US. Android only." }),
+        ],
+      }),
+    );
+    expect(h.reading).toBe("Play monthly went from $9.99 to $14.99 in the US");
+  });
+
+  it("still stops at the end of the first real sentence", () => {
+    const [h] = buildExperimentHealth(
+      inputs({ entries: [entry({ kind: "change", what_changed: "First thing. Second thing." })] }),
+    );
+    expect(h.reading).toBe("First thing");
+  });
+});
