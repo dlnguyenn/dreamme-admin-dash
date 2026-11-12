@@ -667,7 +667,8 @@ function dailySections(c: Ctx): { sections: Section[]; attention: number } {
     {
       id: "features",
       title: "What they do",
-      intro: "People doing each thing a day. `meal_logged` misses some meal-logging days, so the real figure is higher (see Tracking).",
+      intro:
+        "People doing each thing a day. Two of these run low: `meal_logged` misses some meal-logging days (see Tracking), and `stat_logged` has missed over half of water and protein logging since the August 2026 release, going by the database.",
       blocks: blocks(
         seriesBlock(c.shownDays, "People a day, by feature", pickSeries(c, FEATURES)),
         seriesBlock(
