@@ -30,6 +30,8 @@ import {
   type RcReadout,
 } from "@/lib/experiment-health";
 import { spPost } from "@/lib/support/db";
+import { fetchImpactSeries } from "@/lib/change-impact-data";
+import { headlineImpact, sharpest, watchChange } from "@/lib/change-impact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +85,27 @@ export async function GET(req: Request) {
     }
   }
 
-  const healths = buildExperimentHealth({ entries, rc, readouts, rcError, today: day });
+  // Shipped changes have no control arm, so each is read against the same
+  // metric before and after the day it shipped (lib/change-impact.ts).
+  const { series, errors: seriesErrors } = await fetchImpactSeries(now);
+  // Only a change that is still live and has a real reading earns a line.
+  // An ads change (deliberately not watched), one with no baseline, and one
+  // that has already ended belong in the count, not in a list of nine.
+  const watches: Record<string, { line: string; early: boolean } | null> = {};
+  const changes = entries.filter((e) => e.kind === "change");
+  for (const e of changes) {
+    if (e.status !== "running") continue;
+    const neighbours = changes
+      .filter((o) => o.id !== e.id && o.area === e.area && o.start_date)
+      .map((o) => o.start_date!);
+    const watched = watchChange(e.area, e.start_date, series, neighbours);
+    const top = sharpest(watched);
+    if (!top || top.verdict === "no_baseline") continue;
+    const line = headlineImpact(watched);
+    if (line) watches[e.id] = { line, early: top.verdict === "too_early" };
+  }
+
+  const healths = buildExperimentHealth({ entries, rc, readouts, rcError, today: day, watches });
   const counts = summarize(healths);
   const summary = {
     headline: headline(counts),
@@ -99,6 +121,8 @@ export async function GET(req: Request) {
       attention: h.attention,
       days: h.days,
       rcId: h.rcId,
+      watch: h.watch,
+      watchEarly: h.watchEarly,
     })),
   };
 
@@ -122,6 +146,7 @@ export async function GET(req: Request) {
       summary,
       rc_error: rcError,
       result_errors: resultErrors,
+      series_errors: seriesErrors,
     });
   }
 
@@ -153,5 +178,6 @@ export async function GET(req: Request) {
     counts,
     rc_error: rcError,
     result_errors: resultErrors,
+    series_errors: seriesErrors,
   });
 }

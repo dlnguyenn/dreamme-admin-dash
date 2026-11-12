@@ -45,9 +45,9 @@ function Row({ item, last }: { item: ExperimentItem; last: boolean }) {
           {item.title}
           <span style={{ font: "400 12px/1.4 var(--font-ui)", color: "var(--ink-3)" }}> · {item.stage}</span>
         </div>
-        {(warn || item.reading) && (
+        {(warn || item.watch || item.reading) && (
           <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: warn ? fam(family).text : "var(--ink-2)", marginTop: 2 }}>
-            {warn ? `${warn.why} ${warn.action}` : item.reading}
+            {warn ? `${warn.why} ${warn.action}` : item.watch ?? item.reading}
           </div>
         )}
       </div>
@@ -55,11 +55,29 @@ function Row({ item, last }: { item: ExperimentItem; last: boolean }) {
   );
 }
 
-function Group({ label, items }: { label: string; items: ExperimentItem[] }) {
+/** One row per distinct reading, titles joined, so a shared window reads once. */
+function mergeByReading(items: ExperimentItem[]): ExperimentItem[] {
+  const byReading = new Map<string, ExperimentItem[]>();
+  for (const i of items) {
+    const key = i.watch ?? "";
+    byReading.set(key, [...(byReading.get(key) ?? []), i]);
+  }
+  return [...byReading.values()].map((group) => {
+    if (group.length === 1) return group[0];
+    const titles = group.map((g) => g.title);
+    const last = titles.pop()!;
+    return { ...group[0], title: `${titles.join(", ")} and ${last}`, stage: `${group.length} changes` };
+  });
+}
+
+function Group({ label, note, items }: { label: string; note?: string; items: ExperimentItem[] }) {
   if (!items.length) return null;
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ font: "500 12px/1.4 var(--font-ui)", color: "var(--ink-3)" }}>{label}</div>
+      <div style={{ font: "500 12px/1.4 var(--font-ui)", color: "var(--ink-3)" }}>
+        {label}
+        {note ? <span style={{ fontWeight: 400 }}> — {note}</span> : null}
+      </div>
       {items.map((item, i) => (
         <Row key={item.id} item={item} last={i === items.length - 1} />
       ))}
@@ -89,7 +107,16 @@ export function ExperimentsPanel({
   const needsYou = section.items.filter((i) => i.attention);
   const running = tests.filter((i) => !i.attention && (i.state === "reading" || i.state === "too_early"));
   const notStarted = tests.filter((i) => !i.attention && i.state === "not_started");
+  // Shipped changes have no arm to compare, so only the ones with a
+  // before-and-after reading earn a line; the rest stay in the count below.
+  const watched = section.items.filter((i) => i.kind === "change" && i.watch && !i.attention);
+  const reading = watched.filter((i) => !i.watchEarly);
+  const early = watched.filter((i) => i.watchEarly);
+  // Changes that shipped the same week share one window, so they share one
+  // reading. Printing it three times says the same thing three times.
+  const merged = mergeByReading(reading);
   const { counts, staleness } = section;
+  const quiet = counts.changes - watched.length;
   const stopped = staleness.level === "stopped";
 
   return (
@@ -109,15 +136,25 @@ export function ExperimentsPanel({
         <Group label="Waiting on you" items={needsYou} />
         <Group label="Running" items={running} />
         <Group label="Agreed, not started" items={notStarted} />
-
-        {(counts.changes > 0 || counts.settled > 0) && (
-          <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", marginTop: 16 }}>
-            {counts.changes > 0 && `${counts.changes} shipped change${counts.changes === 1 ? "" : "s"}`}
-            {counts.changes > 0 && counts.settled > 0 && " and "}
-            {counts.settled > 0 && `${counts.settled} settled test${counts.settled === 1 ? "" : "s"}`}
-            {" are on the log for the record. Nothing to decide on those."}
+        <Group
+          label="Shipped to everyone, being watched"
+          note="before and after, not tests"
+          items={merged}
+        />
+        {early.length > 0 && (
+          <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", marginTop: 12 }}>
+            Too new to read: {early.map((i) => i.title).join("; ")}. Each needs about a week after it shipped.
           </div>
         )}
+
+        {quiet > 0 || counts.settled > 0 ? (
+          <div style={{ font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", marginTop: 16 }}>
+            {quiet > 0 && `${quiet} ${watched.length ? "other " : ""}shipped change${quiet === 1 ? "" : "s"}`}
+            {quiet > 0 && counts.settled > 0 && " and "}
+            {counts.settled > 0 && `${counts.settled} settled test${counts.settled === 1 ? "" : "s"}`}
+            {" on the log for the record. Nothing to decide on those."}
+          </div>
+        ) : null}
 
         {stopped && (
           <InfoWell style={{ marginTop: 14, color: fam("danger").text, background: fam("danger").soft }}>

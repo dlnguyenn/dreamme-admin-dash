@@ -419,3 +419,72 @@ describe("clipping a sentence", () => {
     expect(h.reading).toBe("First thing");
   });
 });
+
+describe("shipped changes with a before-and-after reading", () => {
+  const withWatch = () =>
+    buildExperimentHealth(
+      inputs({
+        entries: [
+          entry({ id: "t", title: "A test" }),
+          entry({ id: "c1", title: "Cancel screen copy", kind: "change", area: "retention" }),
+          entry({ id: "c2", title: "Some other change", kind: "change", area: "onboarding" }),
+        ],
+        watches: {
+          c1: {
+            line: "Cancels per 1,000 subscribers a day: 12.0 to 11.8 over 20 days, inside the usual day-to-day swing.",
+            early: false,
+          },
+        },
+      }),
+    );
+
+  it("gives a watched change its own section, above the count", () => {
+    const text = digestText(withWatch(), { checkedAt: "now", rcError: null, dashUrl: "https://d" });
+    expect(text).toContain("SHIPPED TO EVERYONE, BEING WATCHED");
+    expect(text).toContain("Cancel screen copy");
+    expect(text).toContain("inside the usual day-to-day swing");
+  });
+
+  it("counts only the unwatched ones in the for-the-record line", () => {
+    const text = digestText(withWatch(), { checkedAt: "now", rcError: null, dashUrl: "https://d" });
+    expect(text).toContain("1 other shipped change");
+    expect(text).not.toContain("2 shipped changes");
+  });
+
+  it("drops the word other when none are watched", () => {
+    const plain = buildExperimentHealth(
+      inputs({ entries: [entry({ id: "c", kind: "change", area: "onboarding" })] }),
+    );
+    const text = digestText(plain, { checkedAt: "now", rcError: null, dashUrl: "https://d" });
+    expect(text).toContain("1 shipped change");
+    expect(text).not.toContain("other shipped");
+  });
+
+  it("never attaches a reading to a test, which has its own arms", () => {
+    const hs = buildExperimentHealth(
+      inputs({ entries: [entry({ id: "t" })], watches: { t: { line: "should be ignored", early: false } } }),
+    );
+    expect(hs[0].watch).toBeNull();
+  });
+});
+
+describe("changes too new to read", () => {
+  it("names them in one line instead of listing a reading each", () => {
+    const hs = buildExperimentHealth(
+      inputs({
+        entries: [
+          entry({ id: "a", title: "New cancel screen", kind: "change", area: "retention" }),
+          entry({ id: "b", title: "Another new one", kind: "change", area: "retention" }),
+        ],
+        watches: {
+          a: { line: "Cancels per 1,000 subscribers a day: no complete day after it yet.", early: true },
+          b: { line: "Cancels per 1,000 subscribers a day: no complete day after it yet.", early: true },
+        },
+      }),
+    );
+    const text = digestText(hs, { checkedAt: "now", rcError: null, dashUrl: "https://d" });
+    expect(text).not.toContain("SHIPPED TO EVERYONE, BEING WATCHED");
+    expect(text).toContain("Too new to read: New cancel screen; Another new one");
+    expect(text).toContain("about a week");
+  });
+});

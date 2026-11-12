@@ -23,6 +23,10 @@ export interface ExperimentItem {
   attention: ExperimentAttention | null;
   days: number | null;
   rcId: string | null;
+  /** For a shipped change: its before-and-after reading, when it has one. */
+  watch?: string | null;
+  /** True when that reading is only "too early to say". */
+  watchEarly?: boolean;
 }
 
 export interface ExperimentsSection {

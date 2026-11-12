@@ -77,6 +77,10 @@ export interface ExperimentHealth {
   owner: string | null;
   days: number | null;
   rcId: string | null;
+  /** For a shipped change: the before-and-after reading, or why there is none. */
+  watch: string | null;
+  /** True when that reading is only "too early to say". */
+  watchEarly: boolean;
 }
 
 export interface HealthInputs {
@@ -89,6 +93,8 @@ export interface HealthInputs {
   rcError: string | null;
   /** Today as an Eastern YYYY-MM-DD, the same day boundary as the rest of the dash. */
   today: string;
+  /** For a shipped change, its before-and-after line, keyed by entry id. */
+  watches?: Record<string, { line: string; early: boolean } | null>;
 }
 
 function pct(n: number | null): string {
@@ -283,6 +289,8 @@ export function buildExperimentHealth(inputs: HealthInputs): ExperimentHealth[] 
       owner: e.owner,
       days: daysRunning(e.start_date, e.end_date, inputs.today),
       rcId: e.rc_experiment_id,
+      watch: e.kind === "change" ? inputs.watches?.[e.id]?.line ?? null : null,
+      watchEarly: e.kind === "change" ? inputs.watches?.[e.id]?.early ?? false : false,
     } satisfies ExperimentHealth;
   });
   return out.sort((a, b) => {
@@ -362,10 +370,32 @@ export function digestText(
     lines.push("");
   }
 
-  if (s.changes || s.settled) {
+  const watched = healths.filter((h) => h.kind === "change" && h.watch);
+  const reading = watched.filter((h) => !h.watchEarly);
+  const early = watched.filter((h) => h.watchEarly);
+  if (reading.length) {
+    lines.push("SHIPPED TO EVERYONE, BEING WATCHED");
+    lines.push("(Everyone got these, so each is a before and after, not a test.)");
+    for (const h of reading) {
+      lines.push(`- ${h.title} (${h.stage})`);
+      lines.push(`  ${h.watch}`);
+    }
+    lines.push("");
+  }
+  if (early.length) {
     lines.push(
-      `For the record: ${s.changes} shipped change${s.changes === 1 ? "" : "s"} and ${s.settled} settled test${s.settled === 1 ? "" : "s"} on the log. No decision needed on those.`,
+      `Too new to read: ${early.map((h) => h.title).join("; ")}. Each needs about a week after it shipped.`,
     );
+    lines.push("");
+  }
+
+  const quiet = s.changes - reading.length - early.length;
+  if (quiet > 0 || s.settled) {
+    const bits: string[] = [];
+    const other = watched.length ? "other " : "";
+    if (quiet > 0) bits.push(`${quiet} ${other}shipped change${quiet === 1 ? "" : "s"}`);
+    if (s.settled) bits.push(`${s.settled} settled test${s.settled === 1 ? "" : "s"}`);
+    lines.push(`For the record: ${bits.join(" and ")} on the log. No decision needed on those.`);
     lines.push("");
   }
 
