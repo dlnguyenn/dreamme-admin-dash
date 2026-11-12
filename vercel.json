@@ -25,6 +25,7 @@
     { "path": "/api/cron/step-down-report", "schedule": "0 13 * * *" },
     { "path": "/api/cron/sync-store-reviews", "schedule": "30 11 * * *" },
     { "path": "/api/cron/chase-alerts", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/sync-mixpanel", "schedule": "20 9 * * *" }
+    { "path": "/api/cron/sync-mixpanel", "schedule": "20 9 * * *" },
+    { "path": "/api/cron/daily-brief", "schedule": "0 12 * * *" }
   ]
 }
