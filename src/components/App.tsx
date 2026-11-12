@@ -17,7 +17,6 @@ import { Overview } from "./Overview";
 import { ComingSoon } from "./ComingSoon";
 import { TweaksPanel, type Tweaks } from "./TweaksPanel";
 import { API } from "@/lib/supabase";
-import { devAuthBypass } from "@/lib/dev-auth";
 import type { DashState } from "@/lib/types";
 
 // Every tab but Overview loads its code when first opened, so the first page
@@ -65,6 +64,10 @@ export function App() {
   const [hydrated, setHydrated] = React.useState(false);
   const [authed, setAuthed] = React.useState(false);
   const [role, setRole] = React.useState<"admin" | "user">("user");
+  // Who is signed in, from /api/auth/me (null until checked or when signed out).
+  const [authChecked, setAuthChecked] = React.useState(false);
+  const [accountKind, setAccountKind] = React.useState<string | null>(null);
+  const [googleReady, setGoogleReady] = React.useState(true);
   const [viewAs, setViewAs] = React.useState<"admin" | "user">("user");
 
   const [state, setState] = React.useState<DashState>({
@@ -92,34 +95,9 @@ export function App() {
   // Hydrate from storage after mount to avoid SSR/CSR mismatch
   React.useEffect(() => {
     try {
-      // On localhost in dev, skip the password gate (see lib/dev-auth).
-      // Compiles away in production builds, so deployed prod stays gated.
-      const bypass = devAuthBypass();
-      if (bypass || sessionStorage.getItem("dreamme.auth") === "1") setAuthed(true);
-      const stored = sessionStorage.getItem("dreamme.role");
-      const savedRole =
-        stored === "admin" || stored === "user" ? stored : bypass ? "admin" : null;
-      if (savedRole === "admin" || savedRole === "user") {
-        setRole(savedRole);
-        // viewAs is read from sessionStorage, NOT localStorage, and is cleared
-        // when the browser closes. It exists so an admin can preview what a
-        // creator sees; it is a debug affordance, not a saved preference.
-        //
-        // In localStorage it was a trap with no visible cause: one click of the
-        // sidebar Admin/User toggle, at any point, silently demoted you on
-        // every subsequent visit forever. Every adminOnly screen vanished and
-        // the visibleNavItems bounce dropped you on Content Pipeline, which
-        // reads exactly like "the new landing tab didn't ship".
-        const savedView = sessionStorage.getItem("dreamme.viewAs");
-        if (savedRole === "admin" && (savedView === "admin" || savedView === "user")) {
-          setViewAs(savedView);
-        } else {
-          setViewAs(savedRole);
-        }
-        // Clear the old localStorage key so a value stored by a previous build
-        // can't keep demoting this browser.
-        localStorage.removeItem("dreamme.viewAs");
-      }
+      // Clear the old localStorage key so a value stored by a previous build
+      // can't keep demoting this browser.
+      localStorage.removeItem("dreamme.viewAs");
       // Deliberately NOT restoring the last-visited tab. Every launch lands on
       // Overview (the `current` initial state), because the whole point of that
       // screen is to be the thing you see before you go looking for anything
@@ -144,14 +122,61 @@ export function App() {
     setHydrated(true);
   }, []);
 
+  // Sign-in lives in an HttpOnly cookie the page can't read, so ask the
+  // server who this is. 401 shows the sign-in screen. On localhost in dev the
+  // server answers as an admin without a sign-in (kind "dev").
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const body = (await res.json().catch(() => null)) as
+          | {
+              ok?: boolean;
+              googleConfigured?: boolean;
+              account?: { kind: string; role: "admin" | "user" };
+            }
+          | null;
+        if (cancelled) return;
+        if (res.ok && body?.account) {
+          const r = body.account.role === "admin" ? "admin" : "user";
+          // A few components still read the role from sessionStorage.
+          sessionStorage.setItem("dreamme.role", r);
+          setRole(r);
+          // viewAs is read from sessionStorage, NOT localStorage, and is
+          // cleared when the browser closes. It exists so an admin can preview
+          // what a creator sees; it is a debug affordance, not a saved
+          // preference. (In localStorage it silently demoted the browser
+          // forever after one click of the sidebar toggle.)
+          const savedView = sessionStorage.getItem("dreamme.viewAs");
+          setViewAs(r === "admin" && (savedView === "admin" || savedView === "user") ? savedView : r);
+          setAccountKind(body.account.kind);
+          setAuthed(true);
+        } else {
+          setGoogleReady(body?.googleConfigured !== false);
+          setAuthed(false);
+        }
+      } catch {
+        if (!cancelled) setAuthed(false);
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // No tab persistence: nothing reads it back, so writing it would only leave
   // a stale key behind for the next person to wonder about.
 
   React.useEffect(() => {
-    if (!hydrated) return;
+    // Wait for sign-in: before it, viewAs is the "user" placeholder, and
+    // writing that would demote an admin when /api/auth/me reads it back.
+    if (!hydrated || !authed) return;
     // sessionStorage: the viewer preview lasts for this browser session only.
     sessionStorage.setItem("dreamme.viewAs", viewAs);
-  }, [viewAs, hydrated]);
+  }, [viewAs, hydrated, authed]);
 
   React.useEffect(() => {
     // Must wait for hydration AND auth: viewAs starts at "user" and only
@@ -250,10 +275,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  if (!hydrated) return null;
+  if (!hydrated || !authChecked) return null;
 
   // Make the dev bypass obvious so it's never silently "logged in".
-  const devBadge = devAuthBypass() ? (
+  const devBadge = accountKind === "dev" ? (
     <div
       style={{
         position: "fixed",
@@ -279,21 +304,21 @@ export function App() {
   if (!authed) {
     return (
       <ToastProvider>
-        <Gate
-          onEnter={(r) => {
-            setRole(r);
-            setViewAs(r);
-            setAuthed(true);
-          }}
-        />
+        <Gate googleReady={googleReady} />
       </ToastProvider>
     );
   }
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+    } catch {}
     sessionStorage.removeItem("dreamme.auth");
     sessionStorage.removeItem("dreamme.role");
-    setAuthed(false);
+    sessionStorage.removeItem("dreamme.viewAs");
+    // Local dev answers "signed in" without a cookie, so just reload there.
+    if (accountKind === "dev") window.location.reload();
+    else setAuthed(false);
   };
 
   const currentItem =

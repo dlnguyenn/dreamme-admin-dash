@@ -50,13 +50,30 @@ of cross-file issues that lint won't.
 
 ## Auth model
 
-Two passwords (see `src/components/Gate.tsx`):
-- `dreamme` → `user` role (read-only viewer)
-- `dreammeAdmin` → `admin` role (curate, generate, edit, delete)
-
-Role lives in `sessionStorage` (`dreamme.role`). Threaded through
-components as `isAdmin: boolean`. Server routes also gate via
-`checkIngestAuth()` in `src/lib/auth-ingest.ts`.
+Per-person Google sign-in (replaced the shared passwords, 2026-11-12). Code:
+`src/lib/dad-session.ts`, `src/lib/auth-ingest.ts`, `src/app/api/auth/*`,
+`src/middleware.ts`.
+- Who may sign in comes from Vercel env vars, re-read on every request:
+  `DAD_ADMIN_EMAILS`, `DAD_VIEWER_EMAILS` (comma-separated). Google client:
+  `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. Never put emails
+  in code: the repo is public.
+- A sign-in is an HttpOnly cookie (`dad_session`), 90 days, renewed by
+  `/api/auth/me` on page load. Signed with `DAD_SESSION_SECRET`, or a key
+  derived from the service role when that is unset.
+- Every API route calls `checkIngestAuth()` (server token or any sign-in) or
+  `checkAdminAuth()` (server token or an admin). There is no same-origin
+  fallback any more. Scripts and crons keep using `x-dreamme-secret` /
+  `CRON_SECRET`.
+- The page learns the role from `/api/auth/me` and still mirrors it into
+  `sessionStorage` (`dreamme.role`) for older components; `isAdmin` is
+  threaded through components as before.
+- Claude sessions sign in with their own revocable key (table
+  `dad_claude_keys`): vault script `.claude-setup/team/dad-signin.js link`
+  prints a one-time, 2-minute link that signs a browser in as Claude (admin)
+  for 12 hours. Revoking a key stops it within 30 s (middleware check).
+- Localhost: `npm run dev` treats loopback requests as admin with no sign-in.
+  Set `DAD_DEV_AUTH=real` to test real sign-in, plus `DAD_DEV_FAKE_GOOGLE=1`
+  for a stand-in Google account picker (dev only; dead code on Vercel).
 
 ## Persona system
 

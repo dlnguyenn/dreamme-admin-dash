@@ -7,8 +7,8 @@
  *   3. Default: a snapshot in the private Supabase Storage bucket "knowledge-vault", uploaded by
  *      scripts/knowledge-snapshot.mjs with the service role the DAD already has. Refreshed only when
  *      that script runs. Vault content must never go into this repo: it is public.
- * Access uses the same check as the rest of the DAD (checkIngestAuth). Dan turned off the tab's own
- * passphrase on 2026-11-09, knowing that check can be faked with an Origin header.
+ * Access: an admin sign-in or the ingest token (checkAdminAuth). The tab is admin-only and holds
+ * dan.md and the finance notes, so a signed-in viewer is refused here too.
  */
 import {
   isAllowedVaultPath,
@@ -20,7 +20,7 @@ import {
   type LogEntry,
   type VNode,
 } from "./knowledge-shared";
-import { checkIngestAuth } from "./auth-ingest";
+import { checkAdminAuth } from "./auth-ingest";
 
 const REPO = process.env.VAULT_REPO || "dlnguyenn/success-in-all-ways";
 const [OWNER, NAME] = REPO.split("/");
@@ -42,7 +42,7 @@ export function knowledgeConfig(): KnowledgeConfig {
 
 /** null = allowed; otherwise the HTTP status and message to return. */
 export function knowledgeAuthError(req: Request): { status: number; error: string } | null {
-  if (!checkIngestAuth(req)) return { status: 401, error: "unauthorized" };
+  if (!checkAdminAuth(req)) return { status: 401, error: "unauthorized" };
   const cfg = knowledgeConfig();
   if (!cfg.ok) return { status: 503, error: `not configured: ${cfg.missing.join(", ")}` };
   return null;

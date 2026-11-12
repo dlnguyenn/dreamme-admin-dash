@@ -15,11 +15,18 @@ export function ItemView({ id }: { id: string }) {
   const [hydrated, setHydrated] = React.useState(false);
   const [authed, setAuthed] = React.useState(false);
 
+  const [googleReady, setGoogleReady] = React.useState(true);
+
+  // Same check as the main page: the sign-in cookie is HttpOnly, so ask the server.
   React.useEffect(() => {
-    try {
-      if (sessionStorage.getItem("dreamme.auth") === "1") setAuthed(true);
-    } catch {}
-    setHydrated(true);
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { googleConfigured?: boolean } | null;
+        if (res.ok) setAuthed(true);
+        else setGoogleReady(body?.googleConfigured !== false);
+      })
+      .catch(() => {})
+      .finally(() => setHydrated(true));
   }, []);
 
   if (!hydrated) return null;
@@ -27,7 +34,7 @@ export function ItemView({ id }: { id: string }) {
   if (!authed) {
     return (
       <ToastProvider>
-        <Gate onEnter={() => setAuthed(true)} /* role ignored on item page */ />
+        <Gate googleReady={googleReady} />
       </ToastProvider>
     );
   }
