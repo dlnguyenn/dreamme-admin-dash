@@ -148,8 +148,6 @@ export function SpendImportCsvModal({
           style={{
             display: "block",
             font: "650 10.5px var(--font-ui)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}
@@ -170,8 +168,6 @@ export function SpendImportCsvModal({
           style={{
             display: "block",
             font: "650 10.5px var(--font-ui)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}

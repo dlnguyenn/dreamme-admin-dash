@@ -43,7 +43,6 @@ export function CategoryTag({
     <span
       style={{
         font: `700 ${size}px var(--font-ui)`,
-        letterSpacing: "0.04em",
         background: f.soft,
         color: f.text,
         border: "1px solid transparent",
@@ -68,7 +67,6 @@ export function SourceTag({
     <span
       style={{
         font: `700 ${size}px var(--font-ui)`,
-        letterSpacing: "0.04em",
         background: "transparent",
         color: "var(--ink-3)",
         border: "1px solid var(--line-2)",
@@ -92,11 +90,12 @@ export function StatusPill({
   children: React.ReactNode;
 }) {
   const styles: Record<string, React.CSSProperties> = {
-    running: { background: "var(--success-soft)", color: "var(--success-text)" },
-    attention: { background: "var(--attention)", color: "var(--on-solid)" },
-    neutral: { background: "var(--neutral-soft)", color: "var(--neutral-text)" },
-    success: { background: "var(--success)", color: "var(--on-solid)" },
-    danger: { background: "var(--danger-soft)", color: "var(--danger-text)" },
+    // A status is a coloured word, not a capsule (design checklist, 2026-11-11).
+    running: { color: "var(--success-text)" },
+    attention: { color: "var(--attention-text)" },
+    neutral: { color: "var(--neutral-text)" },
+    success: { color: "var(--success-text)" },
+    danger: { color: "var(--danger-text)" },
   };
   return (
     <span
@@ -104,10 +103,7 @@ export function StatusPill({
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        font: "700 10.5px var(--font-ui)",
-        letterSpacing: "0.05em",
-        padding: "5px 11px",
-        borderRadius: 999,
+        font: "650 12.5px var(--font-ui)",
         flex: "none",
         whiteSpace: "nowrap",
         ...styles[kind],
@@ -270,7 +266,7 @@ export function Segmented({
   );
 }
 
-// ---- Section anchor: 26px solid tile + h3 (one per section) ------------
+// ---- Section anchor: a bare icon + h3 (one per section) -----------------
 
 export function SectionHeader({
   family,
@@ -301,20 +297,15 @@ export function SectionHeader({
     >
       <span
         style={{
-          width: 26,
-          height: 26,
-          borderRadius: 8,
-          background: f.solid,
-          color: f.onSolid,
+          color: f.text,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
           flex: "none",
         }}
       >
-        <IconComp size={14} strokeWidth={2} />
+        <IconComp size={18} strokeWidth={2} />
       </span>
-      <h3 style={{ font: "650 15px var(--font-ui)", margin: 0 }}>{title}</h3>
+      <h3 style={{ font: "650 16px var(--font-ui)", margin: 0 }}>{title}</h3>
       {meta && (
         <span style={{ font: "400 13px var(--font-ui)", color: "var(--ink-3)" }}>
           {meta}
@@ -342,10 +333,7 @@ export function DeltaChip({
       style={{
         font: `650 ${size}px var(--font-ui)`,
         fontVariantNumeric: "tabular-nums",
-        background: f.soft,
         color: f.text,
-        padding: "3px 9px",
-        borderRadius: 999,
         whiteSpace: "nowrap",
       }}
     >
@@ -369,7 +357,6 @@ export function Card({
     <div
       style={{
         background: "var(--surface)",
-        border: "1px solid var(--line)",
         borderRadius: 16,
         padding: pad,
         boxShadow: "var(--shadow-card)",
@@ -538,7 +525,6 @@ export function KpiCard({
     <div
       style={{
         background: "var(--surface)",
-        border: "1px solid var(--line)",
         borderRadius: 16,
         padding: "18px 20px",
         boxShadow: "var(--shadow-card)",
@@ -550,9 +536,7 @@ export function KpiCard({
     >
       <div
         style={{
-          font: "650 11px var(--font-ui)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
+          font: "500 13px var(--font-ui)",
           color: "var(--ink-3)",
         }}
       >
@@ -563,7 +547,6 @@ export function KpiCard({
           style={{
             font: "700 34px/1 var(--font-ui)",
             fontVariantNumeric: "tabular-nums",
-            letterSpacing: "-0.01em",
             color: "var(--ink)",
           }}
         >
@@ -708,9 +691,7 @@ export function HeroCard({
     >
       <div
         style={{
-          font: "650 11px var(--font-ui)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
+          font: "500 13px var(--font-ui)",
           color: "var(--hero-mut)",
           display: "flex",
           alignItems: "center",
@@ -725,7 +706,6 @@ export function HeroCard({
           style={{
             font: "700 34px/1 var(--font-ui)",
             fontVariantNumeric: "tabular-nums",
-            letterSpacing: "-0.01em",
           }}
         >
           {value}
@@ -735,10 +715,7 @@ export function HeroCard({
             style={{
               font: "650 12.5px var(--font-ui)",
               fontVariantNumeric: "tabular-nums",
-              background: "var(--hero-chip-bg)",
               color: deltaUp ? "var(--hero-chip-up)" : "var(--hero-chip-down)",
-              padding: "3px 8px",
-              borderRadius: 999,
             }}
           >
             {delta}
@@ -781,7 +758,6 @@ export function StatStrip({
         display: "grid",
         gridTemplateColumns: `repeat(auto-fit, minmax(${minColWidth}px, 1fr))`,
         background: "var(--surface)",
-        border: "1px solid var(--line)",
         borderRadius: 16,
         boxShadow: "var(--shadow-card)",
         overflow: "hidden",
@@ -798,7 +774,6 @@ export function StatStrip({
           style={{
             ...(s.onOpen ? { ...tileButton, background: s.open ? "var(--surface-2)" : undefined } : {}),
             padding: "16px 18px",
-            borderLeft: i ? "1px solid var(--line)" : "none",
             display: "flex",
             flexDirection: "column",
             gap: 7,
@@ -807,9 +782,7 @@ export function StatStrip({
         >
           <div
             style={{
-              font: "650 10.5px var(--font-ui)",
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
+              font: "500 12.5px var(--font-ui)",
               color: "var(--ink-3)",
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -826,7 +799,6 @@ export function StatStrip({
             style={{
               font: "700 26px/1 var(--font-ui)",
               fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.01em",
               color: "var(--ink)",
             }}
           >
@@ -866,15 +838,13 @@ export function StatStrip({
   );
 }
 
-// ---- Table cell styles (uppercase header, hairline rows) ----------------
+// ---- Table cell styles (sentence-case header, hairline rows) ------------
 
 export const thStyle = (align: "left" | "right" | "center" = "right") =>
   ({
     textAlign: align,
     padding: "10px 16px",
-    font: "650 10.5px var(--font-ui)",
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
+    font: "600 12.5px var(--font-ui)",
     color: "var(--ink-3)",
     borderBottom: "1px solid var(--line)",
     whiteSpace: "nowrap",

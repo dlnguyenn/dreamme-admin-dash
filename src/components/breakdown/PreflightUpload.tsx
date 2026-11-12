@@ -116,7 +116,7 @@ export function PreflightUpload() {
 
       {past.length > 0 && (
         <div>
-          <div style={{ fontSize: 10, fontFamily: "var(--font-geist-mono), monospace", textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontFamily: "var(--font-geist-mono), monospace", color: "var(--ink-3)", marginBottom: 8 }}>
             Previous pre-flights
           </div>
           <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>

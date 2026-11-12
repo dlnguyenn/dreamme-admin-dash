@@ -183,8 +183,6 @@ export function CaptionFromHookDrawer({
                 style={{
                   fontSize: 11,
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
                   color: "var(--ink-4)",
                   marginBottom: 2,
                 }}
@@ -382,8 +380,6 @@ export function CaptionFromHookDrawer({
                     fontSize: 10,
                     color: "var(--ink-4)",
                     fontFamily: "var(--font-geist-mono), monospace",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
                     marginBottom: 2,
                   }}
                 >
@@ -391,7 +387,7 @@ export function CaptionFromHookDrawer({
                 </div>
                 <div
                   className="serif"
-                  style={{ fontSize: 16, fontWeight: 400, fontStyle: "italic" }}
+                  style={{ fontSize: 16, fontWeight: 400 }}
                 >
                   Long-form · TikTok
                 </div>
@@ -412,7 +408,6 @@ export function CaptionFromHookDrawer({
                   className="serif"
                   style={{
                     fontSize: 18,
-                    fontStyle: "italic",
                     marginBottom: 6,
                     color: "var(--ink-3)",
                   }}
@@ -436,7 +431,6 @@ export function CaptionFromHookDrawer({
                   className="serif"
                   style={{
                     fontSize: 18,
-                    fontStyle: "italic",
                     marginBottom: 6,
                   }}
                 >
@@ -657,8 +651,6 @@ function Label({ children }: { children: React.ReactNode }) {
       style={{
         fontSize: 11,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
         color: "var(--ink-4)",
         marginBottom: 6,
       }}

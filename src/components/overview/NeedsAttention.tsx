@@ -93,20 +93,15 @@ export function NeedsAttention({
       >
         <span
           style={{
-            width: 26,
-            height: 26,
-            borderRadius: 8,
-            background: active.length ? fam(criticalCount ? "danger" : "warning").solid : fam("success").solid,
-            color: fam(criticalCount ? "danger" : "warning").onSolid,
+            color: active.length ? fam(criticalCount ? "danger" : "warning").text : fam("success").text,
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
             flex: "none",
           }}
         >
-          <Icons.TriAlert size={14} strokeWidth={2} />
+          <Icons.TriAlert size={18} strokeWidth={2} />
         </span>
-        <h3 style={{ font: "650 15px var(--font-ui)", margin: 0 }}>Needs attention</h3>
+        <h3 style={{ font: "650 16px var(--font-ui)", margin: 0 }}>Needs attention</h3>
         <span style={{ font: "400 13px var(--font-ui)", color: "var(--ink-3)" }}>
           {active.length === 0
             ? "nothing new"
@@ -148,7 +143,6 @@ export function NeedsAttention({
                 padding: "11px 14px",
                 borderRadius: 12,
                 background: f.soft,
-                border: `1px solid ${a.level === "critical" ? f.solid : "transparent"}`,
                 opacity: off ? 0.55 : 1,
               }}
             >
@@ -156,13 +150,9 @@ export function NeedsAttention({
                 style={{
                   flex: "none",
                   marginTop: 2,
-                  font: "700 10px var(--font-ui)",
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  color: f.onSolid,
-                  background: f.solid,
-                  borderRadius: 999,
-                  padding: "2px 8px",
+                  minWidth: 46,
+                  font: "700 12.5px/1.35 var(--font-ui)",
+                  color: f.text,
                 }}
               >
                 {a.level === "critical" ? "Urgent" : "Check"}

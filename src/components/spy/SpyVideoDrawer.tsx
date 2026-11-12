@@ -88,8 +88,6 @@ export function SpyVideoDrawer({
             style={{
               fontSize: 10,
               color: "var(--ink-4)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
               marginBottom: 4,
             }}
           >
@@ -100,7 +98,6 @@ export function SpyVideoDrawer({
             className="serif"
             style={{
               fontSize: isMobile ? 18 : 22,
-              fontStyle: "italic",
               lineHeight: 1.25,
             }}
           >
@@ -248,8 +245,6 @@ export function SpyVideoDrawer({
             style={{
               fontSize: 10,
               color: "var(--ink-4)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
               marginBottom: 8,
             }}
           >
@@ -295,8 +290,6 @@ export function SpyVideoDrawer({
               style={{
                 fontSize: 10,
                 color: "var(--ink-4)",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
                 marginBottom: 8,
               }}
             >
@@ -369,8 +362,6 @@ function Stats({ video }: { video: SpyVideoRow }) {
             style={{
               fontSize: 9,
               color: "var(--ink-4)",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
               marginBottom: 2,
             }}
           >

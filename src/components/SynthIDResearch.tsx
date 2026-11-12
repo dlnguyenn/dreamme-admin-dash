@@ -258,8 +258,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         style={{
           fontSize: 11,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
           color: "var(--ink-3)",
           marginBottom: 12,
         }}

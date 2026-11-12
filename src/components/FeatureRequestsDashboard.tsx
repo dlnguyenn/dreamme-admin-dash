@@ -211,8 +211,6 @@ export function FeatureRequestsDashboard() {
                 fontSize: 12,
                 fontWeight: 500,
                 fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
                 borderRadius: 999,
                 border: "1px solid",
                 borderColor: active ? "var(--ink)" : "var(--line)",
@@ -249,8 +247,6 @@ export function FeatureRequestsDashboard() {
             style={{
               fontSize: 10,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
               color: "var(--ink-4)",
             }}
           >
@@ -285,8 +281,6 @@ export function FeatureRequestsDashboard() {
             style={{
               fontSize: 10,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
               color: "var(--ink-4)",
               marginRight: 4,
             }}
@@ -315,7 +309,7 @@ export function FeatureRequestsDashboard() {
         <div
           style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}
         >
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
+          <div className="serif" style={{ fontSize: 20 }}>
             Loading requests…
           </div>
         </div>
@@ -331,7 +325,7 @@ export function FeatureRequestsDashboard() {
         >
           <div
             className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
+            style={{ fontSize: 22, marginBottom: 6 }}
           >
             Nothing here yet
           </div>
@@ -358,8 +352,6 @@ export function FeatureRequestsDashboard() {
               background: "var(--surface-2)",
               fontSize: 10,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
               color: "var(--ink-4)",
             }}
           >

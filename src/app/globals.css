@@ -90,7 +90,7 @@
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* Legacy font aliases — many components reference these inline */
   --font-geist: var(--font-ui);
-  --font-geist-mono: var(--font-mono);
+  --font-geist-mono: var(--font-ui); /* was mono-for-flavour on labels; real code uses --font-mono */
   --font-newsreader: var(--font-display);
 }
 
@@ -248,7 +248,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: var(--aura);
+  background: none; /* flat ground: the coloured glow is gone (2026-11-11) */
   z-index: 0;
 }
 
@@ -333,7 +333,6 @@ select {
 .serif {
   font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.015em;
   font-style: normal;
 }
 
@@ -453,3 +452,82 @@ select {
 .dm-tile:active { transform: translateY(0); }
 .dm-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .dm-tile { transition: none; } .dm-tile-hero:hover { transform: none; } }
+
+/* ============================================================
+   Candidate colour schemes (2026-11-11). Same layout, same tokens,
+   new values. Preview with ?palette=tide | ink | slate. Light theme
+   only for now; the one Dan picks becomes :root and gets a dark twin.
+   Text pairings checked at 4.5:1 or better, including --ink-4.
+   ============================================================ */
+
+/* Tide: cool sea-glass neutrals, deep teal. From DreamMe's water world. */
+:root[data-palette="tide"]:not([data-theme="dark"]) {
+  --bg: #EEF3F2;  --bg-2: #E0E9E7;  --surface: #FFFFFF;  --surface-2: #F3F7F6;
+  --ink: #12292C;  --ink-2: #2C4447;  --ink-3: #4F6769;  --ink-4: #637B7C;
+  --line: #DCE6E4;  --line-2: #C3D2CF;
+  --accent: #0E7C7B;  --accent-2: #0A6463;  --accent-soft: #DDF0EE;  --accent-text: #0B6B6A;  --on-accent: #FFFFFF;
+  --success: #2E7D5B;  --success-soft: #E0F0E8;  --success-text: #1F6A4A;
+  --warning: #8A5B14;  --warning-soft: #F6EBD3;  --warning-text: #7A5010;
+  --danger: #B3362B;   --danger-soft: #F9E1DE;   --danger-text: #9A2A20;
+  --info: #2F6690;     --info-soft: #E1ECF4;     --info-text: #285A80;
+  --attention: #12292C;  --attention-soft: #F4E9C8;  --attention-text: #6E540E;
+  --neutral: #4F6769;  --neutral-soft: #E6EDEC;  --neutral-text: #3C5456;
+  --danger-wash: #FBF0EE;  --warning-wash: #FAF4E4;
+  --link: #0B6B6A;  --link-2: #084F4E;
+  --hero-bg: #0F3D43;  --hero-ink: #F2F8F7;  --hero-mut: rgba(242, 248, 247, 0.72);
+  --hero-chip-up: #9FE0C4;  --hero-chip-down: #F6B3A8;
+  --chart-bar: #0E7C7B;  --chart-line: #12292C;  --chart-grid: #DCE6E4;
+  --cat-1: #0E7C7B;  --cat-2: #C2553A;  --cat-3: #2F6690;  --cat-4: #9A6A12;
+  --cat-5: #3E7D4F;  --cat-6: #A8456A;  --cat-7: #5B6B80;  --cat-8: #6B7038;
+  --shadow-xs: 0 1px 1px rgba(18, 41, 44, 0.04);
+  --shadow-card: 0 1px 2px rgba(18, 41, 44, 0.06);
+}
+
+/* Ink: warm paper white, navy. Keeps today's warmth without the terracotta. */
+:root[data-palette="ink"]:not([data-theme="dark"]) {
+  --bg: #F4F2ED;  --bg-2: #E9E5DC;  --surface: #FFFEFB;  --surface-2: #F8F6F0;
+  --ink: #1D2433;  --ink-2: #343C4E;  --ink-3: #5A6172;  --ink-4: #6A7184;
+  --line: #E6E1D6;  --line-2: #D2CBBB;
+  --accent: #27457A;  --accent-2: #1C3460;  --accent-soft: #E1E8F4;  --accent-text: #27457A;  --on-accent: #FFFFFF;
+  --success: #2C6E49;  --success-soft: #E1EEE6;  --success-text: #245C3D;
+  --warning: #8A5B14;  --warning-soft: #F6EBD3;  --warning-text: #7A5010;
+  --danger: #A63D2F;   --danger-soft: #F8E2DD;   --danger-text: #8E3024;
+  --info: #3A5F8A;     --info-soft: #E3EAF3;     --info-text: #32537A;
+  --attention: #1D2433;  --attention-soft: #F7E6B0;  --attention-text: #6E540E;
+  --neutral: #5A6172;  --neutral-soft: #ECE9E1;  --neutral-text: #454C5C;
+  --danger-wash: #FBF1EE;  --warning-wash: #FAF4E4;
+  --link: #27457A;  --link-2: #182C52;
+  --hero-bg: #1D2433;  --hero-ink: #F4F2ED;  --hero-mut: rgba(244, 242, 237, 0.7);
+  --hero-chip-up: #A6DDBE;  --hero-chip-down: #F3B0A6;
+  --chart-bar: #27457A;  --chart-line: #1D2433;  --chart-grid: #E6E1D6;
+  --cat-1: #27457A;  --cat-2: #B7791F;  --cat-3: #2C6E49;  --cat-4: #A63D2F;
+  --cat-5: #2F6F6B;  --cat-6: #A34A5E;  --cat-7: #5A6172;  --cat-8: #6B7038;
+  --shadow-xs: 0 1px 1px rgba(29, 36, 51, 0.04);
+  --shadow-card: 0 1px 2px rgba(29, 36, 51, 0.06);
+}
+
+/* Slate: cool grey, cobalt, with blue and orange for up and down. */
+:root[data-palette="slate"]:not([data-theme="dark"]) {
+  --bg: #EEF0F3;  --bg-2: #E2E6EB;  --surface: #FFFFFF;  --surface-2: #F5F6F8;
+  --ink: #17202B;  --ink-2: #2E3947;  --ink-3: #505B69;  --ink-4: #687482;
+  --line: #E1E5EA;  --line-2: #C9D0D9;
+  --accent: #2456D6;  --accent-2: #1B45B0;  --accent-soft: #E3EBFC;  --accent-text: #1E4BBE;  --on-accent: #FFFFFF;
+  --success: #1F7A4D;  --success-soft: #E0F0E7;  --success-text: #1A6841;
+  --warning: #8A5B14;  --warning-soft: #F6EBD3;  --warning-text: #7A5010;
+  --danger: #B4322B;   --danger-soft: #F9E1DF;   --danger-text: #9A2822;
+  --info: #2F6690;     --info-soft: #E1ECF4;     --info-text: #285A80;
+  --attention: #17202B;  --attention-soft: #FBEBC8;  --attention-text: #6E540E;
+  --neutral: #505B69;  --neutral-soft: #E9ECF0;  --neutral-text: #3C4653;
+  --danger-wash: #FBF0EF;  --warning-wash: #FAF4E4;
+  --link: #1E4BBE;  --link-2: #173C9C;
+  --hero-bg: #1F2A37;  --hero-ink: #F2F4F7;  --hero-mut: rgba(242, 244, 247, 0.7);
+  --hero-chip-up: #9FDDB9;  --hero-chip-down: #F5B0A8;
+  --chart-bar: #2456D6;  --chart-line: #17202B;  --chart-grid: #E1E5EA;
+  --cat-1: #2456D6;  --cat-2: #B4530A;  --cat-3: #1F7A4D;  --cat-4: #A8456A;
+  --cat-5: #2F6F6B;  --cat-6: #9A6A12;  --cat-7: #5B6B80;  --cat-8: #6B7038;
+  --shadow-xs: 0 1px 1px rgba(23, 32, 43, 0.04);
+  --shadow-card: 0 1px 2px rgba(23, 32, 43, 0.06);
+}
+
+/* Headings are never italic: several page titles are wrapped in <em>. */
+h1 em, h2 em, h3 em { font-style: normal; }

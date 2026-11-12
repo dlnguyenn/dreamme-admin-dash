@@ -319,7 +319,6 @@ function CodeRow({
         <span
           style={{
             font: "600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-            letterSpacing: "0.03em",
             color: row.used_at ? "var(--ink-3)" : "var(--ink)",
           }}
         >

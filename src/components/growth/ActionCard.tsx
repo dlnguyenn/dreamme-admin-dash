@@ -122,8 +122,6 @@ export function ActionCard({
                 style={{
                   fontSize: 10,
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
                   padding: "2px 8px",
                   borderRadius: 999,
                   color: `color-mix(in oklab, ${stateBadge.tone} 80%, var(--ink))`,

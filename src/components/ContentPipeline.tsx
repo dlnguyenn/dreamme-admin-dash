@@ -458,8 +458,6 @@ export function ContentPipeline({
             <div
               style={{
                 font: "650 11px var(--font-ui)",
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
                 color: "var(--ink-3)",
                 margin: "0 0 8px 2px",
               }}

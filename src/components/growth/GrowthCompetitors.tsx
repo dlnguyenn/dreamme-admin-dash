@@ -561,7 +561,6 @@ function AdCard({ ad, showBrand, onOpen }: { ad: CompetitorAd; showBrand: boolea
               padding: "3px 9px",
               fontSize: 9.5,
               fontWeight: 700,
-              letterSpacing: "0.06em",
               borderRadius: 999,
               background: "var(--accent)",
               color: "#fff",
@@ -710,7 +709,7 @@ function CompetitorAdDrawer({
 
         <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 12, alignContent: "start" }}>
           <div>
-            <div className="serif" style={{ fontSize: 21, letterSpacing: "-0.01em" }}>
+            <div className="serif" style={{ fontSize: 21 }}>
               {ad.page_name ?? "Competitor ad"}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -723,7 +722,7 @@ function CompetitorAdDrawer({
           {ad.hook && (
             <div>
               <DrawerLabel>Hook</DrawerLabel>
-              <div className="serif" style={{ fontSize: 16, fontStyle: "italic", lineHeight: 1.4 }}>
+              <div className="serif" style={{ fontSize: 16, lineHeight: 1.4 }}>
                 “{ad.hook}”
               </div>
             </div>
@@ -834,8 +833,6 @@ function DrawerLabel({ children }: { children: React.ReactNode }) {
       style={{
         fontSize: 9.5,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
         color: "var(--ink-3)",
         marginBottom: 5,
       }}

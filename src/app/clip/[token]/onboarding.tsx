@@ -143,7 +143,6 @@ export function Onboarding({ name, code }: { name: string; code: string }) {
                 fontSize: 12,
                 fontWeight: 700,
                 letterSpacing: 1.5,
-                textTransform: "uppercase",
                 color: ACCENT,
               }}
             >

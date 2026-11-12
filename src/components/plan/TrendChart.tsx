@@ -156,7 +156,7 @@ export function TrendChart({
           return (
             <g key={`s${k}`}>
               <rect x={x0} y={padT} width={Math.max(0, x1 - x0)} height={plotH} fill="var(--bg-2)" opacity={0.55} />
-              <text x={x0 + 4} y={padT + 10} style={{ font: "600 9.5px var(--font-ui)", fill: "var(--ink-3)", letterSpacing: "0.04em" }}>
+              <text x={x0 + 4} y={padT + 10} style={{ font: "600 9.5px var(--font-ui)", fill: "var(--ink-3)" }}>
                 {s.label}
               </text>
             </g>

@@ -63,7 +63,6 @@ function MissingTile({ persona }: { persona: string }) {
         <div
           style={{
             font: "600 9.5px var(--font-ui)",
-            letterSpacing: "0.04em",
             color: "var(--warning-text)",
             opacity: 0.85,
           }}

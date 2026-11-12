@@ -145,7 +145,7 @@ export function EmptyState({
     >
       <div
         style={{
-          font: "italic 400 15px var(--font-display)",
+          font: "400 15px var(--font-display)",
           color: "var(--ink-2)",
           marginBottom: children ? 6 : 0,
         }}

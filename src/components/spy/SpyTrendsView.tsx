@@ -76,8 +76,6 @@ export function SpyTrendsView() {
           fontSize: 11,
           fontFamily: "var(--font-geist-mono), monospace",
           color: "var(--ink-4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
         }}
       >
         Last {trends.windowDays} days · {trends.samples} videos surfaced
@@ -184,8 +182,6 @@ export function SpyTrendsView() {
                     style={{
                       fontSize: 11,
                       color: "var(--ink-2)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -338,8 +334,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         style={{
           fontSize: 11,
           color: "var(--ink-4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
         }}
       >
         {title}

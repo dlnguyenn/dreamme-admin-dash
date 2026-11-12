@@ -376,11 +376,11 @@ export function GrowthAnalyst({
                   boxShadow: "0 6px 18px color-mix(in oklab, var(--p-emma) 35%, transparent)",
                 }}
               >
-                <span className="serif" style={{ color: "white", fontSize: 21, fontStyle: "italic" }}>g</span>
+                <span className="serif" style={{ color: "white", fontSize: 21 }}>g</span>
               </div>
               <div
                 className="serif"
-                style={{ fontSize: isMobile ? 24 : 30, letterSpacing: "-0.02em", marginBottom: 8 }}
+                style={{ fontSize: isMobile ? 24 : 30, marginBottom: 8 }}
               >
                 DreamMe, meet your <em>growth brain</em>.
               </div>
@@ -562,7 +562,7 @@ function BrainMark() {
         flexShrink: 0,
       }}
     >
-      <span className="serif" style={{ color: "white", fontSize: 15, fontStyle: "italic" }}>g</span>
+      <span className="serif" style={{ color: "white", fontSize: 15 }}>g</span>
     </div>
   );
 }
@@ -754,15 +754,13 @@ function RecapRail({ data }: { data: GrowthData }) {
           style={{
             fontSize: 10,
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}
         >
           Weekly recap · one click
         </div>
-        <div className="serif" style={{ fontSize: 20, letterSpacing: "-0.02em", marginBottom: 6 }}>
+        <div className="serif" style={{ fontSize: 20, marginBottom: 6 }}>
           Do your ad retro in one click
         </div>
         <p style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55, margin: "0 0 14px" }}>
@@ -863,8 +861,6 @@ function RecapRail({ data }: { data: GrowthData }) {
                 style={{
                   fontSize: 9.5,
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
                   padding: "2px 8px",
                   borderRadius: 999,
                   color: "var(--ink-3)",
@@ -880,8 +876,6 @@ function RecapRail({ data }: { data: GrowthData }) {
                 style={{
                   fontSize: 9.5,
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
                   padding: "2px 8px",
                   borderRadius: 999,
                   color: "color-mix(in oklab, var(--accent-2) 80%, var(--ink))",
@@ -893,7 +887,7 @@ function RecapRail({ data }: { data: GrowthData }) {
               </span>
             )}
           </div>
-          <div className="serif" style={{ fontSize: 17, lineHeight: 1.3, letterSpacing: "-0.01em" }}>
+          <div className="serif" style={{ fontSize: 17, lineHeight: 1.3 }}>
             {recap.recap.headline}
           </div>
 
@@ -930,8 +924,6 @@ function RecapRail({ data }: { data: GrowthData }) {
                           style={{
                             fontFamily: "var(--font-geist-mono), monospace",
                             fontSize: 10,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
                             color: "var(--ink-3)",
                             marginRight: 8,
                           }}
@@ -1040,7 +1032,7 @@ function RecapRail({ data }: { data: GrowthData }) {
                           </span>
                         </div>
                         {p.hook_text && (
-                          <div style={{ fontSize: 12, color: "var(--ink-2)", fontStyle: "italic", marginTop: 2 }}>
+                          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
                             “{p.hook_text}”
                           </div>
                         )}
@@ -1074,8 +1066,6 @@ function RecapStatStrip({ stats }: { stats: RecapResponse["stats"] }) {
         style={{
           fontSize: 9,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
           color: "var(--ink-3)",
           marginBottom: 3,
         }}
@@ -1132,8 +1122,6 @@ function RecapPerformers({
         style={{
           fontSize: 11,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
           color: tone,
           marginBottom: 10,
         }}
@@ -1196,7 +1184,6 @@ function RecapLine({ tag, text, strong }: { tag: string; text: string; strong?: 
         style={{
           fontFamily: "var(--font-geist-mono), monospace",
           fontSize: 9.5,
-          letterSpacing: "0.08em",
           color: "var(--ink-4)",
           paddingTop: 2,
           minWidth: 34,
@@ -1223,7 +1210,6 @@ function UrgencyBadge({ urgency }: { urgency: "now" | "this_week" | "watch" }) {
       style={{
         fontSize: 9,
         fontFamily: "var(--font-geist-mono), monospace",
-        letterSpacing: "0.08em",
         padding: "3px 7px",
         borderRadius: 999,
         color: `color-mix(in oklab, ${tone} 80%, var(--ink))`,

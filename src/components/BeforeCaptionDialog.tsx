@@ -165,8 +165,6 @@ export function BeforeCaptionDialog({
               style={{
                 fontSize: 11,
                 fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
                 color: "var(--ink-4)",
                 marginBottom: 2,
               }}
@@ -368,8 +366,6 @@ export function BeforeCaptionDialog({
                 style={{
                   fontSize: 11,
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
                   color: "var(--ink-4)",
                 }}
               >
@@ -384,7 +380,6 @@ export function BeforeCaptionDialog({
               <div
                 style={{
                   padding: 28,
-                  fontStyle: "italic",
                   color: "var(--ink-3)",
                   textAlign: "center",
                 }}
@@ -500,8 +495,6 @@ export function BeforeCaptionDialog({
 const labelStyle: React.CSSProperties = {
   fontSize: 11,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-4)",
   marginBottom: 6,
 };

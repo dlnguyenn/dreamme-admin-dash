@@ -281,7 +281,7 @@ export function FeatureRequestDrawer({
         >
           <div
             className="serif"
-            style={{ fontSize: 20, fontStyle: "italic", fontWeight: 400 }}
+            style={{ fontSize: 20, fontWeight: 400 }}
           >
             {isCreate ? "New request" : editing ? "Edit request" : "Request"}
           </div>
@@ -996,8 +996,6 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-3)",
 };
 

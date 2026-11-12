@@ -1443,8 +1443,6 @@ export function ImageStudio() {
                     style={{
                       fontSize: 10,
                       fontWeight: 600,
-                      letterSpacing: "0.05em",
-                      textTransform: "uppercase",
                       color: "var(--ink-3)",
                       marginBottom: 6,
                     }}
@@ -1458,8 +1456,6 @@ export function ImageStudio() {
                     style={{
                       fontSize: 10,
                       fontWeight: 600,
-                      letterSpacing: "0.05em",
-                      textTransform: "uppercase",
                       color: "var(--ink-3)",
                       marginBottom: 6,
                     }}
@@ -2185,7 +2181,6 @@ export function ImageStudio() {
               borderRadius: 10,
               textAlign: "center",
               color: "var(--ink-3)",
-              fontStyle: "italic",
             }}
             className="serif"
           >
@@ -2473,8 +2468,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         style={{
           fontSize: 11,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
           color: "var(--ink-3)",
           marginBottom: 12,
         }}

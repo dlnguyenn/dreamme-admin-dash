@@ -209,8 +209,6 @@ export function Resources({ isAdmin }: { isAdmin: boolean }) {
           <span
             style={{
               font: "650 10.5px var(--font-ui)",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
               color: "var(--ink-3)",
               marginRight: 4,
             }}
@@ -463,8 +461,6 @@ function ResourceCard({
                 key={t}
                 style={{
                   font: "700 9.5px var(--font-ui)",
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
                   color: "var(--ink-3)",
                   padding: "2.5px 7px",
                   borderRadius: 7,

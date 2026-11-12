@@ -92,7 +92,7 @@ export function References({ isAdmin }: { isAdmin: boolean }) {
         <div
           style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}
         >
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
+          <div className="serif" style={{ fontSize: 20 }}>
             Loading references…
           </div>
         </div>
@@ -108,7 +108,7 @@ export function References({ isAdmin }: { isAdmin: boolean }) {
         >
           <div
             className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginBottom: 6 }}
+            style={{ fontSize: 22, marginBottom: 6 }}
           >
             No references yet
           </div>
@@ -271,8 +271,6 @@ function ReferenceCard({
           style={{
             fontSize: 11,
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
             color: "var(--ink-4)",
           }}
         >
@@ -455,7 +453,6 @@ function SlideTile({
             borderRadius: 999,
             background: "rgba(0,0,0,0.55)",
             color: "white",
-            letterSpacing: "0.06em",
           }}
         >
           {index + 1}
@@ -511,7 +508,6 @@ function SlideTile({
           style={{
             fontSize: 11,
             color: "var(--ink-4)",
-            fontStyle: "italic",
             padding: "6px 8px",
             minHeight: 56,
           }}
@@ -597,7 +593,7 @@ function AddReferenceModal({
       >
         <div
           className="serif"
-          style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)" }}
+          style={{ fontSize: 22, color: "var(--ink)" }}
         >
           Add reference
         </div>

@@ -71,9 +71,7 @@ export function BeforePhotoUploader({
           style={{
             fontSize: 22,
             fontWeight: 400,
-            fontStyle: "italic",
             marginBottom: 6,
-            letterSpacing: "-0.01em",
           }}
         >
           Upload before photos

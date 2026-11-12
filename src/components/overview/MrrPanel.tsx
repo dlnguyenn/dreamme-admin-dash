@@ -173,7 +173,6 @@ export function MrrPanel({ mrr }: { mrr: MrrSection | null }) {
             style={{
               marginTop: 14,
               color: "var(--ink-2)",
-              borderLeft: `3px solid ${fam(trend.family).solid}`,
             }}
           >
             {trend.text}

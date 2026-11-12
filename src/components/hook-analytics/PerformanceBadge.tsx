@@ -52,8 +52,6 @@ export function PerformanceBadge({
         color: tone.fg,
         font: "700 9.5px var(--font-ui)",
         fontVariantNumeric: "tabular-nums",
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
       }}
     >
       {tone.label}

@@ -102,7 +102,7 @@ export function BriefReader({ slug, onClose }: { slug: string; onClose: () => vo
         >
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={eyebrow}>Brief</div>
-            <div className="serif" style={{ fontSize: 22, fontStyle: "italic", lineHeight: 1.2 }}>
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1.2 }}>
               {brief?.title ?? (error ? "Brief unavailable" : "Loading…")}
             </div>
           </div>
@@ -255,8 +255,6 @@ const cell: React.CSSProperties = {
 const eyebrow: React.CSSProperties = {
   fontSize: 10,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-3)",
 };
 

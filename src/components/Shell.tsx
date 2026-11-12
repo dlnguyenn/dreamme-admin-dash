@@ -91,7 +91,7 @@ export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
   return viewAs === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((n) => !n.adminOnly);
 }
 
-/** Porcelain logo mark — the one true serif left in the product. */
+/** Logo mark: a flat accent tile with the "d". No gradient, no serif (2026-11-11). */
 export function LogoMark({ size = 34 }: { size?: number }) {
   return (
     <div
@@ -99,12 +99,12 @@ export function LogoMark({ size = 34 }: { size?: number }) {
         width: size,
         height: size,
         borderRadius: 10,
-        background: "linear-gradient(135deg, #C9B8F5, #E9C6DE)",
+        background: "var(--accent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        font: `italic 600 ${Math.round(size * 0.56)}px ui-serif, Georgia, serif`,
-        color: "#453370",
+        font: `700 ${Math.round(size * 0.56)}px var(--font-ui)`,
+        color: "var(--on-accent)",
         flexShrink: 0,
       }}
     >
@@ -192,12 +192,11 @@ export function Sidebar({
             </div>
             <div
               style={{
-                font: "600 9.5px var(--font-ui)",
-                letterSpacing: "0.09em",
+                font: "500 12px var(--font-ui)",
                 color: "var(--ink-3)",
               }}
             >
-              INTERNAL
+              Internal
             </div>
           </div>
         )}
@@ -219,9 +218,9 @@ export function Sidebar({
               {item.group && !collapsed && (
                 <div
                   style={{
-                    font: "600 11px var(--font-ui)",
+                    font: "600 12px var(--font-ui)",
                     color: "var(--ink-3)",
-                    padding: "10px 10px 5px",
+                    padding: "12px 10px 5px",
                   }}
                 >
                   {item.group}
@@ -314,16 +313,11 @@ export function Sidebar({
                     {item.status === "soon" && (
                       <span
                         style={{
-                          font: "650 9px var(--font-ui)",
-                          letterSpacing: "0.05em",
+                          font: "500 11.5px var(--font-ui)",
                           color: "var(--ink-3)",
-                          background: "var(--neutral-soft)",
-                          border: "1px solid var(--line)",
-                          padding: "2px 6px",
-                          borderRadius: 99,
                         }}
                       >
-                        SOON
+                        soon
                       </span>
                     )}
                   </>
@@ -481,6 +475,8 @@ function ViewToggleButton({
   );
 }
 
+const SHOW_EYEBROW = false;
+
 export function PageHeader({
   eyebrow,
   title,
@@ -509,7 +505,9 @@ export function PageHeader({
         }}
       >
         <div style={{ minWidth: 0, flex: isMobile ? "1 1 100%" : undefined }}>
-          {eyebrow && (
+          {/* No small label above a page title (design checklist, 2026-11-11);
+              the prop stays so the 27 callers don't have to change. */}
+          {SHOW_EYEBROW && eyebrow && (
             <div
               style={{
                 font: "500 12px var(--font-ui)",
@@ -523,7 +521,6 @@ export function PageHeader({
             style={{
               font: `700 ${isMobile ? 28 : 38}px/1.08 var(--font-display)`,
               margin: "7px 0 10px",
-              letterSpacing: "-0.015em",
               color: "var(--ink)",
             }}
           >

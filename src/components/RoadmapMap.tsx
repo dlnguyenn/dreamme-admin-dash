@@ -981,8 +981,6 @@ const stickyLabel = (w: number): React.CSSProperties => ({
 const eyebrow: React.CSSProperties = {
   fontSize: 10,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-3)",
 };
 

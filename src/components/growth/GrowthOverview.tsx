@@ -768,7 +768,6 @@ function TopCreativeCard({
           <div
             style={{
               font: `650 ${isMobile ? 17 : 19}px var(--font-ui)`,
-              letterSpacing: "-0.01em",
             }}
           >
             {agg.ad_name || agg.ad_id}
@@ -798,8 +797,6 @@ function TopCreativeCard({
         <div
           style={{
             font: "650 11px var(--font-ui)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
             color: "var(--ink-3)",
             marginBottom: 8,
           }}
@@ -836,8 +833,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <div
         style={{
           font: "650 10px var(--font-ui)",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
           color: "var(--ink-3)",
           marginBottom: 2,
         }}

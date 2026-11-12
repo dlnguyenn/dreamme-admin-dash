@@ -257,7 +257,7 @@ export function Roadmap() {
 
       {loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}>
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
+          <div className="serif" style={{ fontSize: 20 }}>
             Loading roadmap…
           </div>
         </div>
@@ -684,7 +684,7 @@ function RoadmapDrawer({
             justifyContent: "space-between",
           }}
         >
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
+          <div className="serif" style={{ fontSize: 20 }}>
             {isCreate ? "New roadmap item" : "Roadmap item"}
           </div>
           <button onClick={onClose} aria-label="Close" style={iconButton}>
@@ -907,8 +907,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-3)",
 };
 

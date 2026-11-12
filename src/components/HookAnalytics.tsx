@@ -276,8 +276,6 @@ export function HookAnalytics() {
                   <div
                     style={{
                       font: "650 10.5px var(--font-ui)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
                       color: "var(--ink-3)",
                     }}
                   >
@@ -287,7 +285,6 @@ export function HookAnalytics() {
                     style={{
                       font: "700 22px/1.1 var(--font-ui)",
                       fontVariantNumeric: "tabular-nums",
-                      letterSpacing: "-0.01em",
                       marginTop: 6,
                       color: "var(--ink)",
                     }}
@@ -964,7 +961,7 @@ function PostRow({
           }}
         >
           <CategoryTag family="neutral" size={9.5}>
-            {cat.toUpperCase()}
+            {cat}
           </CategoryTag>
           <span
             style={{
@@ -1020,7 +1017,6 @@ function PostRow({
           style={{
             font: "650 15px var(--font-ui)",
             fontVariantNumeric: "tabular-nums",
-            letterSpacing: "-0.01em",
             color: "var(--ink)",
           }}
         >
@@ -1030,8 +1026,6 @@ function PostRow({
           style={{
             font: "500 10px var(--font-ui)",
             color: "var(--ink-4)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
           }}
         >
           views
@@ -1125,8 +1119,6 @@ function MobilePostRow({ post }: { post: TikTokPost }) {
               borderRadius: 6,
               background: "var(--bg-2)",
               color: "var(--ink-3)",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
             }}
           >
             {cat}
@@ -1145,7 +1137,6 @@ function MobilePostRow({ post }: { post: TikTokPost }) {
             style={{
               font: "650 15px var(--font-ui)",
               fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.01em",
               color: "var(--ink)",
             }}
           >

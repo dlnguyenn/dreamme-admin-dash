@@ -67,7 +67,7 @@ function ItemBody({ id }: { id: string }) {
   if (loading) {
     return (
       <div style={{ padding: 80, textAlign: "center", color: "var(--ink-3)" }}>
-        <div className="serif" style={{ fontSize: 24, fontStyle: "italic" }}>
+        <div className="serif" style={{ fontSize: 24 }}>
           Loading…
         </div>
       </div>
@@ -86,7 +86,7 @@ function ItemBody({ id }: { id: string }) {
       >
         <div
           className="serif"
-          style={{ fontSize: 28, fontStyle: "italic", marginBottom: 8 }}
+          style={{ fontSize: 28, marginBottom: 8 }}
         >
           {error ? "Something went wrong." : "Item not found."}
         </div>
@@ -132,8 +132,6 @@ function ItemBody({ id }: { id: string }) {
             color: "var(--ink-3)",
             textDecoration: "none",
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
           }}
         >
           ← Back to pipeline
@@ -180,8 +178,6 @@ function ItemBody({ id }: { id: string }) {
             style={{
               fontSize: 10,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
               padding: "3px 8px",
               borderRadius: 999,
               background:
@@ -233,8 +229,6 @@ function ItemBody({ id }: { id: string }) {
             fontSize: 11,
             color: "var(--ink-4)",
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
           }}
         >
           Caption

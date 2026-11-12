@@ -64,8 +64,6 @@ export function CategoryHeatStrip({
               borderRadius: 7,
               font: "700 10px var(--font-ui)",
               fontVariantNumeric: "tabular-nums",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
               background: isUnder ? "transparent" : tone.bg,
               color: tone.fg,
               border: isUnder

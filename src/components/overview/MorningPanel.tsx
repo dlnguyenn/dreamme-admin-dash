@@ -138,7 +138,6 @@ function MissingMorningTile({ tile }: { tile: MorningTileData }) {
         <div
           style={{
             font: "600 9px var(--font-ui)",
-            letterSpacing: "0.04em",
             color: f.text,
           }}
         >

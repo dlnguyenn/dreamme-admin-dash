@@ -279,8 +279,6 @@ function FilterRow({
         style={{
           fontSize: 10,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
           color: "var(--ink-4)",
           minWidth: 60,
         }}

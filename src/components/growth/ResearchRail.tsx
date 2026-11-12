@@ -180,10 +180,10 @@ export function ResearchRail() {
           padding: 18,
         }}
       >
-        <div style={{ ...mono, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>
+        <div style={{ ...mono, fontSize: 10, color: "var(--ink-3)", marginBottom: 6 }}>
           Deep research · Lightreel-style
         </div>
-        <div className="serif" style={{ fontSize: 20, letterSpacing: "-0.02em", marginBottom: 6 }}>
+        <div className="serif" style={{ fontSize: 20, marginBottom: 6 }}>
           Research a content vein end-to-end
         </div>
         <p style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55, margin: "0 0 12px" }}>
@@ -374,7 +374,7 @@ export function ResearchRail() {
           {/* strong finds strip */}
           {strongFinds.length > 0 && (
             <div style={{ marginBottom: selected.report_md ? 14 : 0 }}>
-              <div style={{ ...mono, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>
+              <div style={{ ...mono, fontSize: 10, color: "var(--ink-3)", marginBottom: 6 }}>
                 Strong finds · {strongFinds.length} · app-visible ones feed Inspo
               </div>
               <div style={{ display: "grid", gap: 6 }}>

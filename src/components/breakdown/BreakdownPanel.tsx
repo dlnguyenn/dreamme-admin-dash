@@ -358,7 +358,7 @@ function IntervalRow({ iv, frames, capture, videoUrl, isBiggest, width }: { iv: 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 10, fontFamily: MONO, color: "var(--ink-3)", marginBottom: 8 }}>{label}</div>
       {children}
     </div>
   );
@@ -367,7 +367,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: Tone }) {
   return (
     <div style={{ padding: "8px 10px", borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
-      <div style={{ fontSize: 9, fontFamily: MONO, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-3)", whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ fontSize: 9, fontFamily: MONO, color: "var(--ink-3)", whiteSpace: "nowrap" }}>{label}</div>
       <div style={{ fontSize: 14.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: tone ? toneFg(tone) : "var(--ink)" }}>{value}</div>
       {sub && <div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{sub}</div>}
     </div>

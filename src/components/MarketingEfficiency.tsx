@@ -476,8 +476,6 @@ function LtvCohorts() {
                         style={{
                           display: "inline-block",
                           font: "700 10px var(--font-ui)",
-                          letterSpacing: "0.04em",
-                          textTransform: "uppercase",
                           padding: "3px 8px",
                           borderRadius: 7,
                           color: badge.text,
@@ -659,8 +657,6 @@ function CrossNetworkCost() {
                       <span
                         style={{
                           font: "700 10px var(--font-ui)",
-                          letterSpacing: "0.04em",
-                          textTransform: "uppercase",
                           color: "var(--ink-3)",
                           border: "1px solid var(--line-2)",
                           padding: "3px 8px",

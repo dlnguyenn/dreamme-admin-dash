@@ -397,8 +397,6 @@ function VendorCard({
         <div
           style={{
             font: "650 10.5px var(--font-ui)",
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
             color: "var(--ink-3)",
           }}
         >
@@ -407,14 +405,13 @@ function VendorCard({
         <CategoryTag
           family={VENDOR_CATEGORY[vendor] === "ai" ? "accent" : "neutral"}
         >
-          {VENDOR_CATEGORY[vendor].toUpperCase()}
+          {VENDOR_CATEGORY[vendor]}
         </CategoryTag>
       </div>
       <div
         style={{
           font: "700 26px/1 var(--font-ui)",
           fontVariantNumeric: "tabular-nums",
-          letterSpacing: "-0.01em",
           color: "var(--ink)",
         }}
       >

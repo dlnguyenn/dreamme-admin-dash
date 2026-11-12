@@ -210,7 +210,6 @@ export function ThreadDetail({
             <span
               style={{
                 font: "650 20px var(--font-ui)",
-                letterSpacing: "-0.01em",
                 minWidth: 0,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -1007,7 +1006,6 @@ function MessageBody({
               borderRadius: 999,
               padding: "2px 10px",
               font: "650 11px var(--font-ui)",
-              letterSpacing: "0.08em",
               cursor: "pointer",
               lineHeight: "14px",
             }}

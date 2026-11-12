@@ -49,9 +49,7 @@ export function ConfirmDialog({
         style={{
           fontSize: 22,
           fontWeight: 400,
-          fontStyle: "italic",
           marginBottom: 8,
-          letterSpacing: "-0.01em",
         }}
       >
         {title}

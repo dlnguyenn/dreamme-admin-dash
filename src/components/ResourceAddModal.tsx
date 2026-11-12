@@ -622,8 +622,6 @@ function Field({
       <span
         style={{
           font: "650 10.5px var(--font-ui)",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
           color: "var(--ink-3)",
         }}
       >

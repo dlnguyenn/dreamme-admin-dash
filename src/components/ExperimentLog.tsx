@@ -74,8 +74,6 @@ export function KindTag({ kind }: { kind: ExperimentKind }) {
         alignItems: "center",
         gap: 5,
         font: "650 10.5px var(--font-ui)",
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
         padding: "3px 8px",
         borderRadius: 6,
         whiteSpace: "nowrap",
@@ -360,7 +358,7 @@ function Row({
                 RC: {rc.status}
               </span>
             )}
-            <StatusPill kind={statusPillKind(entry.status)}>{statusLabel(entry.kind, entry.status).toUpperCase()}</StatusPill>
+            <StatusPill kind={statusPillKind(entry.status)}>{statusLabel(entry.kind, entry.status)}</StatusPill>
           </span>
         </span>
         <span style={{ font: "650 15px/1.35 var(--font-ui)", color: "var(--ink)" }}>{entry.title}</span>
@@ -540,7 +538,7 @@ function EntryDrawer({
             gap: 12,
           }}
         >
-          <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
+          <div className="serif" style={{ fontSize: 20 }}>
             {isCreate ? "New entry" : editing ? "Edit entry" : KIND_LABELS[entry!.kind]}
           </div>
           <button onClick={onClose} aria-label="Close" style={iconButton}>
@@ -623,7 +621,7 @@ function ReadView({
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <KindTag kind={entry.kind} />
-          <StatusPill kind={statusPillKind(entry.status)}>{statusLabel(entry.kind, entry.status).toUpperCase()}</StatusPill>
+          <StatusPill kind={statusPillKind(entry.status)}>{statusLabel(entry.kind, entry.status)}</StatusPill>
           <span style={{ font: "500 12px var(--font-ui)", color: "var(--ink-3)" }}>{AREA_LABELS[entry.area]}</span>
         </div>
         <h2 style={{ font: "650 20px/1.3 var(--font-ui)", margin: 0, color: "var(--ink)" }}>{entry.title}</h2>
@@ -919,8 +917,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
   color: "var(--ink-3)",
 };
 

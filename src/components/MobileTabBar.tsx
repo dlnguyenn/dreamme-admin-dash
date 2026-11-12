@@ -167,7 +167,6 @@ export function MobileTabBar({
                 style={{
                   fontSize: 10,
                   fontWeight: active ? 600 : 500,
-                  letterSpacing: "0.02em",
                 }}
               >
                 {t.label}
@@ -210,7 +209,6 @@ export function MobileScreenTitle({ title }: { title: string }) {
           style={{
             fontSize: 17,
             fontWeight: 500,
-            letterSpacing: "-0.01em",
             color: "var(--ink)",
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -261,8 +259,6 @@ export function MoreSheet({
         style={{
           fontSize: 22,
           fontWeight: 500,
-          fontStyle: "italic",
-          letterSpacing: "-0.01em",
           marginBottom: 4,
         }}
       >
@@ -273,8 +269,6 @@ export function MoreSheet({
         style={{
           fontSize: 11,
           color: "var(--ink-4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
           marginBottom: 14,
         }}
       >
@@ -309,8 +303,6 @@ export function MoreSheet({
             style={{
               fontSize: 10,
               color: "var(--ink-4)",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
               marginBottom: 8,
               paddingLeft: 4,
             }}
@@ -414,8 +406,6 @@ function MoreNavRow({
           className="mono"
           style={{
             fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
             color: "var(--ink-4)",
             padding: "2px 6px",
             borderRadius: 4,
@@ -451,8 +441,6 @@ function ViewToggle({
         color: active ? "var(--ink)" : "var(--ink-3)",
         fontSize: 11,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
         fontWeight: active ? 500 : 400,
       }}
     >

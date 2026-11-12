@@ -378,7 +378,6 @@ const labelStyle: React.CSSProperties = {
   gap: 5,
   font: "600 11px var(--font-ui)",
   color: "var(--ink-3)",
-  letterSpacing: "0.03em",
 };
 
 function Delta({ v }: { v: number | null }) {

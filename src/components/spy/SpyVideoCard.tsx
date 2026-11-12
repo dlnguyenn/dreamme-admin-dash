@@ -115,8 +115,6 @@ export function SpyVideoCard({
               borderRadius: 6,
               fontSize: 9,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
               color: "var(--accent)",
               fontWeight: 600,
             }}
@@ -192,7 +190,7 @@ export function SpyVideoCard({
           }}
         >
           {video.first_slide_text || (
-            <span style={{ color: "var(--ink-4)", fontStyle: "italic" }}>
+            <span style={{ color: "var(--ink-4)" }}>
               (no hook text)
             </span>
           )}
@@ -206,8 +204,6 @@ export function SpyVideoCard({
             fontSize: 10,
             fontFamily: "var(--font-geist-mono), monospace",
             color: "var(--ink-4)",
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
           }}
         >
           <span>

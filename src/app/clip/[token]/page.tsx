@@ -58,7 +58,6 @@ const card: React.CSSProperties = {
 const tileLabel: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 500,
-  textTransform: "uppercase",
   letterSpacing: 0.8,
   color: MUTED,
 };
@@ -67,7 +66,6 @@ const th: React.CSSProperties = {
   padding: "12px 16px",
   fontSize: 11,
   fontWeight: 500,
-  textTransform: "uppercase",
   letterSpacing: 0.6,
   color: MUTED,
   textAlign: "left",
@@ -173,7 +171,7 @@ export default async function ClipperPage({
           }}
         >
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: ACCENT }}>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, color: ACCENT }}>
               DreamMe · Creator Report
             </div>
             <h1 style={{ margin: "4px 0 0", fontSize: 30, fontWeight: 600 }}>{displayName}</h1>

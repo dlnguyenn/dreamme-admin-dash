@@ -158,8 +158,6 @@ export function KpiCard({
       <div
         style={{
           font: "650 10.5px var(--font-ui)",
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
           color: hero ? "var(--hero-mut)" : "var(--ink-3)",
           marginBottom: 7,
           whiteSpace: "nowrap",
@@ -174,7 +172,6 @@ export function KpiCard({
           style={{
             font: "700 26px/1 var(--font-ui)",
             fontVariantNumeric: "tabular-nums",
-            letterSpacing: "-0.01em",
           }}
         >
           {value}
@@ -208,8 +205,6 @@ export function StatusDot({ status }: { status: string }) {
         alignItems: "center",
         gap: 6,
         font: "650 10.5px var(--font-ui)",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
         color: text,
         whiteSpace: "nowrap",
       }}
@@ -322,7 +317,6 @@ export function TagChip({
       style={{
         display: "inline-block",
         font: "600 10.5px var(--font-ui)",
-        letterSpacing: "0.02em",
         padding: "3px 9px",
         borderRadius: 999,
         color: `color-mix(in oklab, ${tone} 62%, var(--ink))`,
@@ -496,8 +490,6 @@ export function MarkdownLite({ text }: { text: string }) {
                         textAlign: ci === 0 ? "left" : "right",
                         padding: "6px 12px",
                         font: "650 10.5px var(--font-ui)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
                         color: "var(--ink-3)",
                         borderBottom: "1px solid var(--line)",
                         whiteSpace: "nowrap",

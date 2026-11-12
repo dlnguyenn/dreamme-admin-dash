@@ -97,7 +97,7 @@ export function AdDrawer({
         <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
           <Thumb src={ad.thumbnail} name={ad.ad_name} size={isMobile ? 72 : 92} radius={12} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="serif" style={{ fontSize: isMobile ? 18 : 21, lineHeight: 1.2, letterSpacing: "-0.01em" }}>
+            <div className="serif" style={{ fontSize: isMobile ? 18 : 21, lineHeight: 1.2 }}>
               {ad.ad_name || ad.ad_id}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
@@ -390,8 +390,6 @@ function DrawerLabel({ children }: { children: React.ReactNode }) {
       style={{
         fontSize: 10,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
         color: "var(--ink-3)",
         marginBottom: 8,
       }}
@@ -418,8 +416,6 @@ function DrawerStat({
         style={{
           fontSize: 9,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
           color: "var(--ink-3)",
           marginBottom: 3,
           whiteSpace: "nowrap",

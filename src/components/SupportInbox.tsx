@@ -490,7 +490,6 @@ function NeedsAttentionTag() {
       title="No reply for more than 24 hours"
       style={{
         font: "700 9.5px var(--font-ui)",
-        letterSpacing: "0.04em",
         background: f.solid,
         color: f.onSolid,
         border: "1px solid transparent",
@@ -619,7 +618,7 @@ function ThreadListItem({
           {needsAttention(thread) && <NeedsAttentionTag />}
           {showStatus && (
             <SourceTag size={9.5}>
-              {thread.status.replace("_", " ").toUpperCase()}
+              {thread.status.replace("_", " ")}
             </SourceTag>
           )}
           {cat && (
@@ -629,7 +628,7 @@ function ThreadListItem({
           )}
           {thread.category && !cat && (
             <CategoryTag family="neutral" size={9.5}>
-              {thread.category.toUpperCase()}
+              {thread.category}
             </CategoryTag>
           )}
           {isFeatureRequest(thread) && (

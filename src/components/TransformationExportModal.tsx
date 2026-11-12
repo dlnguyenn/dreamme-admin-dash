@@ -109,8 +109,6 @@ export function TransformationExportModal({
             style={{
               fontSize: 22,
               fontWeight: 400,
-              fontStyle: "italic",
-              letterSpacing: "-0.01em",
             }}
           >
             Download as transformation
@@ -195,8 +193,6 @@ export function TransformationExportModal({
                   style={{
                     fontSize: 11,
                     fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
                     color: "var(--ink-3)",
                     marginBottom: 10,
                   }}
@@ -287,8 +283,6 @@ export function TransformationExportModal({
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
                   color: "var(--ink-3)",
                 }}
               >

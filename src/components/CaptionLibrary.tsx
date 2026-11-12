@@ -148,7 +148,7 @@ export function CaptionLibrary({
           eyebrow="Library"
           title={
             <>
-              <span style={{ fontStyle: "italic" }}>Caption</span> library
+              <span style={{  }}>Caption</span> library
             </>
           }
           subtitle="Every caption you've saved from the content pipeline, searchable and editable. Star the keepers; mark what's been posted so you don't double-use."
@@ -345,7 +345,7 @@ export function CaptionLibrary({
           <Icons.Message size={32} stroke="var(--ink-4)" />
           <div
             className="serif"
-            style={{ fontSize: 22, fontStyle: "italic", marginTop: 14 }}
+            style={{ fontSize: 22, marginTop: 14 }}
           >
             {state.savedCaptions.length === 0
               ? "No captions saved yet."

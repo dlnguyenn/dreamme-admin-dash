@@ -173,6 +173,9 @@ export function App() {
     if (!hydrated) return;
     localStorage.setItem("dreamme.tweaks", JSON.stringify(tweaks));
     document.documentElement.setAttribute("data-theme", tweaks.theme);
+    // Colour-scheme preview: ?palette=tide|ink|slate (globals.css). Temporary, until one is picked.
+    const palette = new URLSearchParams(window.location.search).get("palette");
+    if (palette) document.documentElement.setAttribute("data-palette", palette);
   }, [tweaks, hydrated]);
 
   const refresh = React.useCallback(async () => {
@@ -264,8 +267,6 @@ export function App() {
         borderRadius: 6,
         fontSize: 10,
         fontFamily: "var(--font-geist-mono), monospace",
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
         background: "#8B5CF6",
         color: "#fff",
         pointerEvents: "none",
@@ -590,7 +591,7 @@ function LoadingScreen() {
     <div style={{ padding: 80, textAlign: "center", color: "var(--ink-3)" }}>
       <div
         className="serif"
-        style={{ fontSize: 28, fontStyle: "italic", marginBottom: 8 }}
+        style={{ fontSize: 28, marginBottom: 8 }}
       >
         Syncing with Supabase…
       </div>

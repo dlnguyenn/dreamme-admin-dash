@@ -168,8 +168,6 @@ function CampaignTable({ paid }: { paid: NonNullable<PaidSection["daily"]> }) {
       <div
         style={{
           font: "650 10.5px var(--font-ui)",
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
           color: "var(--ink-3)",
           margin: "0 0 4px 14px",
         }}

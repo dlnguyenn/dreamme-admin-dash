@@ -277,7 +277,7 @@ export function ComingSoon({ item }: { item: NavItem }) {
     <div>
       <PageHeader
         eyebrow="Dashboard · coming soon"
-        title={<span style={{ fontStyle: "italic" }}>{item.label}</span>}
+        title={<span style={{  }}>{item.label}</span>}
         subtitle={
           item.desc +
           ". Designed but not wired up yet — scaffolded here so the team knows what's coming."
@@ -340,8 +340,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
               style={{
                 fontSize: 28,
                 fontWeight: 400,
-                letterSpacing: "-0.02em",
-                fontStyle: "italic",
                 marginBottom: 10,
               }}
             >
@@ -386,8 +384,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
             style={{
               fontSize: 11,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
               color: "var(--ink-4)",
               marginBottom: 16,
             }}
@@ -463,8 +459,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
               style={{
                 fontSize: 11,
                 fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
                 color: "var(--ink-4)",
               }}
             >
@@ -555,7 +549,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
                           fontFamily: "var(--font-geist-mono), monospace",
                           fontSize: 11,
                           color: "var(--ink-4)",
-                          fontStyle: "italic",
                         }}
                       >
                         not yet tracked
@@ -586,7 +579,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
                             fontSize: 18,
                             color: "var(--ink)",
                             fontWeight: 400,
-                            letterSpacing: "-0.01em",
                           }}
                         >
                           {s ? formatViewCount(s.totalViews) : "—"}
@@ -596,8 +588,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
                             fontSize: 10,
                             color: "var(--ink-4)",
                             fontFamily: "var(--font-geist-mono), monospace",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
                           }}
                         >
                           views · pay period
@@ -656,8 +646,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
                               fontSize: 10,
                               color: "var(--ink-4)",
                               fontFamily: "var(--font-geist-mono), monospace",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.08em",
                             }}
                           >
                             payout
@@ -685,8 +673,6 @@ export function ComingSoon({ item }: { item: NavItem }) {
           style={{
             fontSize: 11,
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
             color: "var(--ink-4)",
             marginBottom: 16,
           }}
@@ -800,8 +786,6 @@ function PayPeriodNav({
           fontSize: 10,
           fontFamily: "var(--font-geist-mono), monospace",
           color: "var(--ink-4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
         }}
       >
         Pay period
@@ -827,8 +811,6 @@ function PayPeriodNav({
           fontSize: 10,
           fontFamily: "var(--font-geist-mono), monospace",
           color: "var(--ink-4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
         }}
         title="Pay periods close on the 15th and the last day of each month (UTC)."
       >
@@ -861,8 +843,6 @@ function PayPeriodNav({
                 fontSize: 9,
                 fontFamily: "var(--font-geist-mono), monospace",
                 color: "var(--ink-4)",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
               }}
             >
               Total

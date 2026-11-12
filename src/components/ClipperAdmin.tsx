@@ -101,7 +101,6 @@ async function api<T>(body: Record<string, unknown>): Promise<T> {
 
 const label: React.CSSProperties = {
   fontSize: 11,
-  textTransform: "uppercase",
   letterSpacing: 0.6,
   color: "var(--ink-3)",
   fontFamily: "var(--font-geist-mono)",

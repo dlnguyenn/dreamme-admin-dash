@@ -157,8 +157,6 @@ export function ModifyImageModal({
               style={{
                 fontSize: 11,
                 fontFamily: "var(--font-geist-mono), monospace",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
                 color: "var(--ink-4)",
                 marginBottom: 4,
               }}
@@ -170,8 +168,6 @@ export function ModifyImageModal({
               style={{
                 fontSize: 22,
                 fontWeight: 400,
-                fontStyle: "italic",
-                letterSpacing: "-0.01em",
               }}
             >
               Modify image
@@ -423,8 +419,6 @@ function ImageTile({
           padding: "6px 10px",
           fontSize: 10,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
           color: "var(--ink-4)",
           borderBottom: "1px solid var(--line)",
           background: "var(--surface)",
@@ -458,7 +452,6 @@ function ImageTile({
           <div
             className="serif"
             style={{
-              fontStyle: "italic",
               fontSize: 14,
               color: "var(--ink-4)",
               padding: 12,

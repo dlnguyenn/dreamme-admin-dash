@@ -129,7 +129,7 @@ export function SpyTool() {
         eyebrow="Dashboard · 09"
         title={
           <>
-            Spy <span style={{ fontStyle: "italic" }}>tool</span>
+            Spy <span style={{  }}>tool</span>
           </>
         }
         subtitle="What's going viral in GLP-1 right now. Daily hashtag scrape into spy_videos. Browse hooks + first frames + view counts to inform your own content."

@@ -268,7 +268,6 @@ export function SupportPanel({
                   <span
                     style={{
                       font: "700 9.5px var(--font-ui)",
-                      letterSpacing: "0.05em",
                       background: fam("danger").soft,
                       color: fam("danger").text,
                       padding: "3px 7px",

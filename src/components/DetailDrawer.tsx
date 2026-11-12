@@ -287,8 +287,6 @@ function MobileDetail({
               className="mono"
               style={{
                 fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
                 color: "var(--ink-4)",
               }}
             >
@@ -305,7 +303,6 @@ function MobileDetail({
                 fontSize: 16,
                 lineHeight: 1.6,
                 color: "var(--ink)",
-                fontStyle: "italic",
                 whiteSpace: "pre-wrap",
               }}
             >
@@ -324,7 +321,6 @@ function MobileDetail({
                 fontSize: 15,
                 lineHeight: 1.6,
                 fontFamily: "var(--font-newsreader), Georgia, serif",
-                fontStyle: "italic",
                 background: "var(--surface-2)",
                 border: "1px solid var(--line)",
                 borderRadius: 12,
@@ -868,8 +864,6 @@ function DesktopDetail({
                   fontSize: 11,
                   color: "var(--ink-4)",
                   fontFamily: "var(--font-geist-mono), monospace",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
                   marginBottom: 2,
                 }}
               >
@@ -880,7 +874,6 @@ function DesktopDetail({
                 style={{
                   fontSize: 18,
                   fontWeight: 400,
-                  fontStyle: "italic",
                 }}
               >
                 Long-form · TikTok

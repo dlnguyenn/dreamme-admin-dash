@@ -648,8 +648,6 @@ const input: React.CSSProperties = {
 const eyebrow: React.CSSProperties = {
   fontSize: 10.5,
   fontFamily: "var(--font-geist-mono), monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
   color: "var(--ink-3)",
 };
 const listButton: React.CSSProperties = {

@@ -50,8 +50,6 @@ export function TweaksPanel({
           style={{
             fontSize: 11,
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.14em",
             color: "var(--ink-3)",
           }}
         >

@@ -173,8 +173,6 @@ export function FatiguePanel({
                   fontFamily: "var(--font-geist-mono), monospace",
                   color: "var(--ink-4)",
                   marginTop: 2,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
                 }}
               >
                 {f.category ?? "uncat"} · {f.member_count} members

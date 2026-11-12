@@ -126,8 +126,6 @@ export function GrowthLeaderboard({
             style={{
               fontSize: 11,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
               color: "var(--ink-3)",
             }}
           >
@@ -177,8 +175,6 @@ export function GrowthLeaderboard({
                         padding: "11px 14px",
                         fontSize: 10,
                         fontFamily: "var(--font-geist-mono), monospace",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.1em",
                         color: "var(--ink-3)",
                         borderBottom: "1px solid var(--line)",
                         background: "var(--surface-2)",
@@ -207,7 +203,7 @@ export function GrowthLeaderboard({
         </div>
       )}
 
-      <p style={{ marginTop: 16, fontSize: 11.5, color: "var(--ink-4)", fontStyle: "italic", lineHeight: 1.6 }}>
+      <p style={{ marginTop: 16, fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.6 }}>
         Trials and cost/trial are Meta-reported (ranking signal, not absolute truth — ATT under-counting).
         Hook = 3-sec video views ÷ impressions · Hold = thruplays ÷ impressions. Spend delta compares the
         prior {range}-day window.

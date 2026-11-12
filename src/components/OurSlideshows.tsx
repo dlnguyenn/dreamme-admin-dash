@@ -435,7 +435,6 @@ function DeckTile({
             <div
               style={{
                 font: "700 10px var(--font-ui)",
-                letterSpacing: "0.04em",
                 marginTop: 4,
                 opacity: 0.8,
               }}
@@ -585,7 +584,7 @@ function DeckLightbox({
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <CategoryTag family={STYLE_FAMILY[style]}>
-          {labelOf(style).toUpperCase()}
+          {labelOf(style)}
         </CategoryTag>
         {date && <Chip title="Generated">{date}</Chip>}
         <Chip title="Aspect ratio">{aspectLabelOf(style)}</Chip>
@@ -616,8 +615,6 @@ function DeckLightbox({
             <div
               style={{
                 font: "650 9.5px var(--font-ui)",
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
                 color: "var(--ink-3)",
                 marginBottom: 3,
               }}

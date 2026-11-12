@@ -86,8 +86,6 @@ const body: React.CSSProperties = { font: "400 13px/1.55 var(--font-ui)", color:
 const muted: React.CSSProperties = { font: "400 12.5px/1.5 var(--font-ui)", color: "var(--ink-3)", margin: 0 };
 const cellLabel: React.CSSProperties = {
   font: "650 10.5px var(--font-ui)",
-  letterSpacing: "0.05em",
-  textTransform: "uppercase",
   color: "var(--ink-3)",
   marginBottom: 4,
 };

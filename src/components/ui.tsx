@@ -78,15 +78,13 @@ export function Chip({
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        padding: "3px 9px",
-        borderRadius: 999,
-        background: t.bg,
-        color: t.fg,
-        border: `1px solid ${t.border}`,
-        font: "700 10.5px var(--font-ui)",
+        // A capsule is for a control. A label is coloured text (2026-11-11).
+        ...(onClick
+          ? { padding: "3px 9px", borderRadius: 999, background: t.bg, border: `1px solid ${t.border}` }
+          : {}),
+        color: onClick || t.bg !== "var(--attention)" ? t.fg : "var(--attention-text)",
+        font: "650 12px var(--font-ui)",
         fontVariantNumeric: "tabular-nums",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
         cursor: onClick ? "pointer" : "default",
         ...style,
       }}
@@ -126,8 +124,6 @@ export function PersonaChip({
         fontSize: s.font,
         fontWeight: 500,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
       }}
     >
       <span

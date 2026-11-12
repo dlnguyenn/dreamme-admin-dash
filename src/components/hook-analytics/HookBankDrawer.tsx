@@ -81,7 +81,6 @@ export function HookBankDrawer({
             className="serif"
             style={{
               fontSize: isMobile ? 18 : 22,
-              fontStyle: "italic",
               lineHeight: 1.2,
             }}
           >
@@ -93,8 +92,6 @@ export function HookBankDrawer({
               fontSize: 10,
               color: "var(--ink-4)",
               marginTop: 3,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
             }}
           >
             {counts.unused} active · {counts.used} used · {counts.all} total

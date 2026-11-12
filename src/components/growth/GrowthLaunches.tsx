@@ -197,8 +197,6 @@ export function GrowthLaunches({
                           style={{
                             fontSize: 10,
                             fontFamily: "var(--font-geist-mono), monospace",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
                             padding: "3px 9px",
                             borderRadius: 999,
                             color: `color-mix(in oklab, ${ach.tone} 75%, var(--ink))`,

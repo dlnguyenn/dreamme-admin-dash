@@ -170,8 +170,6 @@ function SectionsMenu({
           <div
             style={{
               font: "650 10.5px var(--font-ui)",
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
               color: "var(--ink-3)",
               padding: "6px 10px 4px",
             }}

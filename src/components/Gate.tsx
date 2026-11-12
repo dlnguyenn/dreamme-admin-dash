@@ -121,7 +121,6 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
               fontSize: 28,
               color: "white",
               fontWeight: 500,
-              fontStyle: "italic",
             }}
           >
             d
@@ -132,8 +131,6 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
           style={{
             fontSize: 11,
             fontFamily: "var(--font-geist-mono), monospace",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
             color: "var(--ink-3)",
             marginBottom: 6,
           }}
@@ -147,7 +144,6 @@ export function Gate({ onEnter }: { onEnter: (role: Role) => void }) {
             fontWeight: 400,
             margin: "0 0 8px",
             lineHeight: 1.1,
-            letterSpacing: "-0.02em",
           }}
         >
           Welcome back.

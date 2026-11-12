@@ -301,8 +301,6 @@ export function BeforePhotoGenerator({
               style={{
                 fontSize: 22,
                 fontWeight: 400,
-                fontStyle: "italic",
-                letterSpacing: "-0.01em",
               }}
             >
               {view === "pick"
@@ -613,8 +611,6 @@ function PickView({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
             color: "var(--ink-3)",
           }}
         >
@@ -838,8 +834,6 @@ function ResultsView({
                     fontSize: 10,
                     fontFamily: "var(--font-geist-mono), monospace",
                     fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
                   }}
                 >
                   ~{r.targetLb} lb
@@ -854,8 +848,6 @@ function ResultsView({
                     fontSize: 10,
                     fontFamily: "var(--font-geist-mono), monospace",
                     fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
                   }}
                   title={`Scenario: ${SCENARIO_LABELS[r.scenario]}`}
                 >

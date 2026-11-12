@@ -101,8 +101,6 @@ export function ViewsPanel({ views }: { views: ViewsSection | null }) {
               <div
                 style={{
                   font: "650 10.5px var(--font-ui)",
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
                   color: "var(--ink-3)",
                   marginBottom: 6,
                 }}
@@ -113,7 +111,6 @@ export function ViewsPanel({ views }: { views: ViewsSection | null }) {
                 style={{
                   font: `700 ${isMobile ? 30 : 34}px/1 var(--font-ui)`,
                   fontVariantNumeric: "tabular-nums",
-                  letterSpacing: "-0.01em",
                   color: "var(--ink)",
                 }}
               >
@@ -129,8 +126,6 @@ export function ViewsPanel({ views }: { views: ViewsSection | null }) {
                     alignItems: "center",
                     gap: 6,
                     font: "650 10.5px var(--font-ui)",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
                     color: "var(--ink-3)",
                     marginBottom: 6,
                   }}

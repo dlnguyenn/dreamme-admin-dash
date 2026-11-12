@@ -218,13 +218,11 @@ function ThemeCard({
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-          <span className="serif" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>{t.theme}</span>
+          <span className="serif" style={{ fontSize: 18 }}>{t.theme}</span>
           <span
             style={{
               fontSize: 10,
               fontFamily: "var(--font-geist-mono), monospace",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
               padding: "3px 9px",
               borderRadius: 999,
               color: `color-mix(in oklab, ${status.tone} 75%, var(--ink))`,
@@ -294,8 +292,6 @@ function ThemeStat({
         style={{
           fontSize: 9,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
           color: "var(--ink-3)",
           marginBottom: 3,
         }}
@@ -318,8 +314,6 @@ function HitRateBar({ rate, hits, qualified }: { rate: number | null; hits: numb
         style={{
           fontSize: 9,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
           color: "var(--ink-3)",
           marginBottom: 3,
         }}
@@ -501,8 +495,6 @@ function ComparePanel({
         style={{
           fontSize: 10,
           fontFamily: "var(--font-geist-mono), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
           color: "var(--ink-3)",
           marginBottom: 12,
         }}

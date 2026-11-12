@@ -129,7 +129,6 @@ export function PersonaRail({
                   justifyContent: "center",
                   fontSize: avatarFontSize,
                   fontFamily: "var(--font-newsreader), Georgia, serif",
-                  fontStyle: "italic",
                   fontWeight: 500,
                   border: active
                     ? "2px solid var(--surface)"
@@ -145,7 +144,6 @@ export function PersonaRail({
                 fontSize: labelSize,
                 fontWeight: active ? 600 : 500,
                 color: active ? "var(--ink)" : "var(--ink-3)",
-                letterSpacing: "-0.005em",
               }}
             >
               {persona ? persona.name : "All"}
@@ -157,7 +155,6 @@ export function PersonaRail({
                   fontSize: 9,
                   color: "var(--ink-4)",
                   marginTop: -2,
-                  letterSpacing: "0.04em",
                 }}
               >
                 {count}

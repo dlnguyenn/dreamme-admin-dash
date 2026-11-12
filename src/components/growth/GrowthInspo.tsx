@@ -444,7 +444,6 @@ function PlatformBadge({ platform }: { platform: "tiktok" | "instagram" }) {
         padding: "3px 8px",
         fontSize: 9.5,
         fontWeight: 700,
-        letterSpacing: "0.06em",
         borderRadius: 999,
         background: "rgba(26,24,22,0.78)",
         color: "#fff",
@@ -666,7 +665,7 @@ function InspoDrawer({
         <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 12, alignContent: "start" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span className="serif" style={{ fontSize: 21, letterSpacing: "-0.01em" }}>
+              <span className="serif" style={{ fontSize: 21 }}>
                 {post.app_name ?? "Unknown app"}
               </span>
               <PlatformBadge platform={post.platform} />
@@ -686,7 +685,7 @@ function InspoDrawer({
           {post.hook_text && (
             <div>
               <DrawerLabel>On-screen hook</DrawerLabel>
-              <div className="serif" style={{ fontSize: 16, fontStyle: "italic", lineHeight: 1.4 }}>
+              <div className="serif" style={{ fontSize: 16, lineHeight: 1.4 }}>
                 “{post.hook_text}”
               </div>
             </div>
@@ -783,8 +782,6 @@ function DrawerLabel({ children }: { children: React.ReactNode }) {
       style={{
         fontSize: 9.5,
         fontFamily: "var(--font-geist-mono), monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
         color: "var(--ink-3)",
         marginBottom: 5,
       }}
