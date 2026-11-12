@@ -449,6 +449,25 @@ export interface RcExperiment {
 }
 
 /**
+ * One experiment's per-variant results. Big payload (every metric x segment x
+ * arm), so callers reduce it at once with reduceResults in
+ * lib/experiment-results.ts rather than holding it. Same read scope as
+ * fetchExperiments.
+ */
+export async function fetchExperimentResults(
+  experimentId: string,
+  maxRetries = 2,
+): Promise<unknown> {
+  const projectId = getProjectId();
+  if (!projectId) throw new Error("REVENUECAT_PROJECT_ID not set");
+  return rcFetchJson<unknown>(
+    `/projects/${projectId}/experiments/${encodeURIComponent(experimentId)}/results`,
+    {},
+    maxRetries,
+  );
+}
+
+/**
  * Every RevenueCat Experiment in the project (configuration only, no
  * results). Needs the key's project_configuration:experiments:read scope.
  */

@@ -35,6 +35,15 @@ const clean: UrgentInputs = {
   sectionErrors: [],
   northStar: { trialStartsToday: 30, avg7d: 70, stale: false },
   paid: paid(300),
+  // A fresh check with nothing waiting: experiments add no alert of their own.
+  experiments: {
+    checkedAt: NOW.toISOString(),
+    headline: "1 test running, nothing waiting on you",
+    counts: { running: 1, needsYou: 0, notStarted: 0, changes: 0, settled: 0 },
+    items: [],
+    rcError: null,
+    staleness: { level: "fresh", hours: 1 },
+  },
   metaAccount: { status: 1, disableReason: 0 },
   metaAccountError: null,
   rejectedAds: [],

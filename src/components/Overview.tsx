@@ -32,6 +32,7 @@ import {
   TopPostsPanel,
 } from "./overview/panels";
 import { fmtMoney, fmtNum, fmtPct, relTime } from "./overview/shared";
+import { ExperimentsPanel } from "./overview/ExperimentsPanel";
 import { TRIAL_PANEL_ID, TrialInsightPanel, type TrialPanel } from "./overview/TrialInsightPanel";
 import type { TrialInsights } from "@/lib/trial-insights";
 
@@ -45,6 +46,7 @@ type SectionId =
   | "mrr"
   | "attribution"
   | "paid"
+  | "experiments"
   | "views"
   | "morning"
   | "today"
@@ -57,6 +59,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
   mrr: "MRR growth",
   attribution: "Where they heard about us",
   paid: "Paid",
+  experiments: "Experiments",
   views: "Organic views",
   morning: "This morning’s posts",
   today: "Going out today",
@@ -499,6 +502,12 @@ export function Overview({ onNavigate }: { onNavigate: (id: DashId) => void }) {
 
           {show("paid") && (
             <PaidPanel paid={data?.paid ?? null} onOpen={() => onNavigate("marketing")} />
+          )}
+
+          {/* What we're testing — a decision surface, so it sits with the money
+              sections rather than down with the pipelines. */}
+          {show("experiments") && (
+            <ExperimentsPanel section={data?.experiments ?? null} onNavigate={onNavigate} />
           )}
 
           {show("views") && <ViewsPanel views={data?.views ?? null} />}

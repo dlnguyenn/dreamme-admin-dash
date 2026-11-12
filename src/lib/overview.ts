@@ -48,6 +48,7 @@ import {
   fetchReferralSourcesSince,
   type ReferralSourceRow,
 } from "@/lib/support/consumer-db";
+import { fetchExperimentsSection, type ExperimentsSection } from "@/lib/overview-experiments";
 import {
   dateWindow,
   easternDate,
@@ -305,6 +306,8 @@ export interface OverviewPayload {
   ops: OpsCheck[] | null;
   /** Self-reported "how did you hear about us?" mix; null when unavailable. */
   attribution: AttributionSection | null;
+  /** Newest experiment check; null until the digest cron has run once. */
+  experiments: ExperimentsSection | null;
   errors: string[];
 }
 
@@ -1555,6 +1558,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     ops,
     attribution,
     mrr,
+    experiments,
   ] = await Promise.all([
       section("revenuecat", errors, fetchRcDaily),
       trialStartsP,
@@ -1569,6 +1573,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       section("ops", errors, fetchOps),
       section("attribution", errors, fetchAttribution),
       section("mrr", errors, fetchMrrHistory),
+      section("experiments", errors, fetchExperimentsSection),
     ]);
 
   const northStar = buildNorthStar(trialStarts, new Date(), onboardingToday);
@@ -1579,6 +1584,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
       sectionErrors: [...errors],
       northStar,
       paid: paid?.daily ?? null,
+      experiments: experiments ?? null,
     });
   } catch (e) {
     errors.push(`urgent alerts: ${e instanceof Error ? e.message : String(e)}`);
@@ -1599,6 +1605,7 @@ export async function buildOverview(): Promise<OverviewPayload> {
     paid,
     ops,
     attribution,
+    experiments: experiments ?? null,
     errors,
   };
 }

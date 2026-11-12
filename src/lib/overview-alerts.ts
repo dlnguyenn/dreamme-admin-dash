@@ -17,6 +17,7 @@ import { attentionFor, type StoreReviewRow } from "@/lib/store-reviews-shared";
 import { sbCount, sbGet } from "@/lib/revenue-plan/db";
 import type { OpsCheck } from "@/lib/overview";
 import type { PaidDaily } from "@/lib/overview-paid";
+import { experimentUrgents, type ExperimentsSection } from "@/lib/overview-experiments";
 
 const API_VERSION = process.env.META_API_VERSION ?? "v22.0";
 
@@ -65,6 +66,8 @@ export interface UrgentInputs {
   sectionErrors: string[];
   northStar: { trialStartsToday: number | null; avg7d: number | null; stale: boolean } | null;
   paid: PaidDaily | null;
+  /** Newest experiment check; null until the digest cron has run once. */
+  experiments: ExperimentsSection | null;
   /** null = lookup failed. */
   metaAccount: { status: number; disableReason: number } | null;
   metaAccountError: string | null;
@@ -121,6 +124,19 @@ export function buildUrgentAlerts(i: UrgentInputs): UrgentAlert[] {
         c.state === "missing"
           ? "No data found at all."
           : `Last data ${relHours(c.ageHours ?? 0)}; expected at least every ${c.expectHours}h.`,
+    });
+  }
+
+  // 1b. Experiments: the check having stopped, and tests waiting on a person
+  // (the softer warnings stay in the panel — see lib/overview-experiments.ts).
+  for (const e of experimentUrgents(i.experiments)) {
+    out.push({
+      id: e.id,
+      fingerprint: e.fingerprint,
+      level: e.level,
+      title: e.title,
+      detail: e.detail,
+      link: { tab: "experiments", label: "Experiments" },
     });
   }
 
@@ -382,6 +398,7 @@ export async function collectUrgentAlerts(base: {
   sectionErrors: string[];
   northStar: UrgentInputs["northStar"];
   paid: PaidDaily | null;
+  experiments: ExperimentsSection | null;
 }): Promise<UrgentAlert[]> {
   const now = base.now ?? new Date();
   const since36h = new Date(now.getTime() - 36 * 3_600_000).toISOString();
@@ -423,6 +440,7 @@ export async function collectUrgentAlerts(base: {
     sectionErrors: [...base.sectionErrors, ...extraErrors],
     northStar: base.northStar,
     paid: base.paid,
+    experiments: base.experiments,
     metaAccount: meta.account.value,
     metaAccountError: meta.account.error,
     rejectedAds: meta.ads.value,
