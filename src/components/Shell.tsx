@@ -28,6 +28,7 @@ export type DashId =
   | "roadmap"
   | "requests"
   | "experiments"
+  | "app-analytics"
   | "synthid-research"
   | "image-studio"
   | "accessory-studio"
@@ -75,6 +76,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "roadmap", label: "Roadmap", icon: "Grid", status: "live", desc: "What we're building now, next and later", adminOnly: true, group: "Product" },
   { id: "requests", label: "Feature Requests", icon: "Flag", status: "live", desc: "User-submitted product asks", adminOnly: true },
   { id: "experiments", label: "Experiments", icon: "Flask", status: "live", desc: "Every test and shipped change: hypothesis, result, decision", adminOnly: true },
+  // adminOnly: conversion rates and revenue shares by plan.
+  { id: "app-analytics", label: "App Analytics", icon: "UserOutline", status: "live", desc: "How people use the app, what keeps them and why they cancel", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Aperture", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "accessory-studio", label: "Accessory Studio", icon: "Star", status: "live", desc: "New fish accessories as lootbox-style SVGs", adminOnly: true },
   { id: "backgrounds", label: "Backgrounds", icon: "Moon", status: "live", desc: "Shop home-screen backgrounds for Sushi", adminOnly: true },

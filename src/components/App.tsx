@@ -46,6 +46,7 @@ const CreativeAnalytics = dynamic(() => import("./CreativeAnalytics").then((m) =
 const FeatureRequestsDashboard = dynamic(() => import("./FeatureRequestsDashboard").then((m) => m.FeatureRequestsDashboard), { ssr: false, loading: TabLoading });
 const Roadmap = dynamic(() => import("./Roadmap").then((m) => m.Roadmap), { ssr: false, loading: TabLoading });
 const ExperimentLog = dynamic(() => import("./ExperimentLog").then((m) => m.ExperimentLog), { ssr: false, loading: TabLoading });
+const AppAnalytics = dynamic(() => import("./AppAnalytics").then((m) => m.AppAnalytics), { ssr: false, loading: TabLoading });
 const Resources = dynamic(() => import("./Resources").then((m) => m.Resources), { ssr: false, loading: TabLoading });
 const Knowledge = dynamic(() => import("./Knowledge").then((m) => m.Knowledge), { ssr: false, loading: TabLoading });
 const SynthIDResearch = dynamic(() => import("./SynthIDResearch").then((m) => m.SynthIDResearch), { ssr: false, loading: TabLoading });
@@ -363,6 +364,8 @@ export function App() {
     screen = role === "admin" ? <Roadmap /> : <ComingSoon item={currentItem} />;
   } else if (current === "experiments") {
     screen = role === "admin" ? <ExperimentLog /> : <ComingSoon item={currentItem} />;
+  } else if (current === "app-analytics") {
+    screen = role === "admin" ? <AppAnalytics /> : <ComingSoon item={currentItem} />;
   } else if (current === "requests") {
     screen = <FeatureRequestsDashboard />;
   } else if (current === "knowledge") {
