@@ -5,14 +5,16 @@
  * what keeps them paying, why they cancel, what to look at next, and how far
  * each event can be trusted.
  *
- * It shows one dated report, read from /api/app-analytics, plus a live Daily
- * view of Mixpanel's counts from /api/app-analytics/daily (pulled into the
- * database every morning; src/lib/mixpanel-daily.ts). Both are views >
- * sections > blocks, and this file draws each block type. The figures come
- * from the database and are never written here (this repo is public). Shapes
- * and rules: src/lib/app-analytics.ts.
+ * It shows one dated report, read from /api/app-analytics, plus three live
+ * views of Mixpanel's counts from /api/app-analytics/daily: Daily, New people
+ * and Coming back (pulled into the database every morning;
+ * src/lib/mixpanel-daily.ts and mixpanel-detail.ts). All are views > sections
+ * > blocks, and this file draws each block type. The figures come from the
+ * database and are never written here (this repo is public). Shapes and
+ * rules: src/lib/app-analytics.ts.
  *
- * Deep link: ?tab=app-analytics&view=<view id> (the live one is `daily`).
+ * Deep link: ?tab=app-analytics&view=<view id> (the live ones are `daily`,
+ * `new-people` and `coming-back`).
  */
 import * as React from "react";
 import { PageHeader } from "./Shell";
@@ -50,16 +52,18 @@ import {
   type TableColumn,
   type Tone,
 } from "@/lib/app-analytics";
-import { DAILY_VIEW_ID } from "@/lib/mixpanel-daily-view";
+import { LIVE_VIEWS } from "@/lib/mixpanel-daily-view";
 
 const VIEW_KEY = "dad.appAnalytics.view.v1";
 const DAYS_KEY = "dad.appAnalytics.days.v1";
 
 type Loaded = { snapshot: SnapshotRow | null; history: SnapshotMeta[] };
 
-/** What /api/app-analytics/daily returns: the live Mixpanel view. */
+const LIVE_IDS = LIVE_VIEWS.map((v) => v.id);
+
+/** What /api/app-analytics/daily returns: the live Mixpanel views that have something to show. */
 type Daily = {
-  view: View | null;
+  views: View[];
   through: string | null;
   syncedAt: string | null;
   days: number;
@@ -109,7 +113,7 @@ export function AppAnalytics() {
     }
   }, []);
 
-  // The Daily view: live Mixpanel counts, loaded beside the report.
+  // The live views: Mixpanel counts, loaded beside the report.
   const [daily, setDaily] = React.useState<Daily | null>(null);
   const [dailyError, setDailyError] = React.useState<string | null>(null);
   const [dailyLoading, setDailyLoading] = React.useState(true);
@@ -124,7 +128,7 @@ export function AppAnalytics() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setDaily({
-        view: json.view ?? null,
+        views: json.views ?? [],
         through: json.through ?? null,
         syncedAt: json.syncedAt ?? null,
         days: json.days,
@@ -164,7 +168,7 @@ export function AppAnalytics() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       await loadDaily(daily?.days);
-      setPullNote("Pulled the last 4 days from Mixpanel.");
+      setPullNote("Pulled from Mixpanel just now.");
     } catch (e) {
       setPullNote(e instanceof Error ? e.message : String(e));
     } finally {
@@ -173,13 +177,13 @@ export function AppAnalytics() {
   };
 
   const report = data?.snapshot?.payload ?? null;
-  // Daily sits second, after the report's first view. It is always offered, so
-  // an empty table can say so and offer the first pull.
-  const reportViews = (report?.views ?? []).filter((v) => v.id !== DAILY_VIEW_ID);
-  const dailyView: View = daily?.view ?? { id: DAILY_VIEW_ID, label: "Daily", sections: [] };
-  const views = reportViews.length ? [reportViews[0], dailyView, ...reportViews.slice(1)] : [dailyView];
+  // The live views sit after the report's first view. They are always offered,
+  // so an empty table can say so and offer the first pull.
+  const reportViews = (report?.views ?? []).filter((v) => !LIVE_IDS.includes(v.id));
+  const liveViews: View[] = LIVE_VIEWS.map((l) => daily?.views.find((v) => v.id === l.id) ?? { ...l, sections: [] });
+  const views = reportViews.length ? [reportViews[0], ...liveViews, ...reportViews.slice(1)] : liveViews;
   const view = data || daily || dailyError ? pickView({ views }, viewId) : null;
-  const isDaily = view?.id === DAILY_VIEW_ID;
+  const isDaily = view != null && LIVE_IDS.includes(view.id);
 
   const pick = (id: string) => {
     setViewId(id);
@@ -198,7 +202,7 @@ export function AppAnalytics() {
         subtitle="How people use the app, what keeps them paying and why they cancel, worked out from the raw event data."
         actions={
           view && views.length > 1 ? (
-            // Seven views don't fit a phone: the switcher scrolls instead of clipping.
+            // Nine views don't fit a phone: the switcher scrolls instead of clipping.
             <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
               <Segmented
                 value={view.id}
@@ -240,10 +244,12 @@ export function AppAnalytics() {
           {daily && (
             <DailyBar daily={daily} onDays={pickDays} onPull={() => void pull()} pulling={pulling} note={pullNote} />
           )}
-          {daily && !daily.view && (
+          {daily && view.sections.length === 0 && (
             <InfoWell style={{ maxWidth: 640 }}>
-              <strong style={{ color: "var(--ink)", fontWeight: 650 }}>No Mixpanel days are stored yet.</strong>{" "}
-              The dashboard pulls them every morning after the Eastern day ends. Use the button above to pull the last 4 days now.
+              <strong style={{ color: "var(--ink)", fontWeight: 650 }}>
+                {daily.views.length ? "Nothing is stored for this view yet." : "No Mixpanel days are stored yet."}
+              </strong>{" "}
+              The dashboard pulls from Mixpanel every morning after the Eastern day ends. Use the button above to pull now.
             </InfoWell>
           )}
           {view.intro && (
@@ -340,7 +346,7 @@ function SnapshotLine({
   );
 }
 
-/** Above the Daily view: how fresh the Mixpanel numbers are, the window, and a pull-now button. */
+/** Above a live view: how fresh the Mixpanel numbers are, the window, and a pull-now button. */
 function DailyBar({
   daily,
   onDays,
@@ -375,7 +381,7 @@ function DailyBar({
         {pulled ? `Pulled ${pulled}, and again every morning. ` : "Pulled every morning. "}
         {note}
       </span>
-      {daily.view && daily.windows.length > 1 && (
+      {daily.views.length > 0 && daily.windows.length > 1 && (
         <Segmented
           size="sm"
           value={String(daily.days)}

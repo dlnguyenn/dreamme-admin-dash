@@ -2,16 +2,24 @@ import { describe, expect, it } from "vitest";
 import { dailyRuns, dailyScale, shortDateLabel } from "@/lib/app-analytics";
 import { Report } from "@/lib/app-analytics-schema";
 import {
+  COMING_BACK_VIEW_ID,
   DAILY_VIEW_ID,
+  LIVE_VIEWS,
+  NEW_PEOPLE_VIEW_ID,
+  STEP_KEY,
+  STEP_RANK_KEY,
+  activeDayCounts,
   buildDailyView,
   changeNote,
   changeShort,
   countLabel,
   eventHealth,
   median,
+  pointsNote,
   recentVsBase,
   rollingMean,
   rollingRate,
+  weekdayIndex,
   type DailyRow,
   type EventCounts,
 } from "@/lib/mixpanel-daily-view";
@@ -69,6 +77,17 @@ describe("rolling figures", () => {
     expect(changeShort(-25)).toBe("−25%");
     expect(changeShort(0.3)).toBe("level");
     expect(changeShort(null)).toBe("");
+  });
+
+  it("words a change between two rates in points", () => {
+    expect(pointsNote(null)).toBe("not enough history to compare");
+    expect(pointsNote(0.04)).toBe("level with the 4 weeks before");
+    expect(pointsNote(1)).toBe("+1 point against the 4 weeks before");
+    expect(pointsNote(-2.46)).toBe("\u22122.5 points against the 4 weeks before");
+  });
+
+  it("takes a plain ratio when asked, such as views per person", () => {
+    expect(rollingRate([10, 30], [5, 5], 7, 1)).toEqual([2, 4]);
   });
 
   it("rounds a daily count for a headline", () => {
@@ -150,7 +169,7 @@ describe("buildDailyView", () => {
 
   it("works out the trial rate as trials over onboarding starts", () => {
     const built = buildDailyView(rows(60, events), { today: day(60), windowDays: 30 });
-    const all = built.view!.sections.flatMap((s) => s.blocks);
+    const all = built.views.flatMap((v) => v.sections).flatMap((s) => s.blocks);
     const rate = all.flatMap((b) => (b.type === "series" ? b.series : [])).find((s) => s.label === "Trial starts per onboarding start");
     expect(rate?.headline).toBe("25%");
     expect(rate?.unit).toBe("%");
@@ -219,5 +238,164 @@ describe("daily chart helpers", () => {
   it("labels days without a timezone shift", () => {
     expect(shortDateLabel("2026-11-01")).toBe("Nov 1");
     expect(shortDateLabel("2026-11-01", true)).toBe("Sun, Nov 1");
+  });
+});
+
+describe("the two views built from breakdowns and cohorts", () => {
+  const events = { onboarding_started: 20, sign_up_completed: 16, trial_started: 5, meal_logged: 50 };
+  const N = 130;
+  /** Every day gets the same made-up screens, answers and cohorts, counted through the last complete day. */
+  const detailed = (patch?: (i: number, r: DailyRow) => void) =>
+    rows(N, events, (i, r) => {
+      r.breakdowns = {
+        [STEP_KEY]: { welcome: [20, 20], medication: [18, 18], frequency: [10, 10], goal: [16, 16], save_progress: [12, 12] },
+        // people, then the sum of the position each person met the screen at
+        [STEP_RANK_KEY]: { welcome: [20, 20], medication: [18, 36], frequency: [10, 30], goal: [16, 64], save_progress: [12, 60] },
+        "onboarding_referral_source_selected|source": { facebook: [10, 10], tiktok: [6, 6], friend_family: [4, 4] },
+        "trial_started|referral_source": { facebook: [3, 3], tiktok: [2, 2] },
+        "trial_started|paywall_source": { onboarding: [4, 4], exploding_offer: [1, 1] },
+        "trial_started|plan_type": { yearly: [3, 3], monthly: [2, 2] },
+      };
+      r.cohorts = {
+        through: day(N - 1),
+        signup: { n: 20, f: [4, 3, 2, 1, 1] },
+        trial: { n: 10, f: [5, 4, 3, 2, 1], h: [0, 4, 2, 1, 1, 1, 0, 1] },
+      };
+      patch?.(i, r);
+    });
+  const build = (r: DailyRow[]) => buildDailyView(r, { today: day(N), windowDays: 30 });
+  const viewOf = (r: DailyRow[], id: string) => build(r).views.find((v) => v.id === id);
+  const seriesOf = (v: ReturnType<typeof viewOf>, label: string) =>
+    v?.sections.flatMap((s) => s.blocks).flatMap((b) => (b.type === "series" ? b.series : [])).find((s) => s.label === label);
+
+  it("leaves out Coming back until cohorts are stored", () => {
+    const built = buildDailyView(rows(60, events), { today: day(60), windowDays: 30 });
+    expect(built.views.map((v) => v.id)).toEqual([DAILY_VIEW_ID, NEW_PEOPLE_VIEW_ID]);
+    expect(built.views[1].sections.map((s) => s.id)).toEqual(["start"]);
+  });
+
+  it("builds three views the report checks accept", () => {
+    const built = build(detailed());
+    expect(built.views.map((v) => v.id)).toEqual(LIVE_VIEWS.map((v) => v.id));
+    const parsed = Report.safeParse({ version: 1, asOf: day(N - 1), sources: "Test.", views: built.views });
+    expect(parsed.success ? null : parsed.error.issues[0]).toBeNull();
+  });
+
+  it("lists onboarding screens in the order people meet them and reads a skipped screen as skipped", () => {
+    const table = viewOf(detailed(), NEW_PEOPLE_VIEW_ID)!.sections.find((s) => s.id === "screens")!.blocks[0];
+    if (table.type !== "table") throw new Error("expected a table");
+    expect(table.rows).toEqual([
+      ["Welcome", 140, 100, null, 0],
+      ["Medication", 126, 90, -10, 0],
+      // Fewer people than the screen after it: shown to some, so no loss is read into it.
+      ["Frequency (not shown to everyone)", 70, 50, null, 0],
+      ["Goal", 112, 80, -10, 0],
+      ["Save progress", 84, 60, -20, 0],
+      ["Started a trial (after the paywall)", 35, 25, -35, 0],
+    ]);
+  });
+
+  it("says where a screen got worse against the 4 weeks before", () => {
+    const worse = detailed((i, r) => {
+      if (i >= N - 7) r.breakdowns![STEP_KEY].goal = [12, 12];
+    });
+    const table = viewOf(worse, NEW_PEOPLE_VIEW_ID)!.sections.find((s) => s.id === "screens")!.blocks[0];
+    if (table.type !== "table") throw new Error("expected a table");
+    expect(table.rows.find((r) => r[0] === "Goal")).toEqual(["Goal", 84, 60, -30, -20]);
+  });
+
+  it("shares out the where-did-you-hear answers and counts trials per answer", () => {
+    const view = viewOf(detailed(), NEW_PEOPLE_VIEW_ID);
+    expect(seriesOf(view, "Facebook")?.headline).toBe("50%");
+    expect(seriesOf(view, "TikTok")?.headline).toBe("30%");
+    expect(seriesOf(view, "A friend or family")?.values.at(-1)).toBe(20);
+    const table = view!.sections.find((s) => s.id === "source")!.blocks[1];
+    if (table.type !== "table") throw new Error("expected a table");
+    expect(table.rows[0]).toEqual(["Facebook", 10, 50, 3, 30]);
+    expect(table.rows[2]).toEqual(["A friend or family", 4, 20, 0, 0]);
+  });
+
+  it("leaves a gap, not a zero, on a day whose breakdowns were never pulled", () => {
+    const view = viewOf(
+      detailed((i, r) => {
+        if (i === N - 3) r.breakdowns = {};
+      }),
+      NEW_PEOPLE_VIEW_ID,
+    );
+    expect(seriesOf(view, "Trials started from the exploding offer")?.values.slice(-3)).toEqual([null, 1, 1]);
+    expect(seriesOf(view, "Share of trials on the yearly plan")?.headline).toBe("60%");
+  });
+
+  it("compares the phones only when both have people", () => {
+    expect(viewOf(detailed(), NEW_PEOPLE_VIEW_ID)!.sections.some((s) => s.id === "phones")).toBe(false);
+    const both = detailed((_, r) => {
+      r.events.onboarding_started = [20, 20, 15, 15, 5, 5];
+      r.events.trial_started = [5, 5, 4, 4, 1, 1];
+    });
+    const phones = viewOf(both, NEW_PEOPLE_VIEW_ID)!.sections.find((s) => s.id === "phones")!;
+    const trial = phones.blocks[1];
+    if (trial.type !== "series") throw new Error("expected series");
+    expect(trial.half).toBe(true);
+    expect(trial.series.map((s) => [s.label, s.headline])).toEqual([
+      ["iPhone", "26.7%"],
+      ["Android", "20%"],
+    ]);
+  });
+
+  it("gives a cohort a figure only once its wait has fully passed", () => {
+    const view = viewOf(detailed(), COMING_BACK_VIEW_ID)!;
+    const block = view.sections.find((s) => s.id === "signups")!.blocks[0];
+    if (block.type !== "series") throw new Error("expected series");
+    // The cohort charts run to at least 90 days whatever window is picked.
+    expect(block.days).toHaveLength(90);
+    const [next, , , , eight] = block.series;
+    expect(next.label).toBe("Came back the next day");
+    expect(next.values.slice(-2)).toEqual([20, null]);
+    expect(next.headline).toBe("20%");
+    // 8 weeks later needs 62 days: the newest 62 days of sign-ups have no figure yet.
+    expect(eight.values.slice(-63)).toEqual([5, ...new Array(62).fill(null)]);
+    expect(eight.smooth?.slice(-62).every((v) => v === null)).toBe(true);
+    expect(eight.headline).toBe("5%");
+    expect(eight.note).toBe("newest 7 measurable days, level with the 4 weeks before");
+  });
+
+  it("sums up the first week of a trial", () => {
+    expect(activeDayCounts([0, 4, 2, 1, 1, 1, 0, 1])).toEqual({ days: 27, fourPlus: 3, firstOnly: 4 });
+    expect(activeDayCounts(undefined)).toEqual({ days: 0, fourPlus: 0, firstOnly: 0 });
+
+    const view = viewOf(detailed(), COMING_BACK_VIEW_ID)!;
+    expect(seriesOf(view, "Average active days in the first 7")?.headline).toBe("2.7");
+    expect(seriesOf(view, "Active on 4 or more of the 7 days")?.headline).toBe("30%");
+    expect(seriesOf(view, "Active on the first day only")?.headline).toBe("40%");
+    const spread = view.sections.find((s) => s.id === "trial-week")!.blocks[1];
+    if (spread.type !== "columns") throw new Error("expected columns");
+    expect(spread.series).toHaveLength(2);
+    expect(spread.series[0].values).toEqual([40, 20, 10, 10, 10, 0, 10]);
+
+    const stats = view.sections[0].blocks[0];
+    if (stats.type !== "stats") throw new Error("expected stats first");
+    expect(stats.items.map((s) => s.value)).toEqual(["20%", "15%", "2.7", "20%"]);
+  });
+});
+
+describe("weekday pattern", () => {
+  // Jan 1 2026 is a Thursday.
+  const days56 = Array.from({ length: 56 }, (_, i) => day(i));
+  const weekday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+
+  it("is 100 across the week for a level count", () => {
+    expect(weekdayIndex(days56, days56.map(() => 40))).toEqual([100, 100, 100, 100, 100, 100, 100]);
+  });
+
+  it("lifts the weekday that runs high, Monday first", () => {
+    const index = weekdayIndex(days56, days56.map((d) => (weekday(d) === 5 ? 80 : 40)))!;
+    expect(index[4]).toBe(175);
+    expect(index[0]).toBe(88);
+  });
+
+  it("needs four weeks and every weekday", () => {
+    expect(weekdayIndex(days56.slice(0, 20), new Array(20).fill(40))).toBeNull();
+    expect(weekdayIndex(days56, days56.map((d) => (weekday(d) === 0 ? null : 40)))).toBeNull();
+    expect(weekdayIndex(days56, days56.map(() => 0))).toBeNull();
   });
 });

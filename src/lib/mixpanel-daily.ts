@@ -14,7 +14,7 @@
 import { addDays, easternDate } from "@/lib/revenue-plan/dates";
 import { spGet, spPost } from "@/lib/support/db";
 import { jql } from "@/lib/vendors/mixpanel";
-import type { DailyRow, EventCounts, PeopleCounts } from "@/lib/mixpanel-daily-view";
+import { LONG_WINDOW_DAYS, type DailyRow, type EventCounts, type PeopleCounts } from "@/lib/mixpanel-daily-view";
 
 const TABLE = "mixpanel_daily";
 
@@ -48,11 +48,10 @@ export const IMPRESSIONS = [
 ];
 
 /**
- * JQL works in UTC, so the script turns each event's time into a US Eastern
- * day itself (the same day boundary as the Overview's trial counts). Per user
- * and day it counts each event, then per day it adds the users up.
+ * JQL works in UTC, so every script turns an event's time into a US Eastern
+ * day itself (the same day boundary as the Overview's trial counts).
  */
-const SCRIPT = `
+export const EASTERN_DAY_JS = `
 function easternDay(ms) {
   var d = new Date(ms);
   var y = d.getUTCFullYear();
@@ -62,7 +61,10 @@ function easternDay(ms) {
   var end = Date.UTC(y, 10, 1 + ((7 - nov.getUTCDay()) % 7), 6);
   var offset = ms >= start && ms < end ? 4 : 5;
   return new Date(ms - offset * 3600000).toISOString().slice(0, 10);
-}
+}`;
+
+/** Per user and day it counts each event, then per day it adds the users up. */
+const SCRIPT = `${EASTERN_DAY_JS}
 function main() {
   var notInApp = {}, impression = {}, i;
   for (i = 0; i < params.notInApp.length; i++) notInApp[params.notInApp[i]] = true;
@@ -199,7 +201,11 @@ export async function lastMixpanelSync(): Promise<string | null> {
   return rows[0]?.synced_at ?? null;
 }
 
-/** Days of history to load for a chart window: the window plus the 5 weeks the comparisons look back over. */
+/**
+ * Days of history to load for a chart window: the window (the cohort charts
+ * never show fewer than LONG_WINDOW_DAYS) plus the 5 weeks the comparisons
+ * look back over.
+ */
 export function historyStart(windowDays: number, now = new Date()): string {
-  return addDays(easternDate(now), -(windowDays + 36));
+  return addDays(easternDate(now), -(Math.max(windowDays, LONG_WINDOW_DAYS) + 36));
 }
