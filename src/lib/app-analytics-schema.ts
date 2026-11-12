@@ -80,8 +80,9 @@ const block = z.discriminatedUnion("type", [
         )
         .min(1)
         .max(8),
-      rows: z.array(z.array(z.union([z.string().max(600), num, z.null(), status])).max(8)).min(1).max(60),
+      rows: z.array(z.array(z.union([z.string().max(600), num, z.null(), status])).max(8)).min(1).max(200),
       footnote: long.optional(),
+      limit: z.number().int().min(1).max(200).optional(),
     })
     .strict(),
   z
@@ -104,6 +105,29 @@ const block = z.discriminatedUnion("type", [
       xLabel: short.optional(),
       x: z.array(num).min(2).max(60),
       series: z.array(series).min(1).max(12),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      type: z.literal("series"),
+      unit: z.string().max(12).optional(),
+      days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")).min(2).max(400),
+      series: z
+        .array(
+          z
+            .object({
+              label: short,
+              values: z.array(num.nullable()).min(2).max(400),
+              smooth: z.array(num.nullable()).min(2).max(400).optional(),
+              headline: z.string().trim().max(24).optional(),
+              note: short.optional(),
+              unit: z.string().max(12).optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(16),
     })
     .strict(),
   z
@@ -161,6 +185,10 @@ export function shapeProblem(report: z.infer<typeof ReportShape>): string | null
               if (!ok) return `${where}: row ${r + 1}, column "${b.columns[c].label}" does not hold a ${kind} value`;
             }
           }
+        }
+        if (b.type === "series") {
+          const off = b.series.find((s) => s.values.length !== b.days.length || (s.smooth && s.smooth.length !== b.days.length));
+          if (off) return `${where}: "${off.label}" needs one value per day (${b.days.length})`;
         }
         if ((b.type === "columns" || b.type === "trends") && !sameLength(b.x, b.series)) {
           return `${where}: every series needs one value per x position (${b.x.length})`;

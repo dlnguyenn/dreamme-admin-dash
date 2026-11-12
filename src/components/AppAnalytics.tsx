@@ -5,12 +5,14 @@
  * what keeps them paying, why they cancel, what to look at next, and how far
  * each event can be trusted.
  *
- * It shows one dated report, read from /api/app-analytics. A report is views >
- * sections > blocks; this file draws each block type. The figures come from
- * the database and are never written here (this repo is public). Shapes and
- * rules: src/lib/app-analytics.ts.
+ * It shows one dated report, read from /api/app-analytics, plus a live Daily
+ * view of Mixpanel's counts from /api/app-analytics/daily (pulled into the
+ * database every morning; src/lib/mixpanel-daily.ts). Both are views >
+ * sections > blocks, and this file draws each block type. The figures come
+ * from the database and are never written here (this repo is public). Shapes
+ * and rules: src/lib/app-analytics.ts.
  *
- * Deep link: ?tab=app-analytics&view=<view id>.
+ * Deep link: ?tab=app-analytics&view=<view id> (the live one is `daily`).
  */
 import * as React from "react";
 import { PageHeader } from "./Shell";
@@ -23,17 +25,23 @@ import {
   EVIDENCE_LABELS,
   barGeometry,
   barRange,
+  dailyRuns,
+  dailyScale,
   dateLabel,
+  formatNumber,
   formatValue,
   inlineParts,
   isStatusChip,
   pickView,
   seriesMax,
+  shortDateLabel,
   trendPoints,
   type AppAnalyticsReport,
   type Block,
+  type DailySeries,
   type Evidence,
   type Section,
+  type View,
   type SnapshotMeta,
   type SnapshotRow,
   type StatItem,
@@ -42,10 +50,21 @@ import {
   type TableColumn,
   type Tone,
 } from "@/lib/app-analytics";
+import { DAILY_VIEW_ID } from "@/lib/mixpanel-daily-view";
 
 const VIEW_KEY = "dad.appAnalytics.view.v1";
+const DAYS_KEY = "dad.appAnalytics.days.v1";
 
 type Loaded = { snapshot: SnapshotRow | null; history: SnapshotMeta[] };
+
+/** What /api/app-analytics/daily returns: the live Mixpanel view. */
+type Daily = {
+  view: View | null;
+  through: string | null;
+  syncedAt: string | null;
+  days: number;
+  windows: number[];
+};
 
 const TONE_FAMILY: Record<Tone, string> = {
   good: "success",
@@ -90,16 +109,77 @@ export function AppAnalytics() {
     }
   }, []);
 
+  // The Daily view: live Mixpanel counts, loaded beside the report.
+  const [daily, setDaily] = React.useState<Daily | null>(null);
+  const [dailyError, setDailyError] = React.useState<string | null>(null);
+  const [dailyLoading, setDailyLoading] = React.useState(true);
+  const [pulling, setPulling] = React.useState(false);
+  const [pullNote, setPullNote] = React.useState<string | null>(null);
+
+  const loadDaily = React.useCallback(async (days?: number) => {
+    setDailyLoading(true);
+    setDailyError(null);
+    try {
+      const res = await fetch(`/api/app-analytics/daily${days ? `?days=${days}` : ""}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setDaily({
+        view: json.view ?? null,
+        through: json.through ?? null,
+        syncedAt: json.syncedAt ?? null,
+        days: json.days,
+        windows: json.windows ?? [30],
+      });
+    } catch (e) {
+      setDailyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDailyLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     void load();
+    let days: number | undefined;
     try {
       const fromUrl = new URLSearchParams(window.location.search).get("view");
       setViewId(fromUrl ?? localStorage.getItem(VIEW_KEY));
+      days = Number(localStorage.getItem(DAYS_KEY)) || undefined;
     } catch {}
-  }, [load]);
+    void loadDaily(days);
+  }, [load, loadDaily]);
+
+  const pickDays = (value: string) => {
+    const days = Number(value);
+    try {
+      localStorage.setItem(DAYS_KEY, String(days));
+    } catch {}
+    void loadDaily(days);
+  };
+
+  const pull = async () => {
+    setPulling(true);
+    setPullNote(null);
+    try {
+      const res = await fetch("/api/app-analytics/daily", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      await loadDaily(daily?.days);
+      setPullNote("Pulled the last 4 days from Mixpanel.");
+    } catch (e) {
+      setPullNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPulling(false);
+    }
+  };
 
   const report = data?.snapshot?.payload ?? null;
-  const view = report ? pickView(report, viewId) : null;
+  // Daily sits second, after the report's first view. It is always offered, so
+  // an empty table can say so and offer the first pull.
+  const reportViews = (report?.views ?? []).filter((v) => v.id !== DAILY_VIEW_ID);
+  const dailyView: View = daily?.view ?? { id: DAILY_VIEW_ID, label: "Daily", sections: [] };
+  const views = reportViews.length ? [reportViews[0], dailyView, ...reportViews.slice(1)] : [dailyView];
+  const view = data || daily || dailyError ? pickView({ views }, viewId) : null;
+  const isDaily = view?.id === DAILY_VIEW_ID;
 
   const pick = (id: string) => {
     setViewId(id);
@@ -117,13 +197,13 @@ export function AppAnalytics() {
         title="App Analytics"
         subtitle="How people use the app, what keeps them paying and why they cancel, worked out from the raw event data."
         actions={
-          report && report.views.length > 1 ? (
-            // Six views don't fit a phone: the switcher scrolls instead of clipping.
+          view && views.length > 1 ? (
+            // Seven views don't fit a phone: the switcher scrolls instead of clipping.
             <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
               <Segmented
-                value={view?.id ?? ""}
+                value={view.id}
                 onChange={pick}
-                options={report.views.map((v) => ({ value: v.id, label: v.label }))}
+                options={views.map((v) => ({ value: v.id, label: v.label }))}
               />
             </div>
           ) : undefined
@@ -141,11 +221,43 @@ export function AppAnalytics() {
         </ErrorBanner>
       )}
 
-      {!data && loading && <LoadingBlocks />}
+      {((!data && loading && !isDaily) || (isDaily && !daily && dailyLoading)) && <LoadingBlocks />}
 
-      {data && !data.snapshot && !error && <EmptyState />}
+      {data && !data.snapshot && !error && !isDaily && <EmptyState />}
 
-      {data?.snapshot && report && view && (
+      {isDaily && view && (daily || dailyError) && (
+        <div style={{ opacity: dailyLoading ? 0.55 : 1, transition: "opacity 160ms ease" }}>
+          {dailyError && (
+            <ErrorBanner>
+              <span style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ flex: "1 1 260px" }}>Couldn&apos;t load the Mixpanel charts: {dailyError}</span>
+                <Button size="sm" variant="secondary" icon={<Icons.Refresh />} onClick={() => void loadDaily(daily?.days)}>
+                  Try again
+                </Button>
+              </span>
+            </ErrorBanner>
+          )}
+          {daily && (
+            <DailyBar daily={daily} onDays={pickDays} onPull={() => void pull()} pulling={pulling} note={pullNote} />
+          )}
+          {daily && !daily.view && (
+            <InfoWell style={{ maxWidth: 640 }}>
+              <strong style={{ color: "var(--ink)", fontWeight: 650 }}>No Mixpanel days are stored yet.</strong>{" "}
+              The dashboard pulls them every morning after the Eastern day ends. Use the button above to pull the last 4 days now.
+            </InfoWell>
+          )}
+          {view.intro && (
+            <p style={{ ...text.body, fontSize: 14, maxWidth: "74ch", margin: "0 0 4px" }}>
+              <Inline text={view.intro} />
+            </p>
+          )}
+          {view.sections.map((s, i) => (
+            <SectionView key={s.id} section={s} first={i === 0 && !view.intro} isMobile={isMobile} />
+          ))}
+        </div>
+      )}
+
+      {!isDaily && data?.snapshot && report && view && (
         <div style={{ opacity: loading ? 0.55 : 1, transition: "opacity 160ms ease" }}>
           <SnapshotLine
             snapshot={data.snapshot}
@@ -224,6 +336,56 @@ function SnapshotLine({
           </select>
         </label>
       )}
+    </div>
+  );
+}
+
+/** Above the Daily view: how fresh the Mixpanel numbers are, the window, and a pull-now button. */
+function DailyBar({
+  daily,
+  onDays,
+  onPull,
+  pulling,
+  note,
+}: {
+  daily: Daily;
+  onDays: (days: string) => void;
+  onPull: () => void;
+  pulling: boolean;
+  note: string | null;
+}) {
+  const pulled = daily.syncedAt
+    ? new Date(daily.syncedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px 16px",
+        flexWrap: "wrap",
+        margin: "-8px 0 22px",
+        ...text.small,
+      }}
+    >
+      <span style={{ flex: "1 1 280px", maxWidth: "70ch" }}>
+        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+          {daily.through ? `Mixpanel, through ${dateLabel(daily.through)}.` : "Mixpanel."}
+        </span>{" "}
+        {pulled ? `Pulled ${pulled}, and again every morning. ` : "Pulled every morning. "}
+        {note}
+      </span>
+      {daily.view && daily.windows.length > 1 && (
+        <Segmented
+          size="sm"
+          value={String(daily.days)}
+          onChange={onDays}
+          options={daily.windows.map((d) => ({ value: String(d), label: `${d} days` }))}
+        />
+      )}
+      <Button size="sm" variant="secondary" icon={<Icons.Refresh />} onClick={onPull} disabled={pulling}>
+        {pulling ? "Pulling…" : "Pull from Mixpanel now"}
+      </Button>
     </div>
   );
 }
@@ -454,6 +616,8 @@ function BlockView({ block, isMobile }: { block: Block; isMobile: boolean }) {
       return <ColumnsBlock block={block} />;
     case "trends":
       return <TrendsBlock block={block} />;
+    case "series":
+      return <SeriesBlock block={block} />;
     case "compare":
       return <CompareBlock block={block} isMobile={isMobile} />;
     case "note":
@@ -631,6 +795,9 @@ const COLUMN_MIN: Record<NonNullable<TableColumn["kind"]>, number> = {
 };
 
 function TableBlock({ block }: { block: Extract<Block, { type: "table" }> }) {
+  const [all, setAll] = React.useState(false);
+  const capped = block.limit != null && block.rows.length > block.limit;
+  const rows = capped && !all ? block.rows.slice(0, block.limit) : block.rows;
   const kinds = block.columns.map((c) => c.kind ?? "text");
   const ranges = block.columns.map((c, ci) =>
     kinds[ci] === "bar"
@@ -691,7 +858,7 @@ function TableBlock({ block }: { block: Extract<Block, { type: "table" }> }) {
             </tr>
           </thead>
           <tbody>
-            {block.rows.map((row, ri) => {
+            {rows.map((row, ri) => {
               const rowLabel = typeof row[0] === "string" ? row[0].replace(/`/g, "") : `Row ${ri + 1}`;
               return (
                 <tr key={ri}>
@@ -724,6 +891,13 @@ function TableBlock({ block }: { block: Extract<Block, { type: "table" }> }) {
           </tbody>
         </table>
       </div>
+      {capped && (
+        <div style={{ padding: "10px 20px 14px", borderTop: "1px solid var(--line)" }}>
+          <Button size="sm" variant="secondary" onClick={() => setAll((v) => !v)}>
+            {all ? `Show the first ${block.limit}` : `Show all ${block.rows.length}`}
+          </Button>
+        </div>
+      )}
       {block.footnote && <Footnote inset>{block.footnote}</Footnote>}
     </Frame>
   );
@@ -942,6 +1116,235 @@ function TrendsBlock({ block }: { block: Extract<Block, { type: "trends" }> }) {
       </div>
       <NumbersTable xLabel={xName} x={block.x} series={block.series} unit={block.unit} />
     </Frame>
+  );
+}
+
+/** A daily value as text: 62.4% for a rate, a rounded count otherwise. */
+function dailyValue(v: number | null | undefined, unit?: string): string {
+  if (v == null || !Number.isFinite(v)) return "no data";
+  if (unit === "%") return `${formatNumber(Math.round(v * 10) / 10)}%`;
+  return formatNumber(Math.abs(v) >= 20 ? Math.round(v) : Math.round(v * 10) / 10);
+}
+
+/**
+ * Daily charts, one per series, each on its own scale from zero. Pointing at
+ * any chart reads out that day on all of them, so two measures can be compared
+ * on the same date.
+ */
+function SeriesBlock({ block }: { block: Extract<Block, { type: "series" }> }) {
+  const [hover, setHover] = React.useState<number | null>(null);
+  const n = block.days.length;
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || n < 2) return;
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    setHover(Math.round(ratio * (n - 1)));
+  };
+  return (
+    <Frame block={block}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "30px 36px" }}>
+        {block.series.map((s, si) => (
+          <DailyChart
+            key={si}
+            series={s}
+            days={block.days}
+            unit={s.unit ?? block.unit}
+            hover={hover}
+            onMove={onMove}
+            onLeave={() => setHover(null)}
+          />
+        ))}
+      </div>
+      <DailyNumbers block={block} />
+    </Frame>
+  );
+}
+
+function DailyChart({
+  series,
+  days,
+  unit,
+  hover,
+  onMove,
+  onLeave,
+}: {
+  series: DailySeries;
+  days: string[];
+  unit?: string;
+  hover: number | null;
+  onMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onLeave: () => void;
+}) {
+  const scale = dailyScale(series);
+  const span = scale.hi - scale.lo;
+  const n = days.length;
+  const at = hover != null && hover < n ? hover : null;
+  const smoothAt = at != null ? series.smooth?.[at] : null;
+  const dotValue = at != null ? (smoothAt ?? series.values[at]) : null;
+  const readout =
+    at != null
+      ? `${shortDateLabel(days[at], true)}: ${dailyValue(series.values[at], unit)}` +
+        (series.smooth ? `, 7-day average ${dailyValue(smoothAt, unit)}` : "")
+      : series.note;
+  return (
+    <figure style={{ margin: 0, minWidth: 0 }}>
+      <figcaption style={{ font: "600 13px/1.35 var(--font-ui)", color: "var(--ink)" }}>{series.label}</figcaption>
+      {series.headline && (
+        <div style={{ font: "650 22px/1.15 var(--font-ui)", color: "var(--ink)", marginTop: 4 }}>{series.headline}</div>
+      )}
+      <div style={{ ...text.small, fontSize: 12, minHeight: "3em", marginTop: 2, color: at != null ? "var(--ink)" : "var(--ink-3)" }}>
+        {readout}
+      </div>
+      <div
+        role="img"
+        aria-label={`${series.label}: ${series.headline ?? ""} ${series.note ?? ""}`.trim()}
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={onLeave}
+        style={{
+          position: "relative",
+          height: 66,
+          marginTop: 6,
+          borderBottom: "1px solid var(--line-2)",
+          touchAction: "pan-y",
+          cursor: "crosshair",
+        }}
+      >
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
+        >
+          {dailyRuns(series.values, scale).map((points, i) => (
+            <polyline
+              key={`d${i}`}
+              points={points}
+              fill="none"
+              stroke="var(--ink-4)"
+              strokeWidth={1}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {dailyRuns(series.smooth ?? [], scale).map((points, i) => (
+            <polyline
+              key={`s${i}`}
+              points={points}
+              fill="none"
+              stroke="var(--chart-line)"
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </svg>
+        {at != null && n > 1 && (
+          <>
+            <span
+              aria-hidden
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: `${(at / (n - 1)) * 100}%`,
+                width: 1,
+                background: "var(--ink-3)",
+              }}
+            />
+            {dotValue != null && (
+              <span
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: `${(at / (n - 1)) * 100}%`,
+                  top: `${100 - (Math.min(span, Math.max(0, dotValue - scale.lo)) / span) * 100}%`,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  transform: "translate(-50%, -50%)",
+                  background: "var(--chart-line)",
+                  boxShadow: "0 0 0 2px var(--surface)",
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
+      <div
+        aria-hidden
+        style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 6, ...text.small, fontSize: 12 }}
+      >
+        <span>{shortDateLabel(days[0])}</span>
+        <span>
+          {dailyValue(scale.lo, unit)} to {dailyValue(scale.hi, unit)}
+        </span>
+        <span>{shortDateLabel(days[n - 1])}</span>
+      </div>
+    </figure>
+  );
+}
+
+/** Every day's figures behind a set of daily charts, newest first. Built only when opened. */
+function DailyNumbers({ block }: { block: Extract<Block, { type: "series" }> }) {
+  const [open, setOpen] = React.useState(false);
+  const cellStyle: React.CSSProperties = {
+    padding: "6px 14px 6px 0",
+    textAlign: "right",
+    fontVariantNumeric: "tabular-nums",
+    borderTop: "1px solid var(--line)",
+    whiteSpace: "nowrap",
+  };
+  const head: React.CSSProperties = {
+    ...cellStyle,
+    borderTop: "none",
+    fontWeight: 600,
+    color: "var(--ink-3)",
+    whiteSpace: "normal",
+    verticalAlign: "bottom",
+    position: "sticky",
+    top: 0,
+    background: "var(--surface)",
+  };
+  return (
+    <details style={{ marginTop: 18 }} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary style={{ font: "600 12.5px var(--font-ui)", color: "var(--link)", cursor: "pointer", width: "fit-content" }}>
+        Show the numbers
+      </summary>
+      {open && (
+        <div style={{ overflow: "auto", contain: "inline-size", maxHeight: 340, marginTop: 8 }}>
+          <table style={{ borderCollapse: "collapse", font: "400 12.5px/1.4 var(--font-ui)", color: "var(--ink)" }}>
+            <thead>
+              <tr>
+                <th scope="col" style={{ ...head, textAlign: "left" }}>
+                  Day
+                </th>
+                {block.series.map((s, i) => (
+                  <th key={i} scope="col" style={{ ...head, minWidth: 84, maxWidth: 130 }}>
+                    {s.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...block.days.keys()].reverse().map((di) => (
+                <tr key={di}>
+                  <th scope="row" style={{ ...cellStyle, textAlign: "left", fontWeight: 500 }}>
+                    {shortDateLabel(block.days[di], true)}
+                  </th>
+                  {block.series.map((s, si) => (
+                    <td key={si} style={cellStyle}>
+                      {s.values[di] == null ? "" : dailyValue(s.values[di], s.unit ?? block.unit)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </details>
   );
 }
 

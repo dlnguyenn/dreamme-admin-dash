@@ -76,6 +76,21 @@ export interface Series {
   values: number[];
 }
 
+/** One line on a daily chart. */
+export interface DailySeries {
+  label: string;
+  /** One value per day; null where the day is missing. */
+  values: (number | null)[];
+  /** The smoothed line (a 7-day average), same length. */
+  smooth?: (number | null)[];
+  /** The figure printed above the chart, already formatted. */
+  headline?: string;
+  /** What the headline is and how it compares, e.g. "a day, 7-day average, +4% ...". */
+  note?: string;
+  /** "%" for a rate. Overrides the block's unit, so counts and a rate can share a block. */
+  unit?: string;
+}
+
 interface BlockBase {
   title?: string;
   caption?: string;
@@ -92,6 +107,8 @@ export type Block =
       columns: TableColumn[];
       rows: TableCell[][];
       footnote?: string;
+      /** Show this many rows, with a button for the rest. */
+      limit?: number;
     })
   | (BlockBase & {
       /** One small column chart per series, all on the same scale. */
@@ -110,6 +127,13 @@ export type Block =
       xLabel?: string;
       x: number[];
       series: Series[];
+    })
+  | (BlockBase & {
+      /** One small daily chart per series (YYYY-MM-DD days), each on its own scale from zero. */
+      type: "series";
+      unit?: string;
+      days: string[];
+      series: DailySeries[];
     })
   | (BlockBase & {
       type: "compare";
@@ -249,8 +273,63 @@ export function dateLabel(iso: string): string {
   });
 }
 
+/** "2026-11-11" -> "Nov 11", or "Wed, Nov 11" with the weekday. */
+export function shortDateLabel(iso: string, weekday = false): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.toLocaleDateString("en-US", {
+    ...(weekday ? { weekday: "short" as const } : {}),
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * The scale of one daily chart. It starts at zero unless every day sits in the
+ * top half, where a zero-based line would be flat along the top and hide the
+ * movement: then it starts on a round number below the lowest day, and the
+ * chart prints the range so the zoom is plain to see.
+ */
+export function dailyScale(series: DailySeries): { lo: number; hi: number } {
+  const all = [...series.values, ...(series.smooth ?? [])].filter((v): v is number => v != null && Number.isFinite(v));
+  if (!all.length) return { lo: 0, hi: 1 };
+  const hi = Math.max(...all);
+  const min = Math.min(...all);
+  if (hi <= 0) return { lo: 0, hi: 1 };
+  if (min < hi * 0.5 || hi - min < hi * 0.02) return { lo: 0, hi };
+  const raw = hi - (hi - min) / 0.6;
+  const step = Math.pow(10, Math.max(0, Math.floor(Math.log10(hi)) - 1));
+  const lo = Math.max(0, Math.floor(raw / step) * step);
+  return lo < hi ? { lo, hi } : { lo: 0, hi };
+}
+
+/**
+ * A daily line in a 0-100 box, as one "x,y x,y" run per unbroken stretch: a
+ * missing day breaks the line instead of being drawn as zero.
+ */
+export function dailyRuns(values: (number | null)[], scale: { lo: number; hi: number }): string[] {
+  const n = values.length;
+  const span = scale.hi - scale.lo > 0 ? scale.hi - scale.lo : 1;
+  const runs: string[] = [];
+  let current: string[] = [];
+  values.forEach((v, i) => {
+    if (v == null || !Number.isFinite(v)) {
+      if (current.length) runs.push(current.join(" "));
+      current = [];
+      return;
+    }
+    const x = n > 1 ? (i / (n - 1)) * 100 : 50;
+    const y = 100 - (Math.min(span, Math.max(0, v - scale.lo)) / span) * 100;
+    current.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+  });
+  if (current.length) runs.push(current.join(" "));
+  return runs;
+}
+
 /** The view to show: the asked-for one when it exists, else the first. */
-export function pickView(report: AppAnalyticsReport, id: string | null | undefined): View | null {
+export function pickView(report: { views: View[] }, id: string | null | undefined): View | null {
   if (!report.views.length) return null;
   return report.views.find((v) => v.id === id) ?? report.views[0];
 }

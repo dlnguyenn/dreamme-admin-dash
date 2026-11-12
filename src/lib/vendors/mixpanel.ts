@@ -162,6 +162,51 @@ export async function segmentationOn(
   return out;
 }
 
+/**
+ * Run a JQL script (POST /api/query/jql) and return its rows. JQL sees every
+ * event at once, which is how the App Analytics daily sync gets all events'
+ * users and totals in ONE query instead of one per event. Two things to know:
+ * `event.time` and the from/to dates are UTC here (the segmentation endpoints
+ * above use the project's Eastern days), and a query counts against the same
+ * ~60/hour limit. Not cached: callers store what they fetch.
+ */
+export async function jql<T>(script: string, params: Record<string, unknown>): Promise<T[]> {
+  if (!mixpanelConfigured()) {
+    throw new Error(
+      "MIXPANEL_SERVICE_ACCOUNT_USER / MIXPANEL_SERVICE_ACCOUNT_SECRET not set",
+    );
+  }
+  const auth = Buffer.from(
+    `${serviceAccount()}:${serviceSecret()}`,
+  ).toString("base64");
+  const url = `${apiHost()}/api/query/jql?project_id=${encodeURIComponent(mixpanelProjectId())}`;
+
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ script, params: JSON.stringify(params) }),
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const body = (await res.json()) as unknown;
+      if (!Array.isArray(body)) throw new Error("Mixpanel JQL returned something other than rows");
+      return body as T[];
+    }
+    const text = (await res.text()).slice(0, 300);
+    if (!RETRYABLE.has(res.status) || attempt >= 2) {
+      throw new Error(`Mixpanel JQL ${res.status}: ${text}`);
+    }
+    await sleep(1000 * Math.pow(2, attempt));
+    attempt++;
+  }
+}
+
 /** Exposed for tests — module-level cache would otherwise leak between them. */
 export function clearMixpanelCache(): void {
   cache.clear();
