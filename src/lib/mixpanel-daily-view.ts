@@ -328,7 +328,7 @@ const FEATURES: Pick[] = [
   { label: "Logged a shot", event: "shot_logged" },
   { label: "Logged a weight", event: "weight_logged" },
   { label: "Logged a side effect", event: "side_effect_logged" },
-  { label: "Logged water or protein", event: "stat_logged" },
+  { label: "Logged protein, fibre or steps", event: "stat_logged" },
   { label: "Sent an AI chat message", event: "ai_chat_message_sent" },
   { label: "Claimed a mission", event: "mission_claimed" },
   { label: "Dressed the fish", event: "item_equipped" },
@@ -668,7 +668,7 @@ function dailySections(c: Ctx): { sections: Section[]; attention: number } {
       id: "features",
       title: "What they do",
       intro:
-        "People doing each thing a day. Two of these run low: `meal_logged` misses some meal-logging days (see Tracking), and `stat_logged` has missed over half of water and protein logging since the August 2026 release, going by the database.",
+        "People doing each thing a day. Two notes: `meal_logged` misses some meal-logging days (see Tracking), and water is missing from `stat_logged` entirely, because the app stopped sending water logs in the August 2026 release to cut event volume. The database still records them. The fall in that line in August is the change, not people.",
       blocks: blocks(
         seriesBlock(c.shownDays, "People a day, by feature", pickSeries(c, FEATURES)),
         seriesBlock(
