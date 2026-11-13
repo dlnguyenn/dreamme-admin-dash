@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const MAIN = [0, 2, 1, 6]; // day 0 shot, day 0 about-to-start, day 0 auto-renew off, day 1 how-I-feel
+const MAIN = [0, 2, 1, 6]; // day 0 food, day 0 shot (food done), day 0 food auto-renew off, day 1 food + mood row
 
 export async function POST(req: Request) {
   if (!checkCronAuth(req)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
   const attachments = (kind: "day0" | "day1") => [
     { filename: "sushi.gif", path: path.join(dir, `hero-${kind}-${theme}.gif`), cid: `hero-${kind}` },
     { filename: "dreamme.png", path: path.join(dir, "app-icon.png"), cid: "app-icon" },
+    { filename: "stars.png", path: path.join(dir, `stars-${theme}.png`), cid: "stars" },
     ...(kind === "day1"
       ? (["great", "okay", "rough", "tired"] as const).map((m) => ({ filename: `${m}.png`, path: path.join(dir, `mood-${m}-${theme}.png`), cid: `mood-${m}` }))
       : []),
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
             heroDay0: "cid:hero-day0",
             heroDay1: "cid:hero-day1",
             icon: "cid:app-icon",
+            stars: "cid:stars",
             moods: { great: "cid:mood-great", okay: "cid:mood-okay", rough: "cid:mood-rough", tired: "cid:mood-tired" },
           }
         : undefined,

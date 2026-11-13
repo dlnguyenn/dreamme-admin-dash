@@ -40,6 +40,7 @@ export function assetsFor(base = publicBase(), theme: EmailTheme = LIVE_THEME): 
       tired: `${base}/email/mood-tired-${theme}.png`,
     },
     font: `${base}/email/jellee.ttf`,
+    stars: `${base}/email/stars-${theme}.png`,
   };
 }
 

@@ -35,6 +35,8 @@ export interface EmailAssets {
   moods: Record<Mood, string>;
   /** Jellee .ttf; Apple Mail loads it, Gmail ignores it */
   font: string;
+  /** five coral stars for the proof line (scripts/make-trial-email-stars.py) */
+  stars?: string;
 }
 
 export interface EmailInput {
@@ -60,6 +62,27 @@ export interface RenderedEmail {
   html: string;
   text: string;
 }
+
+/**
+ * Social proof (Dan, 2026-11-13: "add some social proof"). Only real, current
+ * facts: the US App Store rating from the public lookup API (4.70 from 3,420
+ * ratings on 2026-11-13; re-check before changing the wording) and one
+ * five-star US App Store review per email, quoted word for word as a prefix of
+ * the review, with the reviewer's public nickname.
+ */
+const RATING_LINE = "4.7 out of 5 from 3,400+ App Store ratings";
+const QUOTE: Record<EmailKind, { text: string; who: string }> = {
+  // 2026-08-10, five stars, "Amazing"
+  day0: {
+    text: "This app has helped me stay on track along with tracking my shots but also my water, food intake and protein needs.",
+    who: "Lsjd, App Store review",
+  },
+  // 2026-01-16, five stars, "Amazing App for my journey"
+  day1: {
+    text: "This app helps me keep track of my Ozempic shots and the little fish motivates me to log every day. Way less overwhelming than other tracking apps.",
+    who: "Joeymcbob, App Store review",
+  },
+};
 
 /** A paragraph: plain strings and bold runs. */
 type Run = string | { b: string };
@@ -349,6 +372,19 @@ function paraHtml(C: Palette, p: Para, extra = ""): string {
 }
 const paraText = (p: Para) => p.map((r) => (typeof r === "string" ? r : r.b)).join("");
 
+/** Rating line and one real review: a quiet block under the button, set off by a hairline. */
+function proofHtml(C: Palette, kind: EmailKind, stars?: string): string {
+  const q = QUOTE[kind];
+  const small = `font-family:${SANS};font-size:14px;line-height:20px;color:${C.ink2};`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;"><tr>
+<td style="border-top:1px solid ${C.dot};padding:24px 0 0;">
+${stars ? `<img src="${esc(stars)}" width="82" height="14" alt="5 stars" style="display:block;border:0;width:82px;height:14px;margin:0 0 10px;">` : ""}
+<p style="margin:0 0 16px;${small}font-weight:600;">${esc(RATING_LINE)}</p>
+<p style="margin:0 0 8px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.ink};">“${esc(q.text)}”</p>
+<p style="margin:0;${small}">${esc(q.who)}</p>
+</td></tr></table>`;
+}
+
 function buttonHtml(C: Palette, label: string, url: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 30px;"><tr>
 <td align="center" bgcolor="${C.cta}" style="border-radius:14px;background:${C.cta};">
@@ -463,6 +499,7 @@ ${moodRow ? moodRowHtml(C, i.ctaUrl, a.moods) : ""}
 ${paraHtml(C, b.askPara)}
 ${stepsHtml(C, STEPS_LEAD[i.cta], steps(i.cta))}
 ${buttonHtml(C, button, i.ctaUrl)}
+${proofHtml(C, i.kind, a.stars)}
 ${b.note ? noteHtml(C, b.note) : ""}
 ${b.after.map((p) => paraHtml(C, p)).join("\n")}
 ${b.week ? weekHtml(C, b.week) : ""}
@@ -483,7 +520,7 @@ ${b.signoff ? paraHtml(C, [b.signoff]) : ""}
 
   const lines: string[] = [hero.title, hero.sub, "", greeting, "", ...b.intro.flatMap((p) => [paraText(p), ""])];
   if (moodRow) lines.push("Tap how you feel today:", ...MOODS.map((m) => `- ${MOOD_LABEL[m]}: ${moodUrl(i.ctaUrl, m)}`), "");
-  lines.push(paraText(b.askPara), "", STEPS_LEAD[i.cta], ...steps(i.cta).map((s, n) => `${n + 1}. ${s}`), "", `${button}: ${i.ctaUrl}`, "");
+  lines.push(paraText(b.askPara), "", STEPS_LEAD[i.cta], ...steps(i.cta).map((s, n) => `${n + 1}. ${s}`), "", `${button}: ${i.ctaUrl}`, "", RATING_LINE, `“${QUOTE[i.kind].text}”`, `${QUOTE[i.kind].who}`, "");
   if (b.note) lines.push(`${b.note.title}. ${b.note.body}`, "");
   for (const p of b.after) lines.push(paraText(p), "");
   if (b.week) {
