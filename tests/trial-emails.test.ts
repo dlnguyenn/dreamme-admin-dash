@@ -37,9 +37,10 @@ const user = (o: Partial<UserFacts> = {}): UserFacts => ({
   journeyStage: "already_on",
   language: null,
   suppressed: false,
+  foodLogged: false,
+  foodToday: false,
   shotLogged: false,
   sideEffectLogged: false,
-  weightLogged: false,
   ...o,
 });
 
@@ -90,21 +91,30 @@ describe("trial-emails: decide", () => {
     expect(decide("day0", "active", user({ language: "en" })).send).toBe(true);
   });
   it("emails auto-renew-off trialists in the status-aware version", () => {
-    expect(decide("day0", "auto_renew_off", user())).toMatchObject({ send: true, cancelled: true, cta: "shot" });
+    expect(decide("day0", "auto_renew_off", user())).toMatchObject({ send: true, cancelled: true, cta: "food" });
   });
-  it("day 0 asks for the shot (shot day when about to start), then the next action not done", () => {
-    expect(decide("day0", "active", user())).toMatchObject({ cta: "shot" });
-    expect(decide("day0", "active", user({ journeyStage: "about_to_start" }))).toMatchObject({ cta: "shot_day", aboutToStart: true });
-    expect(decide("day0", "active", user({ shotLogged: true }))).toMatchObject({ cta: "side_effect" });
-    expect(decide("day0", "active", user({ shotLogged: true, sideEffectLogged: true }))).toMatchObject({ cta: "weight" });
+  it("day 0 asks for food first, then the shot (shot day when about to start), then a side effect", () => {
+    expect(decide("day0", "active", user())).toMatchObject({ cta: "food" });
+    expect(decide("day0", "active", user({ journeyStage: "about_to_start" }))).toMatchObject({ cta: "food", aboutToStart: true });
+    expect(decide("day0", "active", user({ foodLogged: true }))).toMatchObject({ cta: "shot" });
+    expect(decide("day0", "active", user({ foodLogged: true, journeyStage: "about_to_start" }))).toMatchObject({ cta: "shot_day" });
+    // a shot without food still gets the food ask
+    expect(decide("day0", "active", user({ shotLogged: true }))).toMatchObject({ cta: "food" });
   });
-  it("day 1 asks how they feel first; all three done = activated, no email", () => {
-    expect(decide("day1", "active", user({ shotLogged: true }))).toMatchObject({ cta: "side_effect" });
-    expect(decide("day1", "active", user({ sideEffectLogged: true }))).toMatchObject({ cta: "shot" });
-    expect(decide("day1", "active", user({ shotLogged: true, sideEffectLogged: true, weightLogged: true }))).toEqual({
+  it("food + medication = activated, no email", () => {
+    expect(decide("day0", "active", user({ foodLogged: true, shotLogged: true }))).toEqual({ send: false, reason: "activated" });
+    expect(decide("day0", "active", user({ foodLogged: true, sideEffectLogged: true }))).toEqual({ send: false, reason: "activated" });
+  });
+  it("day 1 asks for today's food; food from day 0 alone doesn't count", () => {
+    expect(decide("day1", "active", user({ foodLogged: true, shotLogged: true }))).toMatchObject({ cta: "food" });
+    expect(decide("day1", "active", user({ foodLogged: true, foodToday: true }))).toMatchObject({ cta: "shot" });
+    expect(decide("day1", "active", user({ foodLogged: true, foodToday: true, shotLogged: true }))).toEqual({
       send: false,
       reason: "activated",
     });
+  });
+  it("auto-renew off still gets the food ask, status-aware", () => {
+    expect(decide("day0", "auto_renew_off", user())).toMatchObject({ cta: "food", cancelled: true });
   });
 });
 

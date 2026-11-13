@@ -43,6 +43,7 @@ import {
   insertAssignment,
   isSuppressed,
   markMissed,
+  NO_ACTIVITY,
   patchAssignment,
   priorBuyers,
   trialEvents,
@@ -126,8 +127,7 @@ export async function GET(req: Request) {
       try {
         const u = people.get(row.app_user_id);
         const status = trialStatus(await trialEvents(row.original_transaction_id), row.trial_start_at);
-        const since1h = new Date(new Date(row.trial_start_at).getTime() - 3_600_000).toISOString();
-        const act = u ? await activity(u.id, since1h) : { shotLogged: false, sideEffectLogged: false, weightLogged: false };
+        const act = u ? await activity(u.id, row.trial_start_at) : NO_ACTIVITY;
         const d = decide(kind, status, {
           email: u?.email ?? null,
           displayName: u?.display_name ?? null,

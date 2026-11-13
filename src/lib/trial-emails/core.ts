@@ -14,7 +14,7 @@ export const TEST_RECIPIENT = "dan@dreamme.life";
 export type Arm = "email" | "holdout";
 export type EmailKind = "day0" | "day1";
 export type Platform = "ios" | "android";
-export type Cta = "shot" | "shot_day" | "side_effect" | "weight";
+export type Cta = "food" | "shot" | "shot_day" | "side_effect" | "weight";
 export const MOODS = ["great", "okay", "rough", "tired"] as const;
 export type Mood = (typeof MOODS)[number];
 export const isMood = (m: string | null | undefined): m is Mood => !!m && (MOODS as readonly string[]).includes(m);
@@ -115,12 +115,14 @@ export interface UserFacts {
   journeyStage: string | null;
   language: string | null;
   suppressed: boolean;
-  /** has any shot ever been logged */
+  /** a meal logged since trial start */
+  foodLogged: boolean;
+  /** a meal logged on trial day 2 (20h+ after the start): the day-1 email's "today" */
+  foodToday: boolean;
+  /** a shot logged 10+ minutes after trial start (onboarding writes one for ~26% of trials around the paywall) */
   shotLogged: boolean;
   /** side effect logged since trial start */
   sideEffectLogged: boolean;
-  /** weight logged since trial start */
-  weightLogged: boolean;
 }
 
 export type Decision =
@@ -130,11 +132,15 @@ export type Decision =
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Skip rules, then the one action to ask for. The asked action is the first
- * one the person has not done yet (shot, then side effect, then weight); once
- * all three are done they are activated and get nothing (Muir's exit rule).
- * Trialists who already turned auto-renew off still get the email, in its
- * status-aware version.
+ * Skip rules, then the one action to ask for (2026-11-13, Dan: "switch to
+ * food", after wiki/app-analytics-breakdown-2026-11). Food first: food
+ * scanning holds the steadiest gap in paid rate at equal active days (barcode
+ * +12, photo +10.5 points) and food + medication together is 66% of payers,
+ * while early shot logging moved nothing in the shot-day natural experiment.
+ * Then medication: the shot (or setting a shot day), then a side effect.
+ * Activated = food and medication both logged (day 1: food logged today), so
+ * nothing is sent (Muir's exit rule). Trialists who already turned auto-renew
+ * off still get the email, in its status-aware version.
  */
 export function decide(kind: EmailKind, status: TrialStatus, u: UserFacts): Decision {
   if (status === "converted") return { send: false, reason: "converted" };
@@ -145,22 +151,12 @@ export function decide(kind: EmailKind, status: TrialStatus, u: UserFacts): Deci
   if (u.language && !/^en\b/i.test(u.language)) return { send: false, reason: "not_english" };
 
   const aboutToStart = u.journeyStage === "about_to_start";
-  const shotCta: Cta = aboutToStart ? "shot_day" : "shot";
-  const order: { cta: Cta; done: boolean }[] =
-    kind === "day0"
-      ? [
-          { cta: shotCta, done: u.shotLogged },
-          { cta: "side_effect", done: u.sideEffectLogged },
-          { cta: "weight", done: u.weightLogged },
-        ]
-      : [
-          { cta: "side_effect", done: u.sideEffectLogged },
-          { cta: shotCta, done: u.shotLogged },
-          { cta: "weight", done: u.weightLogged },
-        ];
-  const next = order.find((o) => !o.done);
-  if (!next) return { send: false, reason: "activated" };
-  return { send: true, cta: next.cta, cancelled: status === "auto_renew_off", aboutToStart };
+  const medLogged = u.shotLogged || u.sideEffectLogged;
+  const medCta: Cta = !u.shotLogged ? (aboutToStart ? "shot_day" : "shot") : "side_effect";
+  const food = kind === "day0" ? u.foodLogged : u.foodToday;
+  if (food && medLogged) return { send: false, reason: "activated" };
+  const cta: Cta = food ? medCta : "food";
+  return { send: true, cta, cancelled: status === "auto_renew_off", aboutToStart };
 }
 
 /** Short label stored on the row, e.g. "day0:shot_day:active". */

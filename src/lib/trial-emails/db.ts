@@ -109,15 +109,36 @@ export async function consumerUsers(ids: string[]): Promise<Map<string, Consumer
 }
 
 /** Has the user done each activation action (shot ever; side effect and weight since `since`)? */
-export async function activity(userId: string, since: string) {
+export const NO_ACTIVITY = { foodLogged: false, foodToday: false, shotLogged: false, sideEffectLogged: false };
+
+/**
+ * What the trialist has done since the trial started. Meals count when a row
+ * was created or a saved meal re-logged (last_logged) in the window; saved
+ * templates don't count. Shots count only 10+ minutes after the start, since
+ * onboarding writes a shot row around the paywall for about a quarter of trials.
+ */
+export async function activity(userId: string, trialStartIso: string) {
   const id = encodeURIComponent(userId);
-  const s = encodeURIComponent(since);
-  const [shots, fx, weights] = await Promise.all([
-    cGet<unknown[]>(`injection_logs?select=id&user_id=eq.${id}&limit=1`),
-    cGet<unknown[]>(`side_effects_log?select=id&user_id=eq.${id}&created_at=gte.${s}&limit=1`),
-    cGet<unknown[]>(`body_log?select=id&user_id=eq.${id}&weight=not.is.null&created_at=gte.${s}&limit=1`),
+  const t0 = new Date(trialStartIso).getTime();
+  const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
+  const start = iso(t0);
+  const day2 = iso(t0 + 20 * 3_600_000);
+  const meals = (from: string) =>
+    cGet<unknown[]>(
+      `meals?select=id&user_id=eq.${id}&is_template=not.is.true&or=(created_at.gte.${from},last_logged.gte.${from})&limit=1`,
+    );
+  const [food, foodToday, shots, fx] = await Promise.all([
+    meals(start),
+    meals(day2),
+    cGet<unknown[]>(`injection_logs?select=id&user_id=eq.${id}&created_at=gte.${iso(t0 + 10 * 60_000)}&limit=1`),
+    cGet<unknown[]>(`side_effects_log?select=id&user_id=eq.${id}&created_at=gte.${start}&limit=1`),
   ]);
-  return { shotLogged: shots.length > 0, sideEffectLogged: fx.length > 0, weightLogged: weights.length > 0 };
+  return {
+    foodLogged: food.length > 0,
+    foodToday: foodToday.length > 0,
+    shotLogged: shots.length > 0,
+    sideEffectLogged: fx.length > 0,
+  };
 }
 
 export async function isSuppressed(email: string): Promise<boolean> {

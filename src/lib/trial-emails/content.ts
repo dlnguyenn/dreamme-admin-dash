@@ -19,7 +19,10 @@
  * origin/main 00eea3b: the "+" button (FloatingActionButton) opens the action
  * menu with "Log a Shot", "Log Side Effect" and "Log Weight"; the home screen
  * shows a "Set up your shot schedule" card with a "Set schedule" button
- * (ShotDayCard) until a schedule exists.
+ * (ShotDayCard) until a schedule exists. "Scan Food" (same menu, FOOD panel,
+ * opens ScanFoodOverlay with food / label / barcode tabs) checked on 31e5255.
+ *
+ * 2026-11-13: food first (Dan: "switch to food"), see decide() in core.ts.
  */
 import { MOODS, type Cta, type EmailKind, type Mood, type Platform } from "./core";
 
@@ -65,6 +68,7 @@ type Para = Run[];
 const STORE: Record<Platform, string> = { ios: "Apple", android: "Google Play" };
 
 const BUTTON: Record<Cta, string> = {
+  food: "Scan my next meal",
   shot: "Log my shot",
   shot_day: "Set my shot day",
   side_effect: "Log how I feel",
@@ -72,6 +76,7 @@ const BUTTON: Record<Cta, string> = {
 };
 
 const TODAY: Record<Cta, string> = {
+  food: "snap a photo of a meal",
   shot: "log your most recent shot",
   shot_day: "set your shot day",
   side_effect: `a quick "how I feel" check-in`,
@@ -81,6 +86,8 @@ const TODAY: Record<Cta, string> = {
 /** The in-app steps, shown as a numbered list. */
 function steps(cta: Cta): string[] {
   switch (cta) {
+    case "food":
+      return ["Open DreamMe", "Tap the + button", "Tap Scan Food and point your camera at your plate (or a barcode)"];
     case "shot":
       return ["Open DreamMe", "Tap the + button", "Tap Log a Shot"];
     case "shot_day":
@@ -93,6 +100,7 @@ function steps(cta: Cta): string[] {
 }
 
 const STEPS_LEAD: Record<Cta, string> = {
+  food: "It takes about 20 seconds:",
   shot: "It takes about 30 seconds:",
   shot_day: "It takes about 30 seconds:",
   side_effect: "It takes about 20 seconds:",
@@ -102,6 +110,16 @@ const STEPS_LEAD: Record<Cta, string> = {
 /** The ask: the bold action and why it matters (the how is in the steps). */
 function ask(cta: Cta, fish: string, kind: EmailKind): { action: string; why: string } {
   switch (cta) {
+    case "food":
+      return kind === "day1"
+        ? {
+            action: "log what you eat today.",
+            why: " Snap a photo or scan a barcode and watch your protein add up through the day. Most people who stick with DreamMe log their food and their shots, side by side.",
+          }
+        : {
+            action: "snap a photo of your next meal.",
+            why: ` ${fish} works out the protein for you, and protein is the easiest thing to miss when your appetite drops.`,
+          };
     case "shot":
       return {
         action: "log your most recent shot.",
@@ -132,11 +150,14 @@ function ask(cta: Cta, fish: string, kind: EmailKind): { action: string; why: st
 
 /** Short acknowledgement when the usual first ask is already done. */
 function doneNote(kind: EmailKind, cta: Cta): string | null {
-  if (kind === "day0" && cta === "side_effect") return "I see you've already logged your shot, nice work!";
-  if (kind === "day0" && cta === "weight") return "I see you've already logged your shot and how you feel, nice work!";
-  if (kind === "day1" && (cta === "shot" || cta === "shot_day")) return "I see you've already logged how you feel, nice work!";
-  if (kind === "day1" && cta === "weight") return "I see you've already logged your shot and how you feel, nice work!";
-  return null;
+  if (cta === "food" || cta === "weight") return null;
+  // A medication ask only follows once food is logged (decide() in core.ts).
+  if (cta === "side_effect") {
+    return kind === "day0"
+      ? "I see you've already logged a meal and your shot, nice work!"
+      : "I see you've already logged food today and your shot, nice work!";
+  }
+  return kind === "day0" ? "I see you've already logged a meal, nice work!" : "I see you've already logged food today, nice work!";
 }
 
 function subjectFor(i: EmailInput): { subject: string; preview: string } {
@@ -149,11 +170,11 @@ function subjectFor(i: EmailInput): { subject: string; preview: string } {
   }
   if (i.kind === "day0") {
     return {
-      subject: `Your first step with ${i.fish} (30 seconds!)`,
+      subject: `Your first step with ${i.fish} (${STEPS_LEAD[i.cta].match(/\d+/)?.[0] ?? "30"} seconds!)`,
       preview: "One quick thing to do today, plus the exact date your free trial ends.",
     };
   }
-  if (i.cta === "side_effect") {
+  if (i.cta === "side_effect" || i.cta === "food") {
     return {
       subject: named ? `How are you feeling today, ${i.firstName}?` : "How are you feeling today?",
       preview: "A quick check-in today helps the rest of your week make sense.",
@@ -171,7 +192,7 @@ function heroFor(i: EmailInput): { title: string; sub: string } {
   // banner names the thing instead of greeting (the letter already says Hi).
   if (i.cancelled) return { title: "Your free week is still on!", sub: `All yours until ${i.trialEnd}` };
   if (i.kind === "day0") return { title: "Your free week starts now", sub: `Free until ${i.trialEnd}` };
-  if (i.cta === "side_effect") return { title: "How are you feeling today?", sub: "Day 2 of your 7-day free trial" };
+  if (i.cta === "side_effect" || i.cta === "food") return { title: "How are you feeling today?", sub: "Day 2 of your 7-day free trial" };
   return { title: `Day 2 with ${i.fish}`, sub: "Day 2 of your 7-day free trial" };
 }
 
@@ -219,9 +240,11 @@ function bodyFor(i: EmailInput): Body {
   // day 1
   const intro: Para[] = [["Quick one from me today!"]];
   const askPara: Para =
-    i.cta === "side_effect"
-      ? ["Nausea, low appetite, tired, or nothing at all, ", { b: a.action }, a.why]
-      : [`${done ?? ""} The one thing left is to `.trimStart(), { b: a.action }, a.why];
+    i.cta === "food"
+      ? ["The one thing to do today is ", { b: a.action }, a.why]
+      : i.cta === "side_effect"
+        ? [`${done ?? ""} Nausea, low appetite, tired, or nothing at all, `.trimStart(), { b: a.action }, a.why]
+        : [`${done ?? ""} The one thing left is to `.trimStart(), { b: a.action }, a.why];
   const after: Para[] = [];
   if (i.aboutToStart && i.cta === "side_effect") {
     after.push([`Haven't had your first shot yet? Log how you feel today anyway. It gives you a "before" to compare against.`]);
@@ -229,7 +252,9 @@ function bodyFor(i: EmailInput): Body {
   const week = [
     { when: "Today", what: TODAY[i.cta] },
     { when: "Shot day", what: `log your shot and ${i.fish} keeps your schedule` },
-    { when: "Any day", what: "snap a photo of a meal to see your protein" },
+    i.cta === "food"
+      ? { when: "Any day", what: `log how you feel, so ${i.fish} can spot your pattern` }
+      : { when: "Any day", what: "snap a photo of a meal to see your protein" },
     { when: i.trialEnd, what: i.cancelled ? "your free week ends (no charge)" : "your free trial ends" },
   ];
   const closing: Para[] = [
@@ -391,7 +416,7 @@ export function renderEmail(i: EmailInput): RenderedEmail {
   const button = BUTTON[i.cta];
   const greeting = `Hi ${i.firstName}!`;
   const a = i.assets;
-  const moodRow = i.kind === "day1" && i.cta === "side_effect";
+  const moodRow = i.kind === "day1" && (i.cta === "side_effect" || i.cta === "food");
 
   const html = `<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8">
@@ -476,13 +501,14 @@ ${b.signoff ? paraHtml(C, [b.signoff]) : ""}
 /** Every combination, for previews and the all-variants test send. */
 export function allVariants(): { kind: EmailKind; cta: Cta; cancelled: boolean; aboutToStart: boolean; label: string }[] {
   const out: { kind: EmailKind; cta: Cta; cancelled: boolean; aboutToStart: boolean; label: string }[] = [];
+  // Index 0 and 6 are the two most common sends (day 0 and day 1, food ask).
   const combos: [EmailKind, Cta, boolean][] = [
+    ["day0", "food", false],
     ["day0", "shot", false],
     ["day0", "shot_day", true],
-    ["day0", "side_effect", false],
-    ["day1", "side_effect", false],
-    ["day1", "side_effect", true],
+    ["day1", "food", false],
     ["day1", "shot", false],
+    ["day1", "side_effect", false],
   ];
   for (const [kind, cta, aboutToStart] of combos) {
     for (const cancelled of [false, true]) {
