@@ -15,6 +15,7 @@ import {
   expectedForDate,
   isDueOn,
   missingMeta,
+  platformsFor,
   tileAction,
   toMorningState,
   worstState,
@@ -49,10 +50,12 @@ function row(over: Partial<MorningPostRow>): MorningPostRow {
  *  on someone else's day is not part of that morning's obligation. */
 const DUE = expectedForDate(DATE);
 
-function fullDay(): MorningPostRow[] {
-  return DUE.flatMap((e) =>
-    (["facebook", "instagram"] as const).map((platform) =>
-      row({ set_key: e.setKey, routine: e.routine, platform }),
+/** Every surface each due set is held to: FB+IG by default, TikTok alone for
+ *  the TikTok-only lanes (bluebro since 2026-08-28, clipper decks from 08-29). */
+function fullDay(date = DATE, sets = expectedForDate(date)): MorningPostRow[] {
+  return sets.flatMap((e) =>
+    platformsFor(e).map((platform) =>
+      row({ batch_date: date, set_key: e.setKey, routine: e.routine, platform }),
     ),
   );
 }
@@ -91,7 +94,7 @@ describe("account roster", () => {
     },
   );
 
-  it("gives every set exactly one Facebook and one Instagram account", () => {
+  it("gives every set exactly one account on each platform it is held to", () => {
     const seen = new Map<string, Set<string>>();
     for (const a of MORNING_ACCOUNTS) {
       const platforms = seen.get(a.setKey) ?? new Set();
@@ -100,9 +103,9 @@ describe("account roster", () => {
       seen.set(a.setKey, platforms);
     }
     for (const [setKey, platforms] of seen) {
-      expect(
-        { setKey, platforms: [...platforms].sort() },
-      ).toEqual({ setKey, platforms: ["facebook", "instagram"] });
+      const set = EXPECTED_MORNING.find((e) => e.setKey === setKey);
+      const owed = set ? [...platformsFor(set)].sort() : ["facebook", "instagram"];
+      expect({ setKey, platforms: [...platforms].sort() }).toEqual({ setKey, platforms: owed });
     }
   });
 
@@ -118,12 +121,12 @@ describe("account roster", () => {
     expect(ig?.username).toBe("brittanyglp1_");
   });
 
-  it("gives every expected set a pair of accounts", () => {
+  it("gives every expected set one account per platform it is held to", () => {
     for (const set of EXPECTED_MORNING) {
       const mine = MORNING_ACCOUNTS.filter((a) => a.setKey === set.setKey);
       expect({ set: set.setKey, n: mine.length }).toEqual({
         set: set.setKey,
-        n: 2,
+        n: platformsFor(set).length,
       });
     }
   });
@@ -172,7 +175,7 @@ describe("two-beat lane", () => {
 
   it("counts all three toward the morning once live", () => {
     const s = buildMorningSection([], EXPECTED_MORNING, "2026-08-14");
-    expect(s.expected).toBe(EXPECTED_MORNING.length);
+    expect(s.expected).toBe(expectedForDate("2026-08-14").length);
     expect(s.tiles.filter((t) => t.routine === "two-beat" && t.due)).toHaveLength(3);
   });
 
@@ -192,7 +195,7 @@ describe("two-beat lane", () => {
       expect(t.action).toBeNull();
       expect(t.statusLabel).toBe("NOT TODAY");
     }
-    expect(s.expected).toBe(EXPECTED_MORNING.length - 3);
+    expect(s.expected).toBe(expectedForDate("2026-08-14").length - 3);
   });
 
   it("shows a real state when a pre-live set IS drafted", () => {
@@ -367,8 +370,9 @@ describe("buildMorningSection — one tile per set", () => {
     expect(s.missing).toBe(0);
     expect(s.partial).toBe(0);
     for (const t of s.tiles.filter((x) => x.due)) {
+      const set = EXPECTED_MORNING.find((e) => e.setKey === t.setKey)!;
       expect(t.coverage).toBe("both");
-      expect(t.platforms.map((p) => p.platform)).toEqual(["facebook", "instagram"]);
+      expect(t.platforms.map((p) => p.platform).sort()).toEqual([...platformsFor(set)].sort());
     }
   });
 
@@ -477,13 +481,17 @@ describe("buildMorningSection — one tile per set", () => {
  */
 describe("paused platforms", () => {
   const igOnlyDay = (post_status = "scheduled") =>
-    DUE.map((e) =>
-      row({
-        set_key: e.setKey,
-        routine: e.routine,
-        platform: "instagram",
-        post_status,
-      }),
+    DUE.flatMap((e) =>
+      platformsFor(e)
+        .filter((platform) => !PAUSED_PLATFORMS.includes(platform))
+        .map((platform) =>
+          row({
+            set_key: e.setKey,
+            routine: e.routine,
+            platform,
+            post_status,
+          }),
+        ),
     );
 
   it("facebook is the currently paused platform", () => {
@@ -547,8 +555,10 @@ describe("paused platforms", () => {
 
   it("unpausing is just editing the const — paused=[] restores the old contract", () => {
     const s = buildMorningSection(igOnlyDay(), EXPECTED_MORNING, DATE, []);
-    expect(s.partial).toBe(DUE.length);
-    expect(s.actionNeeded).toBe(DUE.length);
+    // Only the sets that owe Facebook go partial; a TikTok-only set is untouched.
+    const owesFacebook = DUE.filter((e) => platformsFor(e).includes("facebook")).length;
+    expect(s.partial).toBe(owesFacebook);
+    expect(s.actionNeeded).toBe(owesFacebook);
     const t = tileFor(s, "hannah");
     expect(t.coverage).toBe("instagram");
     expect(t.action).toMatch(/Facebook/i);
@@ -612,7 +622,9 @@ describe("pills agree with tiles", () => {
     expect(s.queued).toBe(queued.length);
     expect(s.pending).toBe(manual.length);
     expect(s.actionNeeded).toBe(0); // nothing is BROKEN
-    for (const t of s.tiles.filter(isManual)) {
+    // Due tiles only: a lane that starts later (clipper decks, 2026-08-29)
+    // reads "none" on an earlier day, which is right.
+    for (const t of s.tiles.filter((x) => x.due && isManual(x))) {
       expect(t.severity).toBe("pending");
     }
   });
@@ -622,18 +634,10 @@ describe("pills agree with tiles", () => {
     // two-beat absent is a broken cron, not a chore Dan hasn't done yet.
     // Dated once the lane is live, so all three personas are owed.
     const LIVE_DAY = "2026-08-14";
-    const rows = expectedForDate(LIVE_DAY)
-      .filter((e) => e.routine !== "two-beat")
-      .flatMap((e) =>
-        (["facebook", "instagram"] as const).map((platform) =>
-          row({
-            set_key: e.setKey,
-            routine: e.routine,
-            platform,
-            post_status: "scheduled",
-          }),
-        ),
-      );
+    const rows = fullDay(
+      LIVE_DAY,
+      expectedForDate(LIVE_DAY).filter((e) => e.routine !== "two-beat"),
+    ).map((r) => ({ ...r, post_status: "scheduled" }));
     const s = buildMorningSection(rows, EXPECTED_MORNING, LIVE_DAY);
     const owed = s.tiles.filter((t) => t.routine === "two-beat" && t.due);
     expect(owed.map((t) => t.setKey).sort()).toEqual([
