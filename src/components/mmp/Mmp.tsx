@@ -142,6 +142,9 @@ export function Mmp() {
         asc: json.asc ?? [],
         meta: json.meta ?? null,
         metaError: json.metaError ?? null,
+        // Absent on payloads cached before 0116; MoneyTable says so.
+        money: json.money,
+        moneyError: json.moneyError,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
