@@ -650,7 +650,18 @@ export interface SingularAdRow {
   trial_starts: number;
   subscribes: number;
   paid_conversions: number;
+  /**
+   * Gross revenue Singular tied to these installs (RevenueCat's purchase,
+   * trial-converted and renewal events, sent with revenue since 2026-11-05),
+   * over the conversion period, the same window as paid_conversions.
+   */
+  revenue: number;
+  /** The same over 30 days after install; 0 when the account has no 30d period. */
+  revenue_30d: number;
 }
+
+/** Cohort period for the longer revenue read. */
+export const REVENUE_LONG_PERIOD = "30d";
 
 /** Singular's dimension for Meta's ad set is `adn_sub_campaign_*`, for the ad `adn_creative_*`. */
 export const SINGULAR_AD_DIMENSIONS =
@@ -702,6 +713,9 @@ export function mapSingularAdRows(
       paid_conversions: conversionEventId
         ? cohortNum(pick(r, [`${conversionEventId}_${conversionPeriod}`, conversionEventId]), conversionPeriod)
         : 0,
+      // Revenue is one cohort value keyed by period, like the events above.
+      revenue: cohortNum(pick(r, [`revenue_${conversionPeriod}`, "revenue", "cohort_revenue"]), conversionPeriod),
+      revenue_30d: cohortNum(pick(r, [`revenue_${REVENUE_LONG_PERIOD}`, "revenue", "cohort_revenue"]), REVENUE_LONG_PERIOD),
     };
     if (!row.campaign_id || !row.date) continue;
     const key = [row.source, row.campaign_id, row.adset_id, row.ad_id, row.date].join("\u0001");
@@ -718,6 +732,13 @@ export function mapSingularAdRows(
     prev.trial_starts += row.trial_starts;
     prev.subscribes += row.subscribes;
     prev.paid_conversions += row.paid_conversions;
+    prev.revenue += row.revenue;
+    prev.revenue_30d += row.revenue_30d;
+  }
+  // Cents, so float sums don't store 329.90000000000003.
+  for (const r of merged.values()) {
+    r.revenue = Math.round(r.revenue * 100) / 100;
+    r.revenue_30d = Math.round(r.revenue_30d * 100) / 100;
   }
   return [...merged.values()];
 }
@@ -739,8 +760,12 @@ export async function fetchSingularAdReport(opts: {
   const subscribeEventId = resolveEventId(catalog, ["sng_subscribe", "subscribe"]);
   const conversionEventId = resolveEventId(catalog, CONVERSION_EVENT_NAMES);
   const conversionPeriod = conversionEventId ? pickConversionPeriod(catalog.periods, cohortPeriod) : cohortPeriod;
-  const periods = [...new Set([cohortPeriod, conversionPeriod])].join(",");
-  const cohortMetrics = [trialEventId, subscribeEventId, conversionEventId].filter(Boolean).join(",");
+  // Revenue rides along on the conversion period and, when the account has
+  // it, 30 days (monthly payers' first renewal lands around day 37, so 30d is
+  // still first payments; yearly payers pay the year at conversion).
+  const revenuePeriods = catalog.periods.includes(REVENUE_LONG_PERIOD) ? [REVENUE_LONG_PERIOD] : [];
+  const periods = [...new Set([cohortPeriod, conversionPeriod, ...revenuePeriods])].join(",");
+  const cohortMetrics = [trialEventId, subscribeEventId, conversionEventId, "revenue"].filter(Boolean).join(",");
 
   const results = await Promise.all(
     chunkDateRange(startDate, endDate).map(async (c) => {
@@ -751,7 +776,8 @@ export async function fetchSingularAdReport(opts: {
         format: "json",
         dimensions: SINGULAR_AD_DIMENSIONS,
         metrics: "tracker_installs",
-        ...(cohortMetrics ? { cohort_metrics: cohortMetrics, cohort_periods: periods } : {}),
+        cohort_metrics: cohortMetrics,
+        cohort_periods: periods,
         source,
       });
       const downloadUrl = await awaitReport(reportId);

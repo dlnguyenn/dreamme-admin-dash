@@ -351,6 +351,30 @@ describe("singular vendor client", () => {
       expect(r.paid_conversions).toBe(0);
     });
 
+    it("reads revenue per ad on the conversion period and on 30 days, summed across fanned rows, in cents", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const out = mapSingularAdRows(
+        [
+          row({ app: "DreamMe", revenue: { "7d": 10, "14d": 69.99, "30d": 84.98 } }),
+          row({ app: "DreamMe iOS", revenue: { "7d": 0, "14d": 14.99, "30d": 14.99 } }),
+        ],
+        { trialEventId: TRIAL_ID, conversionEventId: "c0ffee", cohortPeriod: "7d", conversionPeriod: "14d" },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0].revenue).toBe(84.98);
+      expect(out[0].revenue_30d).toBe(99.97);
+    });
+
+    it("gives 0 revenue when Singular sends none, and 0 for 30d when that period wasn't asked for", async () => {
+      const { mapSingularAdRows } = await import("@/lib/vendors/singular");
+      const [none] = mapSingularAdRows([row()], { trialEventId: TRIAL_ID });
+      expect(none.revenue).toBe(0);
+      expect(none.revenue_30d).toBe(0);
+      const [no30] = mapSingularAdRows([row({ revenue: { "7d": 5, "14d": 39.99 } })], { trialEventId: TRIAL_ID, conversionPeriod: "14d" });
+      expect(no30.revenue).toBe(39.99);
+      expect(no30.revenue_30d).toBe(0);
+    });
+
     it("reads paid conversions on their own cohort period, and trials on theirs", async () => {
       // With two periods requested, each cohort value carries both keys.
       const { mapSingularAdRows } = await import("@/lib/vendors/singular");

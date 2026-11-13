@@ -225,8 +225,8 @@ async function syncAds(
   result: { rows: SingularAdRow[]; conversionPeriod: string } | Error,
   syncedAt: string,
   cohortPeriod: string,
-): Promise<{ ok: boolean; upserted: number; ads: number; trial_starts: number; paid_conversions: number; error?: string }> {
-  if (result instanceof Error) return { ok: false, upserted: 0, ads: 0, trial_starts: 0, paid_conversions: 0, error: result.message };
+): Promise<{ ok: boolean; upserted: number; ads: number; trial_starts: number; paid_conversions: number; revenue: number; error?: string }> {
+  if (result instanceof Error) return { ok: false, upserted: 0, ads: 0, trial_starts: 0, paid_conversions: 0, revenue: 0, error: result.message };
   const rows = result.rows.map((r) => ({
     ...r,
     cohort_period: cohortPeriod,
@@ -238,6 +238,7 @@ async function syncAds(
     ads: new Set(rows.filter((r) => r.ad_id).map((r) => r.ad_id)).size,
     trial_starts: rows.reduce((a, r) => a + r.trial_starts, 0),
     paid_conversions: rows.reduce((a, r) => a + r.paid_conversions, 0),
+    revenue: Math.round(rows.reduce((a, r) => a + r.revenue, 0) * 100) / 100,
   };
   if (!rows.length) return { ok: true, ...summary };
   const res = await fetch(

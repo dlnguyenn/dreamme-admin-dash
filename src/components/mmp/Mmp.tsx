@@ -54,6 +54,7 @@ import {
   type Verdict,
 } from "@/lib/mmp/payers";
 import type { MetaLive } from "@/lib/mmp/meta-live";
+import { MIN_TRIALS_FOR_MONEY, moneyLine, summarizeMoney, type MmpAdMoneyRow } from "@/lib/mmp/money";
 
 type View = "summary" | "checks" | "parity" | "how" | "aga" | "plan";
 const VIEWS: { value: View; label: string }[] = [
@@ -101,6 +102,9 @@ interface Payload {
   asc: AscSourceRow[];
   meta: MetaLive | null;
   metaError: string | null;
+  /** Absent on payloads cached before migration 0116. */
+  money?: MmpAdMoneyRow[];
+  moneyError?: string;
 }
 
 export function Mmp() {
@@ -281,6 +285,9 @@ function Summary({ data, rows }: { data: Payload; rows: ParityRow[] }) {
       <SectionHeader family="neutral" icon="Image" title="By ad set and ad: Meta against Singular" meta="35 days" />
       <AdTable rows={data.ads} paidFlowing={data.snapshot.sng_paid_35d > 0} />
 
+      <SectionHeader family="accent" icon="Dollar" title="Money by ad: real payers and revenue" meta="Singular · installs since Oct 30" />
+      <MoneyTable rows={data.money} error={data.moneyError} />
+
       <SectionHeader family="accent" icon="Dollar" title="Estimated cost per payer, by ad" meta="35 days · $100+ spend" />
       <PayerTable data={data} />
 
@@ -421,6 +428,109 @@ function AdTable({ rows, paidFlowing }: { rows: MmpAdRow[]; paidFlowing: boolean
         Cost per Singular trial is an upper bound, since Singular only counts users it can attribute.
         {hiddenAds > 0 && ` ${hiddenAds} ads under $25 with no Singular trials are counted in their ad set but not listed.`}
         {hiddenSets > 0 && ` ${hiddenSets} smaller ad sets with no Singular data (${usd(hiddenSpend, 0)} in all, mostly website-campaign tests) are left out.`}
+      </p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Money per ad (Singular revenue, migration 0116)
+// ---------------------------------------------------------------------------
+
+const shortDate = (iso: string | null) =>
+  iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "—";
+
+/**
+ * Payers and gross revenue per ad from RevenueCat's events in Singular, on
+ * installs old enough that the numbers are final. Counts always show; cost per
+ * payer and return only from MIN_TRIALS_FOR_MONEY mature trials up.
+ */
+function MoneyTable({ rows, error }: { rows?: MmpAdMoneyRow[]; error?: string }) {
+  if (error) return <InfoWell>Money by ad didn&rsquo;t load ({error}).</InfoWell>;
+  if (!rows) return <InfoWell>Money by ad appears after the next refresh of this tab.</InfoWell>;
+  const s = summarizeMoney(rows);
+  const dash = <span style={{ color: "var(--ink-4)" }}>—</span>;
+  const so = s.sinceTotals;
+  const soFar = (
+    <p style={{ ...muted, marginBottom: 12 }}>
+      <strong style={{ color: "var(--ink-2)", fontWeight: 650 }}>So far, still filling in:</strong> installs since {shortDate(s.floorDate)} cost{" "}
+      {usd(so.spend, 0)} and brought {int(so.trials)} Singular trials, {int(so.payers)} payers and {usd(so.revenue, 0)} in gross revenue. Recent
+      installs haven&rsquo;t had time to pay yet, so these grow for another {s.convDays} days.
+    </p>
+  );
+  if (!s.groups.length) {
+    return (
+      <>
+        {soFar}
+        <InfoWell>
+          The first final numbers land on {shortDate(s.firstMatureDay)}: an install needs {s.convDays} days for its trial to convert and its first payment
+          to reach Singular. Until then nothing below would hold still.
+        </InfoWell>
+      </>
+    );
+  }
+  const cells = (l: ReturnType<typeof moneyLine>) => (
+    <>
+      <td style={tdStyle()}>{l.spend > 0 ? usd(l.spend, 0) : dash}</td>
+      <td style={tdStyle()}>{l.trials ? int(l.trials) : dash}</td>
+      <td style={tdStyle()}>{l.payers ? int(l.payers) : dash}</td>
+      <td style={tdStyle()}>{l.thin || !l.trials ? dash : pct(l.payers / l.trials, 0)}</td>
+      <td style={{ ...tdStyle(), fontWeight: 650 }}>{l.costPerPayer == null ? dash : usd(l.costPerPayer, 0)}</td>
+      <td style={tdStyle()}>{l.revenue > 0 ? usd(l.revenue, 0) : dash}</td>
+      <td style={{ ...tdStyle(), fontWeight: 650 }}>{l.returnOnSpend == null ? dash : pct(l.returnOnSpend, 0)}</td>
+      <td style={tdStyle()}>{l.returnOnSpend30d == null ? dash : pct(l.returnOnSpend30d, 0)}</td>
+    </>
+  );
+  const total = moneyLine(s.matureTotals);
+  return (
+    <>
+      {soFar}
+      <Card pad={0} style={tableCard}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["Ad set / ad", "Spend", "Trials", "Payers", "Trial-to-paid", "Cost per payer", `Revenue (${s.convDays}d)`, `Return (${s.convDays}d)`, "Return (30d)"].map(
+                (h, i) => (
+                  <th key={h} style={thStyle(i === 0 ? "left" : "right")}>
+                    {h}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {s.groups.map((g) => (
+              <React.Fragment key={`${g.campaign_name}${g.adset_id}`}>
+                <tr style={{ background: "var(--surface-2)" }}>
+                  <td style={{ ...tdStyle("left"), fontWeight: 650 }}>
+                    {g.adset_name ?? g.adset_id ?? "Unknown ad set"}
+                    <span style={{ fontWeight: 400, color: "var(--ink-3)" }}> · {g.campaign_name}</span>
+                  </td>
+                  {cells(moneyLine(g))}
+                </tr>
+                {g.ads.map((a) => (
+                  <tr key={`${g.adset_id}${a.ad_id ?? "na"}`}>
+                    <td style={{ ...tdStyle("left"), paddingLeft: 32, color: a.ad_id ? "var(--ink)" : "var(--ink-3)" }}>
+                      {a.ad_id ? a.ad_name ?? a.ad_id : "Ad not named by Singular"}
+                    </td>
+                    {cells(moneyLine(a))}
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+            <tr>
+              <td style={{ ...tdStyle("left"), fontWeight: 650 }}>All Meta ads</td>
+              {cells(total)}
+            </tr>
+          </tbody>
+        </table>
+      </Card>
+      <p style={{ ...muted, marginTop: 10 }}>
+        Only installs at least {s.convDays} days old ({s.convDays === 14 ? "two weeks" : `${s.convDays} days`}), so these numbers are final; spend is
+        Meta&rsquo;s for the same install days. Revenue is gross, before Apple&rsquo;s and Google&rsquo;s 15%. Return = revenue / spend: 100% means the
+        ad&rsquo;s installs have paid back what it cost in that window. Yearly payers pay the whole year at conversion; monthly payers have paid one
+        month. Cost per payer and return are hidden below {MIN_TRIALS_FOR_MONEY} trials. Singular counts only installs it can tie to an ad, so costs
+        here are an upper bound.
       </p>
     </>
   );

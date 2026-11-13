@@ -23,6 +23,7 @@ import {
   type AgeRateRow,
   type AscSourceRow,
 } from "./payers";
+import { toAdMoneyRow, type MmpAdMoneyRow } from "./money";
 
 export interface MmpData {
   snapshot: MmpSnapshot;
@@ -31,6 +32,9 @@ export interface MmpData {
   ageRates: AgeRateRow[];
   adsetWeek: AdSetWeek[];
   asc: AscSourceRow[];
+  /** Money per ad (0116). Empty, with the reason, if the view can't be read. */
+  money: MmpAdMoneyRow[];
+  moneyError?: string;
 }
 
 export async function fetchMmp(): Promise<MmpData> {
@@ -43,6 +47,14 @@ export async function fetchMmp(): Promise<MmpData> {
     sbGet<Record<string, unknown>[]>("internal", "mmp_adset_week?select=*"),
     sbGet<Record<string, unknown>[]>("internal", "mmp_asc_sources?select=*"),
   ]);
+  // Read on its own so a missing or failing view never blanks the rest of the tab.
+  let money: MmpAdMoneyRow[] = [];
+  let moneyError: string | undefined;
+  try {
+    money = (await sbGet<Record<string, unknown>[]>("internal", "mmp_ad_money?select=*")).map(toAdMoneyRow);
+  } catch (e) {
+    moneyError = (e as Error).message;
+  }
   if (!snap.length) throw new Error("mmp_snapshot returned no row");
   return {
     snapshot: toSnapshot({ ...snap[0], ...(paid[0] ?? {}) }),
@@ -51,5 +63,7 @@ export async function fetchMmp(): Promise<MmpData> {
     ageRates: ages.map(toAgeRateRow),
     adsetWeek: weeks.map(toAdSetWeek),
     asc: asc.map(toAscSourceRow),
+    money,
+    ...(moneyError ? { moneyError } : {}),
   };
 }

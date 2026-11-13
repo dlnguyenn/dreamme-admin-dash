@@ -224,7 +224,7 @@ const DATE_KEYS = new Set<keyof MmpSnapshot>([
   "alerts_last_date",
 ]);
 
-const toNum = (v: unknown): number => {
+export const toNum = (v: unknown): number => {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
 };
