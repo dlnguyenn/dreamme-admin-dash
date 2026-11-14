@@ -9,7 +9,7 @@ import type { Charge } from "./value-per-trial";
 import { fetchCharges, fetchTrialStarts } from "./value-per-trial-data";
 
 /** Event types that carry subscriber attributes after the trial starts. */
-const ARM_EVENT_TYPES = "INITIAL_PURCHASE,RENEWAL,CANCELLATION,EXPIRATION,PRODUCT_CHANGE,BILLING_ISSUE,UNCANCELLATION";
+export const ARM_EVENT_TYPES = "INITIAL_PURCHASE,RENEWAL,CANCELLATION,EXPIRATION,PRODUCT_CHANGE,BILLING_ISSUE,UNCANCELLATION";
 
 export async function fetchRefunds(sinceIso: string): Promise<Charge[]> {
   const rows = await sbAll<{ app_user_id: string | null; original_transaction_id: string | null; event_at: string; price_usd: string | number | null }>(

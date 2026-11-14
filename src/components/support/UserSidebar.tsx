@@ -32,6 +32,7 @@ import {
   type StripeSuggestion,
 } from "./api";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { PaywallXChip } from "../experiments/PaywallXChip";
 import {
   APPLE_REFUND_TEMPLATE,
   appleRefundTemplate,
@@ -171,6 +172,8 @@ export function UserSidebar({
                 sandbox only
               </Chip>
             )}
+            {/* Paywall X test arm, when this user was exposed to it. */}
+            <PaywallXChip appUserId={ctx.appUserId ?? thread.resolved_app_user_id} />
             {rcUrl && <RevenueCatLink href={rcUrl} />}
           </div>
         )}
