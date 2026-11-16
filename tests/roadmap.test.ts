@@ -6,6 +6,7 @@ import {
   endPosition,
   isOverdue,
   requestStatusForStage,
+  cardNumber,
   ticketBriefTarget,
   todayIso,
   type RoadmapItem,
@@ -13,6 +14,7 @@ import {
 
 const item = (over: Partial<RoadmapItem>): RoadmapItem => ({
   id: "x",
+  num: 1,
   title: "t",
   notes: "",
   stage: "next",
@@ -146,5 +148,15 @@ describe("ticketBriefTarget", () => {
         host,
       )?.href,
     ).toBe("https://example.com/b");
+  });
+});
+
+describe("cardNumber", () => {
+  it("shows the card's number as #N", () => {
+    expect(cardNumber({ num: 12 })).toBe("#12");
+  });
+  it("is empty when the card has no number yet", () => {
+    expect(cardNumber({ num: 0 })).toBe("");
+    expect(cardNumber({} as { num: number })).toBe("");
   });
 });

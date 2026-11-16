@@ -7,6 +7,7 @@ const ORIGIN = "https://dad.example";
 
 const card = (over: Partial<RoadmapItem> = {}): RoadmapItem => ({
   id: "c1",
+  num: 1,
   title: "Fix the filter",
   notes: "Word list is too strict",
   stage: "now",

@@ -7,6 +7,7 @@ import { HandoffButtons } from "./HandoffButtons";
 import { formatDate } from "@/lib/format";
 import {
   STAGE_LABELS,
+  cardNumber,
   requestStatusForStage,
   ticketBriefTarget,
   type RoadmapItem,
@@ -814,7 +815,7 @@ function RoadmapLink({
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Chip tone={it.stage === "done" ? "success" : "ink"}>{STAGE_LABELS[it.stage]}</Chip>
-        <span style={{ fontSize: 13 }}>{it.title}</span>
+        <span style={{ fontSize: 13 }}>{`${cardNumber(it)} ${it.title}`.trim()}</span>
         <LinkButton href="/?tab=roadmap" newTab={false}>
           Open roadmap
         </LinkButton>

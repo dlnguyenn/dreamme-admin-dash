@@ -52,6 +52,8 @@ export function ownerEdge(owner: string | null): string {
 
 export interface RoadmapItem {
   id: string;
+  /** Card number, shown as #N. Assigned by the database, never reused. */
+  num: number;
   title: string;
   notes: string;
   stage: RoadmapStage;
@@ -67,6 +69,11 @@ export interface RoadmapItem {
   done_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** The card's number as people say it: "#12". Empty while it has none yet. */
+export function cardNumber(item: Pick<RoadmapItem, "num">): string {
+  return Number.isInteger(item.num) && item.num > 0 ? `#${item.num}` : "";
 }
 
 /** Trimmed brief link, or null when empty. */

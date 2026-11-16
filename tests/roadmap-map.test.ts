@@ -13,6 +13,7 @@ import {
 
 const item = (over: Partial<RoadmapItem>): RoadmapItem => ({
   id: Math.random().toString(36).slice(2),
+  num: 1,
   title: "t",
   notes: "",
   stage: "next",

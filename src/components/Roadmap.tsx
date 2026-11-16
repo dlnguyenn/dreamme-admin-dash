@@ -25,6 +25,7 @@ import {
   STAGE_LABELS,
   briefSlugFromUrl,
   briefUrlError,
+  cardNumber,
   columnItems,
   ownerColor,
   ownerEdge,
@@ -504,6 +505,7 @@ function Card({
           color: item.stage === "done" ? "var(--ink-3)" : "var(--ink)",
         }}
       >
+        <span style={{ color: "var(--ink-3)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{cardNumber(item)}</span>{" "}
         {item.title}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
@@ -685,7 +687,7 @@ function RoadmapDrawer({
           }}
         >
           <div className="serif" style={{ fontSize: 20, fontStyle: "italic" }}>
-            {isCreate ? "New roadmap item" : "Roadmap item"}
+            {item ? `Roadmap item ${cardNumber(item)}`.trim() : "New roadmap item"}
           </div>
           <button onClick={onClose} aria-label="Close" style={iconButton}>
             <Icons.Close size={18} />

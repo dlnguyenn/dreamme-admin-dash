@@ -13,6 +13,7 @@ import { StatStrip, Segmented } from "./porcelain";
 import { Chip } from "./ui";
 import {
   STAGE_HINTS,
+  cardNumber,
   isOverdue,
   ownerEdge,
   ownerWash,
@@ -147,7 +148,7 @@ export function RoadmapMap({
                   display: "block",
                 }}
               >
-                {traj.nextUp ? traj.nextUp.title : "Nothing dated"}
+                {traj.nextUp ? `${cardNumber(traj.nextUp)} ${traj.nextUp.title}`.trim() : "Nothing dated"}
               </span>
             ),
             note: traj.nextUp?.target_date
@@ -591,7 +592,7 @@ function Row({
     <div style={{ display: "flex", height: ROW_H, position: "relative" }}>
       <button
         onClick={onOpen}
-        title={item.title}
+        title={`${cardNumber(item)} ${item.title}`.trim()}
         style={{
           ...stickyLabel(labelW),
           minHeight: 0,
@@ -621,6 +622,7 @@ function Row({
             title={item.stage}
           />
         )}
+<span style={{ color: "var(--ink-3)", fontWeight: 600, fontVariantNumeric: "tabular-nums", flex: "none" }}>{cardNumber(item)}</span>
         <span
           style={{
             overflow: "hidden",
@@ -651,7 +653,7 @@ function Row({
           <>
             <div
               onClick={onOpen}
-              title={`${item.title} · added ${dayLabel(span.from)}`}
+              title={`${cardNumber(item)} ${item.title} · added ${dayLabel(span.from)}`}
               style={{
                 position: "absolute",
                 top: mid - 4,
@@ -898,6 +900,7 @@ function Unscheduled({
                 flex: "none",
               }}
             />
+<span style={{ color: "var(--ink-3)", fontWeight: 600, fontVariantNumeric: "tabular-nums", flex: "none" }}>{cardNumber(item)}</span>
             <span
               style={{
                 overflow: "hidden",
