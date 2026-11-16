@@ -27,6 +27,8 @@
     { "path": "/api/cron/sync-store-reviews", "schedule": "30 11 * * *" },
     { "path": "/api/cron/chase-alerts", "schedule": "0 12 * * *" },
     { "path": "/api/cron/sync-mixpanel", "schedule": "20 9 * * *" },
-    { "path": "/api/cron/daily-brief", "schedule": "0 12 * * *" }
+    { "path": "/api/cron/daily-brief", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/attr-match", "schedule": "35 7 * * *" },
+    { "path": "/api/cron/attr-capi", "schedule": "50 7 * * *" }
   ]
 }
