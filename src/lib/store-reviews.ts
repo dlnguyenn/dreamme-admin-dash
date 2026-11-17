@@ -45,7 +45,8 @@ export function appStoreConfigured(): boolean {
   return !!process.env.ASC_KEY_ID && !!process.env.ASC_ISSUER_ID && !!(process.env.ASC_PRIVATE_KEY || process.env.ASC_P8);
 }
 
-function ascToken(): string {
+/** Also used by src/lib/aso/asc-analytics.ts. */
+export function ascToken(): string {
   const key = ascKey();
   if (!key) throw new Error("ASC_PRIVATE_KEY not set");
   const header = b64url(JSON.stringify({ alg: "ES256", kid: process.env.ASC_KEY_ID, typ: "JWT" }));

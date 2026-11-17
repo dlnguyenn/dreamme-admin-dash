@@ -21,6 +21,8 @@ export type DashId =
   | "growth"
   | "marketing"
   | "mmp"
+  | "apple-ads"
+  | "aso"
   | "plan"
   | "stepdown"
   | "trial-emails"
@@ -68,6 +70,9 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "growth", label: "Growth AI", icon: "Spark", status: "live", desc: "Creative analytics + AI marketing brain", adminOnly: true },
   { id: "marketing", label: "Marketing Efficiency", icon: "Trend", status: "live", desc: "Blended CAC / MER · paid vs revenue", adminOnly: true },
   { id: "mmp", label: "MMP", icon: "Link", status: "live", desc: "In-house AppsFlyer: what it does, what we have, what's left", adminOnly: true },
+  // adminOnly: ad spend. Read-only toward Apple Ads.
+  { id: "apple-ads", label: "Apple Ads", icon: "Search", status: "live", desc: "Search ads: spend, trials, keywords, the drug-name test", adminOnly: true },
+  { id: "aso", label: "App Store", icon: "Star", status: "live", desc: "Search downloads and conversion, ranks vs MeAgain and Shotsy, ratings, ASO plan", adminOnly: true },
   { id: "plan", label: "April Plan", icon: "Chart", status: "live", desc: "Scorecard, value per trial, clippers, experiments, P&L", adminOnly: true },
   // id kept as "stepdown" so old ?tab=stepdown links still land here.
   { id: "stepdown", label: "Meta Switchback", icon: "Flask", status: "live", desc: "Meta holdout: spend vs plan, cost per extra trial", adminOnly: true },
