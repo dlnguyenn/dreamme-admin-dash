@@ -12,6 +12,8 @@
  *     newest instance that has it, or totals double;
  *   - Apple keeps only ~35 days of instances, so this table is the history.
  */
+import crypto from "node:crypto";
+import fs from "node:fs";
 import zlib from "node:zlib";
 import { spPost } from "@/lib/support/db";
 import { appStoreConfigured, ascToken } from "@/lib/store-reviews";
@@ -23,11 +25,37 @@ const REQUEST_ID = process.env.ASC_ANALYTICS_REQUEST_ID ?? "1b756963-25f5-4bf8-a
 export const ENGAGEMENT_REPORT = "App Store Discovery and Engagement Standard";
 export const DOWNLOADS_REPORT = "App Downloads Standard";
 
-export const ascAnalyticsConfigured = appStoreConfigured;
+/*
+ * Credentials: the reviews key in Vercel (ASC_KEY_ID...) can't read analytics
+ * (403 FORBIDDEN_ERROR, 2026-11-17), so this pull can use its own key:
+ *   ASC_ANALYTICS_KEY_ID, ASC_ANALYTICS_ISSUER_ID,
+ *   ASC_ANALYTICS_PRIVATE_KEY (the .p8 contents) or ASC_ANALYTICS_P8 (a path, local dev).
+ * Without them it falls back to the ASC_* key.
+ */
+function analyticsKey(): string | null {
+  if (process.env.ASC_ANALYTICS_PRIVATE_KEY) return process.env.ASC_ANALYTICS_PRIVATE_KEY.replace(/\\n/g, "\n");
+  if (process.env.ASC_ANALYTICS_P8) return fs.readFileSync(process.env.ASC_ANALYTICS_P8, "utf8");
+  return null;
+}
+const ownKey = () => !!process.env.ASC_ANALYTICS_KEY_ID && !!process.env.ASC_ANALYTICS_ISSUER_ID && !!analyticsKey();
+
+export function ascAnalyticsConfigured(): boolean {
+  return ownKey() || appStoreConfigured();
+}
+
+function analyticsToken(): string {
+  if (!ownKey()) return ascToken();
+  const b64url = (b: string | Buffer) => Buffer.from(b).toString("base64url");
+  const header = b64url(JSON.stringify({ alg: "ES256", kid: process.env.ASC_ANALYTICS_KEY_ID, typ: "JWT" }));
+  const now = Math.floor(Date.now() / 1000);
+  const payload = b64url(JSON.stringify({ iss: process.env.ASC_ANALYTICS_ISSUER_ID, iat: now, exp: now + 15 * 60, aud: "appstoreconnect-v1" }));
+  const sig = crypto.sign("sha256", Buffer.from(`${header}.${payload}`), { key: analyticsKey()!, dsaEncoding: "ieee-p1363" });
+  return `${header}.${payload}.${b64url(sig)}`;
+}
 
 async function ascGet<T>(pathOrUrl: string): Promise<T> {
   const url = pathOrUrl.startsWith("http") ? pathOrUrl : API + pathOrUrl;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${ascToken()}` }, cache: "no-store" });
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${analyticsToken()}` }, cache: "no-store" });
   const text = await res.text();
   if (!res.ok) throw new Error(`ASC ${res.status} ${pathOrUrl.slice(0, 80)}: ${text.slice(0, 200)}`);
   return JSON.parse(text) as T;
