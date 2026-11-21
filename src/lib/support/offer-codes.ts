@@ -33,6 +33,22 @@ import type { SupportMessageRow, SupportThreadRow, UserContext } from "./types";
 export const YEARLY_SPECIAL = "Yearly Special";
 export const YEARLY_SPECIAL_PRICE = "$39.99";
 export const YEARLY_REGULAR_PRICE = "$69.99";
+/**
+ * What the code is measured against in the reply: a year on the monthly plan
+ * (12 x $14.99 = $179.88), the same base the app's paywall uses for its
+ * yearly badge and the one MeAgain uses for the same $39.99 deal. Against the
+ * $69.99 yearly it is only 43%, which didn't feel like a steal (Dan,
+ * 2026-11-21). $14.99 is the US iOS monthly list price; the $19.99 test arm
+ * only makes the real gap bigger, so this stays the conservative figure.
+ */
+export const MONTHLY_PRICE_USD = 14.99;
+const YEARLY_SPECIAL_USD = 39.99;
+const usd = (n: number) => `$${n.toFixed(2)}`;
+export const MONTHLY_YEAR_PRICE = usd(MONTHLY_PRICE_USD * 12); // $179.88
+export const YEARLY_SPECIAL_PER_MONTH = usd(YEARLY_SPECIAL_USD / 12); // $3.33
+export const YEARLY_SPECIAL_PERCENT_OFF = Math.round(
+  ((MONTHLY_PRICE_USD * 12 - YEARLY_SPECIAL_USD) / (MONTHLY_PRICE_USD * 12)) * 100,
+); // 78
 export const PEARL_PACK = "Pearl Pack";
 export const PEARL_PACK_PEARLS = 550;
 
@@ -208,6 +224,12 @@ function tenurePhrase(ctx: UserContext | null, now: Date): string | null {
  * exclusive or the lowest: $39.99 is also the app's Yearly Special plan and
  * the cancel-flow save offer, and "$30 Yearly" codes exist. No deadlines
  * either: nothing enforces one, and the batch runs until 2027-04-29.
+ *
+ * The percent is measured against a year at the regular monthly price
+ * ($179.88 -> 78% off), not the $69.99 yearly (43%), and the copy names that
+ * $14.99 price: some long-time monthly subscribers still pay less from before
+ * the 2026-06-29 raise, so "a year of monthly costs you $179.88" could be
+ * false for them while "at our regular $14.99" never is.
  */
 export function offerCodeReply(
   thread: Pick<SupportThreadRow, "counterpart_name" | "user_context">,
@@ -239,7 +261,7 @@ export function offerCodeReply(
   return [
     `Hi ${name ?? "there"}!`,
     opener,
-    `It takes your first year of DreamMe from ${YEARLY_REGULAR_PRICE} down to ${YEARLY_SPECIAL_PRICE}, which works out to about $3.33 a month. It only works once, so it's yours alone:`,
+    `It's ${YEARLY_SPECIAL_PERCENT_OFF}% off! At our regular ${usd(MONTHLY_PRICE_USD)} a month, a year of DreamMe comes to ${MONTHLY_YEAR_PRICE}. This code makes your first year just ${YEARLY_SPECIAL_PRICE}, about ${YEARLY_SPECIAL_PER_MONTH} a month. It only works once, so it's yours alone:`,
     code.redeem_url,
     redeemSteps(code),
     switchLine,
