@@ -118,7 +118,7 @@ describe("offerCodeReply", () => {
 
   it("tells a live subscriber the code switches their plan, no cancelling", () => {
     const text = offerCodeReply({ ...base, user_context: ctx({ subscriptions: [sub({})] }) }, code);
-    expect(text).toContain("No need to cancel anything first");
+    expect(text).toContain("No need to cancel your current plan first!");
     expect(text).not.toMatch(/please cancel/i);
   });
 
@@ -138,15 +138,16 @@ describe("offerCodeReply", () => {
 
   it("anchors on a year of the monthly plan and only makes claims about the code", () => {
     const text = offerCodeReply(base, code);
-    expect(text).toContain("It's 78% off!");
-    expect(text).toContain("At our regular $14.99 a month, a year of DreamMe comes to $179.88.");
-    expect(text).toContain("your first year just $39.99, about $3.33 a month");
+    expect(text).toContain("It's good for 78% off!");
+    expect(text).toContain("Normally a year on our $14.99 monthly plan comes to $179.88");
+    expect(text).toContain("your first year is just $39.99, about $3.33 a month");
     expect(text).not.toContain("$69.99");
-    // Same anchor for a live subscriber (who may pay a pre-raise price).
+    // Same anchor for a live subscriber (who may pay a pre-raise price), so
+    // the copy names the list price instead of implying it is their bill.
     const live = offerCodeReply({ ...base, user_context: ctx({ subscriptions: [sub({})] }) }, code);
-    expect(live).toContain("It's 78% off! At our regular $14.99 a month");
-    expect(text).toContain("It only works once");
-    expect(text).toContain("it's not something we do often");
+    expect(live).toContain("Normally a year on our $14.99 monthly plan");
+    expect(text).toContain("one-time codes");
+    expect(text).toContain("We don't usually hand these out");
     expect(text).not.toMatch(/exclusive|lowest|best price|expires|hurry|only today/i);
   });
 

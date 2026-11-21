@@ -240,32 +240,32 @@ export function offerCodeReply(
 ): string {
   const name = firstName(thread, messages, draftBodies);
   const subscribed = subscribedNow(thread.user_context);
-  const scarcity = `These aren't codes we advertise and it's not something we do often`;
+  // Dan's sent-mail voice: short, comma-joined, ":)" and "&", one warm line
+  // about the small team at the end. Not a stack of earnest sentences.
+  const scarcity = `We don't usually hand these out, but I keep some one-time codes`;
   let opener: string;
   if (subscribed === "yes") {
     const tenure = tenurePhrase(thread.user_context, now);
-    const loyalty = tenure
-      ? `You've been with us ${tenure}, and that genuinely means a lot to a small team like ours.`
-      : `Having you with us genuinely means a lot to a small team like ours.`;
-    opener = `I'm so glad you asked! ${loyalty} ${scarcity}, but I keep a limited batch for people like you, so I set one aside.`;
+    const loyalty = tenure ? `You've been with us ${tenure} and that means a lot to us.` : `Having you with us means a lot.`;
+    opener = `Of course! ${loyalty} ${scarcity} for people like you, and this one's yours :)`;
   } else {
-    opener = `I'm so glad you asked! ${scarcity}, but I keep a limited batch for people who take the time to write in, so I set one aside for you.`;
+    opener = `Of course! ${scarcity} for people who write in, and this one's yours :)`;
   }
   // Same subscription group as Monthly/Quarterly: the code swaps their plan.
   const switchLine =
     subscribed === "yes"
-      ? `No need to cancel anything first, redeeming switches your current plan over to the yearly one so you're never billed for both.`
+      ? `No need to cancel your current plan first! Redeeming switches you over to yearly, so you won't get billed for both.`
       : subscribed === "maybe"
-        ? `If you're on a monthly or quarterly plan right now, no need to cancel anything first, redeeming switches it over to the yearly one so you're never billed for both.`
+        ? `If you're on a monthly or quarterly plan right now, no need to cancel it first! Redeeming switches you over to yearly, so you won't get billed for both.`
         : null;
   return [
     `Hi ${name ?? "there"}!`,
     opener,
-    `It's ${YEARLY_SPECIAL_PERCENT_OFF}% off! At our regular ${usd(MONTHLY_PRICE_USD)} a month, a year of DreamMe comes to ${MONTHLY_YEAR_PRICE}. This code makes your first year just ${YEARLY_SPECIAL_PRICE}, about ${YEARLY_SPECIAL_PER_MONTH} a month. It only works once, so it's yours alone:`,
+    `It's good for ${YEARLY_SPECIAL_PERCENT_OFF}% off! Normally a year on our ${usd(MONTHLY_PRICE_USD)} monthly plan comes to ${MONTHLY_YEAR_PRICE}, and with this code your first year is just ${YEARLY_SPECIAL_PRICE}, about ${YEARLY_SPECIAL_PER_MONTH} a month. Here's your link:`,
     code.redeem_url,
     redeemSteps(code),
     switchLine,
-    `It only takes a minute, and if anything looks off, just reply here and I'll fix it myself. Let me know once you're in, I'd love to hear how it goes!`,
+    `If anything looks off, just reply here and I'll sort it out. We're a super small team & your support means the world to us!`,
     SIGNOFF,
   ]
     .filter(Boolean)
