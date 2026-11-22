@@ -164,7 +164,9 @@ async function readSaves(): Promise<{ rows: SaveRow[]; source: Source }> {
   try {
     return { rows: await spGet<SaveRow[]>("competitor_ad_saves?select=ad_archive_id,page_id,note,saved_at&order=saved_at.desc"), source: "table" };
   } catch (e) {
-    if (!isMissingTable(e) || !DEV) throw e;
+    if (!isMissingTable(e)) throw e;
+    // Before migration 0122 runs the tab still loads; saving says why it can't.
+    if (!DEV) return { rows: [], source: "missing" };
     return { rows: [...memory.saves.values()].sort((a, b) => b.saved_at.localeCompare(a.saved_at)), source: "local" };
   }
 }
@@ -186,12 +188,12 @@ export async function buildCompetitorAdsPayload(): Promise<CompetitorAdsPayload>
   const [live, ranks, daily, allLite, archive, hooks, saves] = await Promise.all([
     pageIds.length ? sbAll<CompetitorAdRow>("internal", `competitor_ads?select=${AD_COLS}&is_active=eq.true&${inPages}&order=id`) : [],
     pageIds.length
-      ? sbAll<RankRow>("internal", `competitor_ad_ranks?select=page_id,day,ad_archive_id,rank&source=eq.outlier&day=gte.${addDays(today, -16)}&${inPages}&order=day`)
+      ? sbAll<RankRow>("internal", `competitor_ad_ranks?select=page_id,day,ad_archive_id,rank&source=eq.outlier&day=gte.${addDays(today, -16)}&${inPages}&order=day,page_id,ad_archive_id`)
       : [],
     pageIds.length
       ? sbAll<{ page_id: string; day: string; active: number; active_video: number; active_image: number; active_dco: number; active_other: number; active_partnership: number; new_ads: number | null; ended_ads: number | null }>(
           "internal",
-          `competitor_brand_daily?select=page_id,day,active,active_video,active_image,active_dco,active_other,active_partnership,new_ads,ended_ads&day=gte.${addDays(today, -150)}&${inPages}&order=day`,
+          `competitor_brand_daily?select=page_id,day,active,active_video,active_image,active_dco,active_other,active_partnership,new_ads,ended_ads&day=gte.${addDays(today, -150)}&${inPages}&order=day,page_id`,
         )
       : [],
     pageIds.length ? sbAll<{ page_id: string; display_name: string | null; started_at: string | null }>("internal", `competitor_ads?select=page_id,display_name,started_at&${inPages}&order=id`) : [],
@@ -367,7 +369,8 @@ export async function setHookPick(id: string, pick: Pick): Promise<{ stored: Sou
     if (Array.isArray(rows) && !rows.length) throw new Error("hook not found");
     return { stored: "table" };
   } catch (e) {
-    if (!isMissingTable(e) || !DEV) throw e;
+    if (!isMissingTable(e)) throw e;
+    if (!DEV) throw new Error("the competitor_hooks table doesn't exist yet (migration 0122)");
     memory.picks.set(id, pick);
     return { stored: "local" };
   }
@@ -379,7 +382,8 @@ export async function saveAd(adArchiveId: string, pageId: string, note: string, 
     await spPost("competitor_ad_saves", [row], { onConflict: "ad_archive_id", resolution: "merge" });
     return { stored: "table" };
   } catch (e) {
-    if (!isMissingTable(e) || !DEV) throw e;
+    if (!isMissingTable(e)) throw e;
+    if (!DEV) throw new Error("the competitor_ad_saves table doesn't exist yet (migration 0122)");
     memory.saves.set(adArchiveId, { ad_archive_id: adArchiveId, page_id: pageId, note: row.note, saved_at: memory.saves.get(adArchiveId)?.saved_at ?? new Date().toISOString() });
     return { stored: "local" };
   }
@@ -390,7 +394,8 @@ export async function unsaveAd(adArchiveId: string): Promise<{ stored: Source }>
     await spDelete(`competitor_ad_saves?ad_archive_id=eq.${encodeURIComponent(adArchiveId)}`);
     return { stored: "table" };
   } catch (e) {
-    if (!isMissingTable(e) || !DEV) throw e;
+    if (!isMissingTable(e)) throw e;
+    if (!DEV) throw new Error("the competitor_ad_saves table doesn't exist yet (migration 0122)");
     memory.saves.delete(adArchiveId);
     return { stored: "local" };
   }

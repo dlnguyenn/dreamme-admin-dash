@@ -558,6 +558,7 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
   const [tier, setTier] = React.useState("all");
   const [pickF, setPickF] = React.useState("all");
   const shown = hooks.filter((h) => (tier === "all" || h.tier === tier) && (pickF === "all" || (pickF === "none" ? !h.pick : h.pick === pickF)));
+  const hookDate = /(\d{4}-\d{2}-\d{2})/.exec(hooks[0]?.source_file ?? "")?.[1] ?? null;
   const counts = PICKS.map((p) => `${hooks.filter((h) => h.pick === p.value).length} ${p.label.toLowerCase()}`).join(", ");
   if (!hooks.length) {
     return (
@@ -572,7 +573,7 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
     <>
       <H2 right={<span style={{ font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>{counts}</span>}>Hooks from long-running videos</H2>
       <Note>
-        On-screen text of the first 3 seconds of MeAgain and Shotsy videos that ran 21+ days (Nov 21), scored within each brand: half run length, 30% copies, 20% still live.
+        On-screen text of the first 3 seconds of competitor videos that ran 21+ days{hookDate ? ` (read ${shortDay(hookDate)})` : ""}, scored within each brand: half run length, 30% copies, 20% still live.
       </Note>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
         <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
@@ -659,11 +660,28 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
 function LaunchesView({ data, brand, isMobile }: { data: CompetitorAdsPayload; brand: string; isMobile: boolean }) {
   const rows = brand === "all" ? data.archive.brands : data.archive.brands.filter((b) => b.brand === brand);
   const brandsDaily = brand === "all" ? data.brands : data.brands.filter((b) => b.name === brand);
+  const pulledBrands = data.archive.brands.map((b) => b.brand).join(" and ");
+  // A share with fewer ads than the month launched covers only its older ads; say how many.
+  const share = (v: number | null, n: number, launched: number) =>
+    v == null ? "—" : n < launched ? (
+      <>
+        {pctText(v)} <span style={{ color: "var(--ink-3)", fontSize: 12 }}>of {n}</span>
+      </>
+    ) : (
+      pctText(v)
+    );
   return (
     <>
+      {rows.length > 0 && (
+        <Note style={{ marginTop: 18 }}>
+          From the Foreplay archive pulled {shortDay(data.archive.pulledOn)}: run lengths come from Foreplay, because Outlier end-dated ads late before Nov 5. A share counts only ads launched long enough before the pull; &ldquo;of N&rdquo; marks a month where that&apos;s not all of them. Topics are keyword matches on the headline, the first line of copy and the opening of the transcript, so treat small groups as leads.
+        </Note>
+      )}
       {!rows.length ? (
         <div style={{ marginTop: 24 }}>
-          <Empty title="No archive pull for this brand">Launch and survival figures come from a Foreplay archive pull; only MeAgain and Shotsy have one (Nov 21).</Empty>
+          <Empty title="No archive pull for this brand">
+            Launch and survival figures come from a Foreplay archive pull{pulledBrands ? `, which covers ${pulledBrands} (${shortDay(data.archive.pulledOn)})` : ""}.
+          </Empty>
         </div>
       ) : (
         rows.map((b) => {
@@ -672,9 +690,6 @@ function LaunchesView({ data, brand, isMobile }: { data: CompetitorAdsPayload; b
           return (
             <section key={b.brand}>
               <H2>{b.brand}: ads launched per month</H2>
-              <Note>
-                From the Foreplay archive pulled {shortDay(data.archive.pulledOn)}. Run lengths come from Foreplay because Outlier end-dated ads late before Nov 5. A share stays blank until the month is old enough to tell.
-              </Note>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 0.9fr) minmax(0, 1.1fr)", gap: 22, alignItems: "start" }}>
                 <MonthBars months={months} />
                 <TableBox minWidth={420}>
@@ -692,16 +707,15 @@ function LaunchesView({ data, brand, isMobile }: { data: CompetitorAdsPayload; b
                       <tr key={m.month}>
                         <th scope="row" style={{ ...cell, ...left, fontWeight: 500 }}>{monthLabel(m.month)}</th>
                         <td style={cell}>{num(m.launched)}</td>
-                        <td style={cell}>{pctText(m.lasted7)}</td>
-                        <td style={cell}>{pctText(m.lasted14)}</td>
-                        <td style={cell}>{pctText(m.lasted30)}</td>
+                        <td style={cell}>{share(m.lasted7, m.n7, m.launched)}</td>
+                        <td style={cell}>{share(m.lasted14, m.n14, m.launched)}</td>
+                        <td style={cell}>{share(m.lasted30, m.n30, m.launched)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </TableBox>
               </div>
-              <H2>{b.brand}: what survives, by topic</H2>
-              <Note>Of ads 21+ days old at the pull, the share that ran 14+ days. Topics are keyword matches on the headline, the first line of copy and the opening of the transcript, so treat small groups as leads.</Note>
+              <H2>{b.brand}: of ads 21+ days old, the share that ran 14+ days, by topic</H2>
               <TableBox minWidth={420}>
                 <thead>
                   <tr>
