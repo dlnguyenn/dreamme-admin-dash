@@ -37,6 +37,14 @@ const nextConfig: NextConfig = {
       { source: "/skan/.well-known/adattributionkit/report-attribution:slash(/?)", destination: aak },
       // GET /skan -> collector health/status probe.
       { source: "/skan", destination: "/api/skan/collect" },
+      // Errors tab: the Sentry SDKs build /api/<project>/envelope/ from the
+      // app's DSN (https://<key>@<this host>/<project>). Static source with
+      // the project id from env, so nothing rides in a dynamic segment.
+      // src/lib/errors/ingest.ts.
+      {
+        source: `/api/${process.env.ERRORS_PROJECT_ID?.trim() || "1"}/envelope:slash(/?)`,
+        destination: "/api/errors/envelope",
+      },
     ];
   },
 };

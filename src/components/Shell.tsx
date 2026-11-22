@@ -38,6 +38,7 @@ export type DashId =
   | "requests"
   | "experiments"
   | "app-analytics"
+  | "errors"
   | "synthid-research"
   | "image-studio"
   | "accessory-studio"
@@ -91,6 +92,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "experiments", label: "Experiments", icon: "Flask", status: "live", desc: "Every test and shipped change: hypothesis, result, decision", adminOnly: true },
   // adminOnly: conversion rates and revenue shares by plan.
   { id: "app-analytics", label: "App Analytics", icon: "UserOutline", status: "live", desc: "How people use the app, what keeps them and why they cancel", adminOnly: true },
+  // adminOnly: samples carry app user ids.
+  { id: "errors", label: "Errors", icon: "TriAlert", status: "live", desc: "App crashes and errors, grouped (our own Sentry)", adminOnly: true },
   { id: "image-studio", label: "Image Studio", icon: "Aperture", status: "live", desc: "Generate images + self-hosted MCP for Claude", adminOnly: true },
   { id: "accessory-studio", label: "Accessory Studio", icon: "Star", status: "live", desc: "New fish accessories as lootbox-style SVGs", adminOnly: true },
   { id: "backgrounds", label: "Backgrounds", icon: "Moon", status: "live", desc: "Shop home-screen backgrounds for Sushi", adminOnly: true },

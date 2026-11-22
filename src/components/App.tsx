@@ -43,6 +43,7 @@ const AppleAds = dynamic(() => import("./asa/AppleAds").then((m) => m.AppleAds),
 const AsoTab = dynamic(() => import("./aso/AsoTab").then((m) => m.AsoTab), { ssr: false, loading: TabLoading });
 const CompetitorAdsTab = dynamic(() => import("./competitor-ads/CompetitorAdsTab").then((m) => m.CompetitorAdsTab), { ssr: false, loading: TabLoading });
 const AprilPlan = dynamic(() => import("./plan/AprilPlan").then((m) => m.AprilPlan), { ssr: false, loading: TabLoading });
+const Errors = dynamic(() => import("./errors/Errors").then((m) => m.Errors), { ssr: false, loading: TabLoading });
 const StoreReviews = dynamic(() => import("./StoreReviews").then((m) => m.StoreReviews), { ssr: false, loading: TabLoading });
 const CreativeAnalytics = dynamic(() => import("./CreativeAnalytics").then((m) => m.CreativeAnalytics), { ssr: false, loading: TabLoading });
 const FeatureRequestsDashboard = dynamic(() => import("./FeatureRequestsDashboard").then((m) => m.FeatureRequestsDashboard), { ssr: false, loading: TabLoading });
@@ -435,6 +436,8 @@ export function App() {
     screen = role === "admin"
       ? <ClipperAdmin />
       : <ComingSoon item={currentItem} />;
+  } else if (current === "errors") {
+    screen = role === "admin" ? <Errors /> : <ComingSoon item={currentItem} />;
   } else if (current === "reviews") {
     screen = role === "admin" ? <StoreReviews isAdmin /> : <ComingSoon item={currentItem} />;
   } else if (current === "support") {
