@@ -201,7 +201,7 @@ export function TestsView({
           Every ad each brand started in the last {data.windowDays} days, stopped ones included, grouped by the day it started. A brand that launches a batch on one day and keeps one or two running is testing creatives; the survivors are what it chose to keep paying for.
         </p>
         <p style={{ margin: 0 }}>
-          Run length is Meta&apos;s own start and end dates from the Ad Library, in whole days, so &ldquo;under a day&rdquo; means it stopped the day it started. Each bar is measured against the days since launch: a full bar is still running, a short one stopped early. On the ads both have, these lengths match Foreplay&apos;s within a day, or come out a day or two shorter.
+          Run length is Meta&apos;s own start and end dates from the Ad Library, in whole days, so &ldquo;under a day&rdquo; means it stopped the day it started. Each bar is measured against the days since launch: a full bar is still running, a short one stopped early. Meta&apos;s list of active ads keeps an ad for about two days after its end date, so Foreplay can still count an ad as running that has stopped here, and its run lengths come out a day or two longer.
         </p>
         <p style={{ margin: 0 }}>
           The winner is the one ad that ran longer than every other ad launched that day. When two or more tie for longest, or the whole batch is still running, the day has no winner yet. Days launched before a brand&apos;s tracking began are marked, because ads that stopped before the scrape first looked may be missing.
