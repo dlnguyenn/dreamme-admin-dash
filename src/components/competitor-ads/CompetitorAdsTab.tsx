@@ -24,12 +24,14 @@ import type { CompetitorAdsPayload, HookView } from "@/lib/competitor-ads-tab/re
 import { AdDrawer } from "./AdDrawer";
 import { AdsView, type Layout } from "./AdsView";
 import { CompareView } from "./CompareView";
+import { TestsView } from "./TestsView";
 import { About, AdCard, CardGrid, Empty, FocusStyle, H2, MonthBars, TableBox, Thumb, cell, head, left, monthLabel, num, pctText, rankText, shortDay } from "./parts";
 
-type ViewId = "ads" | "brands" | "hooks" | "creators" | "pages" | "launches" | "saved";
+type ViewId = "ads" | "brands" | "tests" | "hooks" | "creators" | "pages" | "launches" | "saved";
 const VIEWS: { value: ViewId; label: string }[] = [
   { value: "ads", label: "Ads" },
   { value: "brands", label: "Compare brands" },
+  { value: "tests", label: "Creative tests" },
   { value: "hooks", label: "Hooks" },
   { value: "creators", label: "Creators" },
   { value: "pages", label: "Store pages" },
@@ -283,6 +285,7 @@ export function CompetitorAdsTab() {
             />
           )}
           {view === "brands" && <CompareView data={data} brand={brand} isMobile={isMobile} onOpen={openOne} onSeeAds={(b) => seeAds({ brand: b, set: "ranked" })} />}
+          {view === "tests" && <TestsView stamp={data.generatedAt} liveAds={data.ads} brand={brand} isMobile={isMobile} onOpen={(ad, list) => setOpen({ ad, list })} />}
           {view === "creators" && <CreatorsView data={data} brand={brand} onSeeAds={(identity, b) => seeAds({ identity, brand: b })} />}
           {view === "pages" && <PagesView data={data} brand={brand} onSeeAds={(cpp, b) => seeAds({ cpp, brand: b })} />}
           {view === "hooks" && (

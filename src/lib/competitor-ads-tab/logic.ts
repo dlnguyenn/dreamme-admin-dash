@@ -192,6 +192,9 @@ export interface AdView {
   identity: string;
   isPartnership: boolean;
   startedAt: string | null;
+  /** Meta's end date for an ad that has stopped; null while it runs. */
+  endedAt: string | null;
+  /** Days from start to now, or to the end date once the ad has stopped. */
   runDays: number | null;
   mediaType: "video" | "dco" | "image" | "none";
   format: string | null;
@@ -277,7 +280,8 @@ export function buildAdViews(
     const stats = rankFresh ? rankStats(idx, r.ad_archive_id) : { now: null, ago7: null, ago14: null, top20: 0, top50: 0, observed: 0, best: null };
     const key = creativeKey(r);
     const copies = Math.max(key ? groups.get(key) ?? 1 : 1, r.collation_count ?? 1);
-    const runDays = r.started_at ? Math.max(0, daysBetween(r.started_at, nowIso)) : null;
+    const endedAt = r.is_active ? null : r.ended_at;
+    const runDays = r.started_at ? Math.max(0, daysBetween(r.started_at, endedAt ?? nowIso)) : null;
 
     const signals: AdView["confidence"]["signals"] = [];
     if (stats.now != null) signals.push({ key: "rank", label: `Top ${SIGNALS.topRank} by delivery today`, met: stats.now <= SIGNALS.topRank });
@@ -306,6 +310,7 @@ export function buildAdViews(
       // runs under any account other than the brand's own page counts too.
       isPartnership: !!r.is_partnership || (!!r.display_name && !!r.page_name && r.display_name !== r.page_name),
       startedAt: r.started_at,
+      endedAt,
       runDays,
       mediaType: mediaKind(r.media_type),
       format: r.format,
