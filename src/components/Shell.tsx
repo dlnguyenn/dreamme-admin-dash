@@ -3,6 +3,12 @@
 import * as React from "react";
 import { Icons, type IconName } from "./Icons";
 import { useIsMobile } from "@/lib/useIsMobile";
+import {
+  groupNavItems,
+  itemsToShow,
+  UNGROUPED,
+  useNavCollapsed,
+} from "@/lib/nav-groups";
 
 export type DashId =
   | "overview"
@@ -98,6 +104,82 @@ export function visibleNavItems(viewAs: "admin" | "user"): NavItem[] {
   return viewAs === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((n) => !n.adminOnly);
 }
 
+/**
+ * Group heading in the sidebar: a button that folds its tabs away. A folded
+ * group still shows the tab you're on (see itemsToShow in lib/nav-groups).
+ */
+function NavGroupHeading({
+  label,
+  expanded,
+  controls,
+  hiddenBadges,
+  onToggle,
+}: {
+  label: string;
+  expanded: boolean;
+  controls: string;
+  /** count pills on tabs hidden by the fold, summed */
+  hiddenBadges: number;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      title={expanded ? `Collapse ${label}` : `Expand ${label}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        width: "100%",
+        padding: "10px 10px 5px",
+        background: "transparent",
+        border: "none",
+        borderRadius: 6,
+        font: "600 11px var(--font-ui)",
+        color: "var(--ink-3)",
+        textAlign: "left",
+        transition: "color 140ms ease",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--ink-2)")}
+      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--ink-3)")}
+    >
+      <span style={{ flex: 1 }}>{label}</span>
+      {!expanded && hiddenBadges > 0 && (
+        <span
+          title={`${hiddenBadges} waiting in ${label}`}
+          style={{
+            minWidth: 16,
+            height: 16,
+            padding: "0 4px",
+            borderRadius: 999,
+            background: "var(--accent)",
+            color: "var(--on-accent)",
+            font: "650 9.5px var(--font-ui)",
+            fontVariantNumeric: "tabular-nums",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {hiddenBadges > 99 ? "99+" : hiddenBadges}
+        </span>
+      )}
+      <Icons.ChevronDown
+        size={12}
+        stroke="var(--ink-3)"
+        style={{
+          transform: expanded ? "none" : "rotate(-90deg)",
+          transition: "transform 160ms ease",
+          flexShrink: 0,
+        }}
+      />
+    </button>
+  );
+}
+
 /** Porcelain logo mark — the one true serif left in the product. */
 export function LogoMark({ size = 34 }: { size?: number }) {
   return (
@@ -150,10 +232,149 @@ export function Sidebar({
 }) {
   const w = collapsed ? 76 : 236;
   const visible = visibleNavItems(viewAs);
-  const items = [
-    ...visible.filter((n) => alerts?.[n.id]),
-    ...visible.filter((n) => !alerts?.[n.id]),
-  ];
+  const alerted = visible.filter((n) => alerts?.[n.id]);
+  const rest = visible.filter((n) => !alerts?.[n.id]);
+  // Alerted tabs stay pinned on top, outside any group, so a red "!" is
+  // never folded away. The 76px icon rail has no headings, so it ignores
+  // group collapse and lists every tab.
+  const groups = groupNavItems(rest, NAV_ITEMS);
+  const { isCollapsed, toggle } = useNavCollapsed();
+  const renderItem = (item: NavItem) => {
+    const active = current === item.id;
+    const IconComp = Icons[item.icon];
+    return (
+        <button
+        key={item.id}
+          onClick={() => setCurrent(item.id)}
+          title={collapsed ? item.label : undefined}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: collapsed ? "9px" : "6.5px 10px",
+            justifyContent: collapsed ? "center" : "flex-start",
+            background: active ? "var(--accent-soft)" : "transparent",
+            border: "none",
+            borderRadius: 10,
+            fontFamily: "var(--font-ui)",
+            fontSize: 13.5,
+            fontWeight: active ? 600 : 500,
+            color: active ? "var(--accent-text)" : "var(--ink-2)",
+            textAlign: "left",
+            transition: "background 140ms ease, color 140ms ease",
+            position: "relative",
+          }}
+          onMouseEnter={(e) => {
+            if (!active)
+              e.currentTarget.style.background = "var(--neutral-soft)";
+          }}
+          onMouseLeave={(e) => {
+            if (!active)
+              e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <IconComp
+            size={16}
+            stroke={active ? "var(--accent)" : "var(--ink-3)"}
+          />
+          {!collapsed && (
+            <>
+              <span
+                style={{
+                  flex: 1,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {item.label}
+              </span>
+              {alerts?.[item.id] && (
+                <span
+                  aria-label="Needs attention"
+                  title="A thread has gone more than 24h without a reply"
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    background: "var(--danger)",
+                    color: "var(--on-solid)",
+                    font: "800 11.5px var(--font-ui)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  !
+                </span>
+              )}
+              {!!badges?.[item.id] && (
+                <span
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    padding: "0 5px",
+                    borderRadius: 999,
+                    background: "var(--accent)",
+                    color: "var(--on-accent)",
+                    font: "650 10.5px var(--font-ui)",
+                    fontVariantNumeric: "tabular-nums",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {badges[item.id]! > 99 ? "99+" : badges[item.id]}
+                </span>
+              )}
+              {item.status === "soon" && (
+                <span
+                  style={{
+                    font: "650 9px var(--font-ui)",
+                    letterSpacing: "0.05em",
+                    color: "var(--ink-3)",
+                    background: "var(--neutral-soft)",
+                    border: "1px solid var(--line)",
+                    padding: "2px 6px",
+                    borderRadius: 99,
+                  }}
+                >
+                  SOON
+                </span>
+              )}
+            </>
+          )}
+          {collapsed && (alerts?.[item.id] || !!badges?.[item.id]) && (
+            <span
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: alerts?.[item.id] ? "var(--danger)" : "var(--accent)",
+              }}
+            />
+          )}
+          {collapsed && item.status === "soon" && (
+            <span
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "var(--ink-4)",
+              }}
+            />
+          )}
+        </button>
+    );
+  };
+
   return (
     <aside
       style={{
@@ -218,153 +439,38 @@ export function Sidebar({
           flex: 1,
         }}
       >
-        {items.map((item) => {
-          const active = current === item.id;
-          const IconComp = Icons[item.icon];
-          return (
-            <React.Fragment key={item.id}>
-              {item.group && !collapsed && (
-                <div
-                  style={{
-                    font: "600 11px var(--font-ui)",
-                    color: "var(--ink-3)",
-                    padding: "10px 10px 5px",
-                  }}
-                >
-                  {item.group}
-                </div>
-              )}
-              <button
-                onClick={() => setCurrent(item.id)}
-                title={collapsed ? item.label : undefined}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: collapsed ? "9px" : "6.5px 10px",
-                  justifyContent: collapsed ? "center" : "flex-start",
-                  background: active ? "var(--accent-soft)" : "transparent",
-                  border: "none",
-                  borderRadius: 10,
-                  fontFamily: "var(--font-ui)",
-                  fontSize: 13.5,
-                  fontWeight: active ? 600 : 500,
-                  color: active ? "var(--accent-text)" : "var(--ink-2)",
-                  textAlign: "left",
-                  transition: "background 140ms ease, color 140ms ease",
-                  position: "relative",
-                }}
-                onMouseEnter={(e) => {
-                  if (!active)
-                    e.currentTarget.style.background = "var(--neutral-soft)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active)
-                    e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <IconComp
-                  size={16}
-                  stroke={active ? "var(--accent)" : "var(--ink-3)"}
-                />
-                {!collapsed && (
-                  <>
-                    <span
-                      style={{
-                        flex: 1,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {item.label}
-                    </span>
-                    {alerts?.[item.id] && (
-                      <span
-                        aria-label="Needs attention"
-                        title="A thread has gone more than 24h without a reply"
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                          background: "var(--danger)",
-                          color: "var(--on-solid)",
-                          font: "800 11.5px var(--font-ui)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        !
-                      </span>
-                    )}
-                    {!!badges?.[item.id] && (
-                      <span
-                        style={{
-                          minWidth: 18,
-                          height: 18,
-                          padding: "0 5px",
-                          borderRadius: 999,
-                          background: "var(--accent)",
-                          color: "var(--on-accent)",
-                          font: "650 10.5px var(--font-ui)",
-                          fontVariantNumeric: "tabular-nums",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        {badges[item.id]! > 99 ? "99+" : badges[item.id]}
-                      </span>
-                    )}
-                    {item.status === "soon" && (
-                      <span
-                        style={{
-                          font: "650 9px var(--font-ui)",
-                          letterSpacing: "0.05em",
-                          color: "var(--ink-3)",
-                          background: "var(--neutral-soft)",
-                          border: "1px solid var(--line)",
-                          padding: "2px 6px",
-                          borderRadius: 99,
-                        }}
-                      >
-                        SOON
-                      </span>
-                    )}
-                  </>
-                )}
-                {collapsed && (alerts?.[item.id] || !!badges?.[item.id]) && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: alerts?.[item.id] ? "var(--danger)" : "var(--accent)",
-                    }}
-                  />
-                )}
-                {collapsed && item.status === "soon" && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: "var(--ink-4)",
-                    }}
-                  />
-                )}
-              </button>
-            </React.Fragment>
-          );
-        })}
+        {alerted.map(renderItem)}
+        {collapsed
+          ? rest.map(renderItem)
+          : groups.map(({ group, items }) => {
+              const folded = group !== UNGROUPED && isCollapsed(group);
+              const shown = itemsToShow(items, folded, current);
+              const hiddenBadges = folded
+                ? items
+                    .filter((i) => i.id !== current)
+                    .reduce((n, i) => n + (badges?.[i.id] ?? 0), 0)
+                : 0;
+              const listId = `nav-group-${group.toLowerCase() || "other"}`;
+              return (
+                <React.Fragment key={group || "_"}>
+                  {group !== UNGROUPED && (
+                    <NavGroupHeading
+                      label={group}
+                      expanded={!folded}
+                      controls={listId}
+                      hiddenBadges={hiddenBadges}
+                      onToggle={() => toggle(group)}
+                    />
+                  )}
+                  <div
+                    id={listId}
+                    style={{ display: "flex", flexDirection: "column", gap: 2 }}
+                  >
+                    {shown.map(renderItem)}
+                  </div>
+                </React.Fragment>
+              );
+            })}
       </nav>
 
       <div
