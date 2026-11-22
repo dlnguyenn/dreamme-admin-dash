@@ -10,6 +10,7 @@ import type { AdView, FormatMix } from "@/lib/competitor-ads-tab/logic";
 import { movement } from "@/lib/competitor-ads-tab/filters";
 import { resizedUrl } from "@/lib/background-studio-shared";
 import { Icons } from "../Icons";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 export const num = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("en-US"));
 export const rankText = (n: number | null | undefined) => (n == null ? "—" : `#${n}`);
@@ -49,19 +50,6 @@ export function TableBox({ children, minWidth = 720 }: { children: React.ReactNo
       <table style={{ width: "100%", minWidth, borderCollapse: "collapse" }}>{children}</table>
     </div>
   );
-}
-
-/** Rank move as words in colour: up is good (smaller number). */
-export function Move({ now, before, runDays, observed }: { now: number | null; before: number | null; runDays: number | null; observed: number }) {
-  // Fewer than 8 snapshot days: there was no ranking a week ago to compare with.
-  if (now == null || (before == null && observed < 8)) return <span style={{ color: "var(--ink-3)" }}>—</span>;
-  if (before == null) {
-    // Only a young ad is "new"; an older one simply wasn't in that day's list.
-    return runDays != null && runDays <= 8 ? <span style={{ color: "var(--info-text)" }}>new</span> : <span style={{ color: "var(--ink-3)" }}>unranked</span>;
-  }
-  const d = before - now;
-  if (d === 0) return <span style={{ color: "var(--ink-3)" }}>same</span>;
-  return <span style={{ color: d > 0 ? "var(--success-text)" : "var(--danger-text)" }}>{d > 0 ? `up ${d}` : `down ${-d}`}</span>;
 }
 
 // ---------------------------------------------------------------- ad cell
@@ -232,10 +220,6 @@ export function H2({ children, right }: { children: React.ReactNode; right?: Rea
   );
 }
 
-export function Note({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <p style={{ font: "400 13px/1.5 var(--font-ui)", color: "var(--ink-2)", margin: "0 0 12px", maxWidth: 760, ...style }}>{children}</p>;
-}
-
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div style={{ border: "1px dashed var(--line-2)", borderRadius: 14, padding: "26px 22px", textAlign: "center" }}>
@@ -276,12 +260,15 @@ export function AdCard({
   onOpen: (a: AdView) => void;
   onToggleSave: (a: AdView) => void;
 }) {
+  const isMobile = useIsMobile();
   const [hover, setHover] = React.useState(false);
   const [broken, setBroken] = React.useState(false);
   const headline = adHeadline(ad);
+  // On a phone the brand moves to the meta line so the rank row keeps the weekly move.
+  const brandInRow = showBrand && !isMobile;
   const hasImage = !!ad.thumb && !broken;
   const who = ad.isPartnership ? ad.identity : "Brand page";
-  const meta = [who, daysText(ad.runDays), ad.copies > 1 ? `${ad.copies} copies` : null].filter(Boolean);
+  const meta = [showBrand && !brandInRow ? ad.brand : null, who, daysText(ad.runDays), ad.copies > 1 ? `${ad.copies} copies` : null].filter(Boolean);
   return (
     <article style={{ minWidth: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button
@@ -339,7 +326,7 @@ export function AdCard({
       <div style={{ padding: "9px 2px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 28 }}>
           <span style={{ font: "650 15px var(--font-ui)", color: "var(--ink)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-            {showBrand && <span style={{ fontWeight: 500, color: "var(--ink-2)", marginRight: 5 }}>{ad.brand}</span>}
+            {brandInRow && <span style={{ fontWeight: 500, color: "var(--ink-2)", marginRight: 5 }}>{ad.brand}</span>}
             {ad.rank.now != null ? `#${ad.rank.now}` : "Unranked"}
           </span>
           <span style={{ font: "400 12.5px var(--font-ui)", fontVariantNumeric: "tabular-nums", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -353,8 +340,9 @@ export function AdCard({
             className="cad-focus"
             style={{
               marginLeft: "auto",
-              width: 32,
-              height: 32,
+              marginRight: isMobile ? -8 : 0,
+              width: isMobile ? 44 : 32,
+              height: isMobile ? 44 : 32,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",

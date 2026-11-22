@@ -119,12 +119,13 @@ export function CompetitorAdsTab() {
     setBrand(b);
     remember(BRAND_KEY, "brand", b);
   };
-  const updateFilter = (f: Partial<AdFilter>) => {
+  /** `persist` false for a click-through from another view, so it doesn't replace the remembered set. */
+  const updateFilter = (f: Partial<AdFilter>, persist = true) => {
     const { brand: b, ...rest } = f;
     if (b !== undefined) pickBrand(b);
     setFilter((cur) => {
       const next = { ...cur, ...rest };
-      if (rest.set) rememberPrefs({ sort, layout, set: next.set });
+      if (rest.set && persist) rememberPrefs({ sort, layout, set: next.set });
       return next;
     });
   };
@@ -138,7 +139,7 @@ export function CompetitorAdsTab() {
   };
   /** From another view: show the Ads view narrowed to one creator, store page or brand. */
   const seeAds = (f: Partial<AdFilter>) => {
-    updateFilter({ set: "all", runsAs: "all", format: "all", identity: null, cpp: null, query: "", ...f });
+    updateFilter({ set: "all", runsAs: "all", format: "all", identity: null, cpp: null, query: "", ...f }, false);
     pickView("ads");
     window.scrollTo({ top: 0 });
   };
@@ -182,7 +183,16 @@ export function CompetitorAdsTab() {
     setData((d) => (d ? { ...d, saves: d.saves.filter((s) => s.ad_archive_id !== ad.adArchiveId) } : d));
     toast("Removed from saved");
   };
-  const toggleSave = (ad: AdView) => void (savedMap.has(ad.adArchiveId) ? unsaveAd(ad) : saveAd(ad, ""));
+  const toggleSave = (ad: AdView) => {
+    const saved = savedMap.get(ad.adArchiveId);
+    // A saved ad with a note opens instead, so one click on the bookmark can't throw the note away.
+    if (saved?.note) {
+      setOpen({ ad, list: [ad] });
+      toast("This saved ad has a note. Remove it from here if you mean to.");
+      return;
+    }
+    void (saved ? unsaveAd(ad) : saveAd(ad, ""));
+  };
   const setPick = async (h: HookView, pick: HookView["pick"]) => {
     const prev = h.pick;
     setData((d) => (d ? { ...d, hooks: d.hooks.map((x) => (x.id === h.id ? { ...x, pick } : x)) } : d));

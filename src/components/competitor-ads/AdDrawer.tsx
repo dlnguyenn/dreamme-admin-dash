@@ -44,6 +44,16 @@ export function AdDrawer({
 }) {
   const isMobile = useIsMobile();
   const toast = useToast();
+  // Two columns need about 1000 px; between the phone breakpoint and that, stack them.
+  const [wide, setWide] = React.useState(true);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1000px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const stacked = isMobile || !wide;
   const [detail, setDetail] = React.useState<AdDetail | null>(null);
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [note, setNote] = React.useState("");
@@ -345,8 +355,8 @@ export function AdDrawer({
           {ad.brand}, {ad.isPartnership ? `runs as ${ad.identity}` : "brand page"} · {mediaLabel(ad.mediaType)}
           {ad.videoSeconds ? `, ${ad.videoSeconds} s` : ""}
         </div>
-        {isMobile ? (
-          <div style={{ marginTop: 14 }}>
+        {stacked ? (
+          <div style={{ marginTop: 14, maxWidth: isMobile ? undefined : 560 }}>
             {creative}
             {actions}
             <div style={{ marginTop: 22 }}>{info}</div>

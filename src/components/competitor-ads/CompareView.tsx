@@ -49,15 +49,18 @@ export function CompareView({
   const rows: Row[] = [
     {
       label: "Live ads",
-      value: (b) => {
+      value: (b, ads) => {
         const last = b.daily.at(-1);
         const weekAgo = b.daily.find((d) => d.day === addDays(last?.day ?? "", -7));
-        return big(num(b.live), weekAgo ? `${num(weekAgo.active)} a week ago` : "No count a week ago yet");
+        return big(num(b.live), `${num(collapseCopies(ads).length)} distinct creatives. ${weekAgo ? `${num(weekAgo.active)} ads a week ago` : "No count a week ago yet"}`);
       },
     },
     {
       label: `New in the last ${NEW_DAYS} days`,
-      value: (_b, ads) => big(num(ads.filter((a) => inSet(a, "new")).length)),
+      value: (_b, ads) => {
+        const fresh = ads.filter((a) => inSet(a, "new"));
+        return big(`${num(fresh.length)} ads`, `${num(collapseCopies(fresh).length)} creatives`);
+      },
     },
     {
       label: "Ads in the top 20 on 7+ of the last 14 days",
@@ -65,7 +68,7 @@ export function CompareView({
     },
     {
       label: "Breakouts now",
-      value: (b, ads) => (b.rankDays >= 8 ? big(num(ads.filter((a) => inSet(a, "rising")).length)) : big("—", b.rankDays ? "Needs a week of ranks" : "No ranks yet")),
+      value: (b, ads) => (b.rankDays >= 8 ? big(`${num(collapseCopies(ads.filter((a) => inSet(a, "rising"))).length)} creatives`, `${num(ads.filter((a) => inSet(a, "rising")).length)} ads`) : big("—", b.rankDays ? "Needs a week of ranks" : "No ranks yet")),
     },
     {
       label: "Run as creator accounts",
@@ -196,6 +199,9 @@ export function CompareView({
       </div>
 
       <About>
+        <p style={{ margin: 0 }}>
+          Ads and creatives: a brand often runs one video as several ads. The Ads view shows one card per creative, so its counts match the creative figures here, not the ad counts.
+        </p>
         <p style={{ margin: 0 }}>
           Creator accounts: the ad runs under someone else&apos;s name &ldquo;with&rdquo; the brand. Outlier&apos;s own partnership flag misses most of them, so any ad whose account differs from the brand&apos;s page counts.
         </p>
