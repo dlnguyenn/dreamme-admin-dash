@@ -5,6 +5,8 @@ import { TraceMap } from "@jridgewell/trace-mapping";
 import { decodeBody, parseEnvelope, publicKeyFrom, RATE_LIMIT_HEADER } from "@/lib/errors/envelope";
 import { normalizeMessage, scrubEvent, summarize } from "@/lib/errors/event";
 import { symbolicateExceptions } from "@/lib/errors/symbolicate";
+import { isBundleFrame } from "@/lib/errors/frames";
+import { cleanFrame } from "@/lib/errors/event";
 import { buildIssueViews, connectionState, errorUrgents, isSpiking, type IssueLike } from "@/lib/errors/view";
 
 const { ingest } = vi.hoisted(() => ({ ingest: vi.fn() }));
@@ -136,8 +138,12 @@ describe("grouping", () => {
     expect(a.title).toMatch(/^Error: Failed to read storage file/);
   });
 
-  it("splits native app hangs by their top frame", () => {
-    const hang = (fn: string) =>
+  it("groups native hangs on the newest frame from the app bundle, like Sentry did on real DreamMe hangs", () => {
+    // Shapes from real issues (DREAMME-E, -W, -1Y): system frames on top vary
+    // per sample; React.framework lives inside DreamMe.app and counts as app code
+    // even though the device only marks the main executable in_app.
+    const app = "/private/var/containers/Bundle/Application/X/DreamMe.app";
+    const hang = (reactFn: string | null, systemTop: string) =>
       summarize({
         event_id: "b".repeat(32),
         platform: "cocoa",
@@ -147,13 +153,26 @@ describe("grouping", () => {
               type: "App Hanging",
               value: "App hanging for at least 2000 ms.",
               mechanism: { type: "AppHang", handled: true },
-              stacktrace: { frames: [{ function: "main", package: "/x/DreamMe.app/DreamMe", in_app: true }, { function: fn, package: "/x/React.framework/React" }] },
+              stacktrace: {
+                frames: [
+                  { function: "start", package: "dyld" },
+                  { function: "main", package: `${app}/DreamMe`, in_app: true },
+                  { function: "UIApplicationMain", package: "/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore" },
+                  ...(reactFn ? [{ function: reactFn, package: `${app}/Frameworks/React.framework/React` }] : []),
+                  { function: systemTop, package: "/usr/lib/libobjc.A.dylib" },
+                ],
+              },
             },
           ],
         },
       });
-    expect(hang("-[RCTTextInputComponentView didMoveToWindow]").fingerprint).not.toBe(hang("-[RCTViewComponentView mountChildComponentView:index:]").fingerprint);
-    expect(hang("x").fingerprint).toBe(hang("x").fingerprint);
+    const mount = "-[RCTViewComponentView mountChildComponentView:index:]";
+    const textInput = "-[RCTTextInputComponentView didMoveToWindow]";
+    expect(hang(mount, "objc_msgSend").fingerprint).toBe(hang(mount, "swift_allocObject").fingerprint);
+    expect(hang(mount, "objc_msgSend").fingerprint).not.toBe(hang(textInput, "objc_msgSend").fingerprint);
+    expect(hang(null, "objc_msgSend").fingerprint).not.toBe(hang(mount, "objc_msgSend").fingerprint);
+    expect(hang(mount, "objc_msgSend").culprit).toBe(`${mount}(React)`);
+    expect(hang(null, "x").culprit).toBe("main(DreamMe)");
   });
 
   it("honours an SDK fingerprint but not the default placeholder", () => {
@@ -206,6 +225,18 @@ describe("symbolication", () => {
     expect(frames[0].context_line).toBe("const m = await readManifest();");
     expect(frames[1]).toMatchObject({ function: "CodedError", in_app: false });
     expect(await symbolicateExceptions(payload.exceptions, payload.debug_images, async () => null)).toBeNull();
+  });
+});
+
+describe("bundle frames", () => {
+  it("knows a bundle frame by its debug image, and skips native frames", () => {
+    const images = [{ type: "sourcemap", code_file: "app:///index.android.bundle", debug_id: "f".repeat(32) }];
+    expect(isBundleFrame(cleanFrame({ filename: "app:///index.android.bundle", lineno: 1, colno: 9 }), images)).toBe(true);
+    // An odd bundle name still counts when the image names it.
+    expect(isBundleFrame(cleanFrame({ filename: "app:///weird-name" }), [{ type: "sourcemap", code_file: "app:///weird-name" }])).toBe(true);
+    expect(isBundleFrame(cleanFrame({ filename: "native" }), images)).toBe(false);
+    expect(isBundleFrame(cleanFrame({ filename: "[native code]" }), images)).toBe(false);
+    expect(isBundleFrame(cleanFrame({ filename: "app:///main.jsbundle" }))).toBe(true);
   });
 });
 

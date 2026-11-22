@@ -4,7 +4,7 @@
  */
 import { gunzipSync } from "node:zlib";
 import { TraceMap } from "@jridgewell/trace-mapping";
-import { sbGet } from "@/lib/revenue-plan/db";
+import { sbAll, sbGet } from "@/lib/revenue-plan/db";
 import type { MapKey } from "./symbolicate";
 import { symbolicateExceptions } from "./symbolicate";
 import type { ExceptionValue, Summary } from "./event";
@@ -88,7 +88,8 @@ export const daysAgo = (now: Date, n: number) => dayKey(new Date(now.getTime() -
 export async function listIssues(now = new Date()) {
   const [issues, daily] = await Promise.all([
     sbGet<IssueRow[]>("internal", `err_issues?select=${ISSUE_COLS}&order=last_seen.desc&limit=500`),
-    sbGet<DailyRow[]>("internal", `err_issue_daily?select=issue_id,day,release,events&day=gte.${daysAgo(now, 29)}&limit=20000`),
+    // PostgREST caps rows per request (1000 on Supabase), so page with an order.
+    sbAll<DailyRow>("internal", `err_issue_daily?select=issue_id,day,release,events&day=gte.${daysAgo(now, 13)}&order=issue_id.asc,day.asc,release.asc`),
   ]);
   return { issues, daily };
 }
@@ -96,7 +97,7 @@ export async function listIssues(now = new Date()) {
 export async function getIssue(id: number, now = new Date()) {
   const [issues, daily, samples] = await Promise.all([
     sbGet<IssueRow[]>("internal", `err_issues?select=${ISSUE_COLS}&id=eq.${id}`),
-    sbGet<DailyRow[]>("internal", `err_issue_daily?select=issue_id,day,release,events&issue_id=eq.${id}&day=gte.${daysAgo(now, 29)}&order=day.asc`),
+    sbAll<DailyRow>("internal", `err_issue_daily?select=issue_id,day,release,events&issue_id=eq.${id}&day=gte.${daysAgo(now, 29)}&order=day.asc,release.asc`),
     sbGet<Omit<EventRow, "payload" | "symbolicated">[]>(
       "internal",
       `err_events?select=event_id,issue_id,occurred_at,release,dist,environment,platform,os,device,user_id,symbolicated_at&issue_id=eq.${id}&order=occurred_at.desc&limit=50`,
@@ -181,7 +182,10 @@ async function findMap(key: MapKey, release: string | null, dist: string | null)
   if (key.debugId) {
     rows = await sbGet<SourcemapRow[]>("internal", `err_sourcemaps?select=*&debug_id=eq.${encodeURIComponent(key.debugId.toLowerCase())}&order=uploaded_at.desc&limit=1`);
   }
-  if (!rows.length && release) {
+  // Fall back to release + dist + bundle only when the event carries no debug
+  // id. With one, a different map for the same release (an OTA update keeps the
+  // release string) would resolve to wrong lines and be saved for good.
+  if (!key.debugId && release) {
     const q = [`release=eq.${encodeURIComponent(release)}`, dist ? `dist=eq.${encodeURIComponent(dist)}` : null, key.bundle ? `bundle=eq.${encodeURIComponent(key.bundle)}` : null]
       .filter(Boolean)
       .join("&");

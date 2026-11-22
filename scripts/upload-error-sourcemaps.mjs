@@ -11,7 +11,7 @@
  * keyed by --release, --dist and the bundle file name instead.
  *
  *   DAD_URL=https://dreamme-admin-dash.vercel.app \
- *   DAD_TOKEN=<x-dreamme-secret> \
+ *   ERRORS_UPLOAD_TOKEN=<the DAD's ERRORS_UPLOAD_TOKEN> \
  *   node scripts/upload-error-sourcemaps.mjs dist --release com.dreamme.app@1.5.9+1.0.95 --dist 1.0.95
  *
  * --dry lists what would be uploaded.
@@ -28,7 +28,10 @@ const flag = (name) => {
 const dry = args.includes("--dry");
 const roots = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--") && args[i - 1] !== "--dry"));
 const DAD = (process.env.DAD_URL ?? "https://dreamme-admin-dash.vercel.app").replace(/\/$/, "");
-const TOKEN = process.env.DAD_TOKEN ?? process.env.DREAMME_INGEST_SECRET ?? "";
+// Its own token (ERRORS_UPLOAD_TOKEN on the DAD), so a build server never
+// holds the DAD's master secret. DAD_TOKEN (x-dreamme-secret) still works.
+const UPLOAD_TOKEN = process.env.ERRORS_UPLOAD_TOKEN ?? "";
+const TOKEN = process.env.DAD_TOKEN ?? "";
 const release = flag("release") ?? null;
 const dist = flag("dist") ?? null;
 
@@ -36,8 +39,8 @@ if (!roots.length) {
   console.error("usage: upload-error-sourcemaps.mjs <dir-or-file>... [--release R] [--dist D] [--dry]");
   process.exit(1);
 }
-if (!TOKEN && !dry) {
-  console.error("Set DAD_TOKEN (the DAD's x-dreamme-secret).");
+if (!UPLOAD_TOKEN && !TOKEN && !dry) {
+  console.error("Set ERRORS_UPLOAD_TOKEN (the DAD's ERRORS_UPLOAD_TOKEN).");
   process.exit(1);
 }
 
@@ -82,7 +85,10 @@ for (const root of roots) {
     try {
       const res = await fetch(`${DAD}/api/errors/sourcemaps`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-dreamme-secret": TOKEN },
+        headers: {
+          "Content-Type": "application/json",
+          ...(UPLOAD_TOKEN ? { "x-errors-upload-token": UPLOAD_TOKEN } : { "x-dreamme-secret": TOKEN }),
+        },
         body: JSON.stringify({ debugId, release, dist, bundle, sizeBytes: text.length }),
       });
       const out = await res.json();

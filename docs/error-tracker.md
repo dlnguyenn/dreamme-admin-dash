@@ -12,14 +12,15 @@ that has gone quiet, show up in the Overview's "Needs attention".
    - `ERRORS_DSN_PUBLIC_KEY`: any random 32-character hex string. It is public (it ships in the app bundle), like a Sentry DSN key.
    - `ERRORS_PROJECT_ID`: optional, default `1`. `next.config.ts` reads it at build time for the rewrite, so changing it needs a redeploy.
    - `ERRORS_CAP_PER_MINUTE`: optional, default 300.
+   - `ERRORS_UPLOAD_TOKEN`: a random string (16+ characters) for the source-map upload, so the app's build never holds the DAD's master secret.
 2. Migration `0123_error_tracker.sql` creates the tables, the `error-sourcemaps` bucket and the `err-prune` pg_cron job. It was applied to DreamMe Internal on 2026-11-22.
 3. In the app (`app/_layout.tsx`), set the DSN to
    `https://<ERRORS_DSN_PUBLIC_KEY>@<dad host>/<ERRORS_PROJECT_ID>`.
    Also turn off what the DAD drops: `tracesSampleRate: 0`, `profilesSampleRate: 0`, no `mobileReplayIntegration`, replay rates 0.
    The DSN host can only change with an app release, so pick it once (a `dreamme.life` subdomain survives a move off Vercel).
 4. Source maps (readable JavaScript stacks): after each `npx expo export` (EAS Update) and each native build, run
-   `DAD_URL=… DAD_TOKEN=<x-dreamme-secret> node scripts/upload-error-sourcemaps.mjs <dir> [--release R --dist D]`.
-   This repo is public, so keep the token out of the app repo; use an EAS secret.
+   `DAD_URL=… ERRORS_UPLOAD_TOKEN=… node scripts/upload-error-sourcemaps.mjs <dir> [--release R --dist D]`.
+   Keep the token in an EAS secret, not in the app repo.
 
 ## How it works
 
@@ -31,7 +32,7 @@ that has gone quiet, show up in the Overview's "Needs attention".
 - **Grouping** (`src/lib/errors/event.ts`, `GROUPING_VERSION` 1, stored on each issue):
   - An SDK `fingerprint` wins.
   - Otherwise: exception type + message with digits, hex, UUIDs, paths, emails and URL query strings normalized.
-  - Native events (`cocoa`, `java`, `native`) add the crash-site frame. Messages like "App hanging for at least 2000 ms" would otherwise merge every hang.
+  - Native events (`cocoa`, `java`, `native`) add the newest frame from the app bundle (React.framework counts, because it ships inside `DreamMe.app`). Messages like "App hanging for at least 2000 ms" would otherwise merge every hang. The very top frame is not used: it is whatever system call was running when the hang was sampled. This reproduces Sentry's split of the real DREAMME-E / -W / -1Y hangs.
   - JS frames are left out on purpose: Hermes production frames are minified.
 - **Scrubbing** is an allowlist. Dropped: emails, IPs, cookies, request bodies, `extra`, local variables, breadcrumb URL query strings. Kept: the app user id (a UUID), so an issue can be tied to a support thread. Users are counted by a hash of the user id, or of the device hash for signed-out users.
 - **Storage** (all service-role only, RLS on; `err_ingest()` is not executable by `anon`):
@@ -52,5 +53,6 @@ that has gone quiet, show up in the Overview's "Needs attention".
 
 - **No device has sent to it.** Tested with the real `@sentry/core` 10.30 client, `sentry-cli send-event`, and hand-built envelopes shaped like sentry-cocoa's (gzip, `X-Sentry-Auth`, length-prefixed items, an attachment, a session item). A real iOS and Android build should be pointed at a preview deployment before the DSN ships.
 - **Hermes column semantics:** frames are resolved as line, column-1 into the uploaded map, the same as Sentry's generic JS path. Checked against a synthetic map only. Confirm on the first real event with an uploaded map.
-- **Native iOS crashes are not symbolicated** (no dSYM handling). They are grouped by type, message and crash-site function. Use Xcode Organizer for the readable native stack.
+- **Native iOS crashes are not symbolicated** (no dSYM handling). Function names on native frames are whatever the device resolves itself; Sentry's copies were symbolicated server-side, so a device may send fewer names, and grouping then falls back to the image name. Use Xcode Organizer for the readable native stack.
+- **Resolve bounces on any new event.** Old app versions keep sending, and an OTA fix keeps the same release string, so resolving a bug that still fires on old versions brings it straight back ("came back" alert).
 - **Old app versions keep reporting to sentry.io.** Only versions with the new DSN appear here.

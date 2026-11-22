@@ -9,8 +9,8 @@
  *    emails, URLs' query strings stripped). JS frames are left out on purpose:
  *    Hermes production frames are minified and only readable through a source
  *    map, which may not be uploaded, so they'd split issues per release;
- *  - native (cocoa / java / native) events add their top named frame (or the
- *    image name), because their messages are generic ("App hanging for at
+ *  - native (cocoa / java / native) events add their newest in-app frame
+ *    (see topFrame), because their messages are generic ("App hanging for at
  *    least 2000 ms", "EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x...").
  *
  * Scrubbing is an allowlist: anything not copied below is dropped (request
@@ -126,15 +126,21 @@ function exceptionsOf(event: Json): ExceptionValue[] {
 
 const NATIVE = new Set(["cocoa", "java", "native", "objc", "swift", "c", "android"]);
 
+/** A native frame from inside the app bundle (DreamMe.app/DreamMe, DreamMe.app/Frameworks/React.framework/...). */
+const inAppBundle = (f: Frame) => !!f.package && /\.app\//.test(f.package);
+
 /**
- * Sentry lists frames oldest first, so the crash site is the last frame.
- * preferInApp picks the newest in-app frame (a JS culprit reads better as our
- * own function); native grouping uses the crash site itself, because a hang
- * or crash inside React Native often has only `main` as an in-app frame.
+ * The newest in-app frame (Sentry lists frames oldest first). Like Sentry's
+ * own grouping, and checked against real DreamMe issues: the very top frame
+ * of a hang is whatever system call was running when it was sampled
+ * (objc_msgSend, swift_allocObject), so grouping on it would split one hang
+ * into many issues. Native frames count as in-app when they come from the app
+ * bundle, which includes React.framework: on the device sentry-cocoa only
+ * marks the main executable in-app, Sentry's server widened it the same way.
  */
-export function topFrame(frames: Frame[], preferInApp = true): Frame | null {
+export function topFrame(frames: Frame[], native = false): Frame | null {
   const named = frames.filter((f) => f.function && f.function !== "<redacted>" && f.function !== "<unknown>");
-  const inApp = preferInApp ? named.filter((f) => f.in_app) : [];
+  const inApp = named.filter((f) => f.in_app || (native && inAppBundle(f)));
   return (inApp.length ? inApp : named).at(-1) ?? frames.at(-1) ?? null;
 }
 
@@ -193,7 +199,7 @@ export function summarize(event: Json, now = new Date()): Summary {
   const title = clip(type ? (firstLine ? `${type}: ${firstLine}` : type) : firstLine || "(no message)", 300) ?? "(no message)";
 
   const native = NATIVE.has(platform);
-  const top = main ? topFrame(main.frames, !native) : null;
+  const top = main ? topFrame(main.frames, native) : null;
   const culprit = clip(str(event.culprit) ?? str(event.transaction) ?? frameLabel(top), 300);
 
   const sdkFingerprint = arr(event.fingerprint).filter((x): x is string => typeof x === "string");

@@ -24,11 +24,8 @@ export interface MapKey {
   bundle: string | null;
 }
 
-/** JS bundle frames: the ones a source map can fix. */
-export function isBundleFrame(f: Frame): boolean {
-  const p = f.abs_path ?? f.filename ?? "";
-  return /\.(jsbundle|bundle|hbc|js)$/i.test(p.split("?")[0]) && !/node_modules\/|^native$/.test(p);
-}
+export { isBundleFrame } from "./frames";
+import { isBundleFrame } from "./frames";
 
 export function bundleName(f: Frame): string | null {
   const p = f.abs_path ?? f.filename;
@@ -100,7 +97,7 @@ export async function symbolicateExceptions(
   for (const ex of exceptions) {
     const frames: ResolvedFrame[] = [];
     for (const f of ex.frames) {
-      if (!isBundleFrame(f)) {
+      if (!isBundleFrame(f, images)) {
         frames.push({ ...f, resolved: false });
         continue;
       }

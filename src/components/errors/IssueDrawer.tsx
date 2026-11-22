@@ -13,6 +13,7 @@ import { ErrorBanner, InfoWell, Segmented } from "../porcelain";
 import { controlStyle } from "../competitor-ads/parts";
 import type { DailyRow, EventRow, IssueRow } from "@/lib/errors/store";
 import type { ExceptionValue, Frame } from "@/lib/errors/event";
+import { isBundleFrame } from "@/lib/errors/frames";
 import { ago, Bars, Flag, n, PLATFORM_LABEL, shortRelease, when } from "./shared";
 
 interface Detail {
@@ -183,7 +184,8 @@ export function IssueDrawer({ issueId, onClose, onChanged }: { issueId: number |
     | undefined;
   const rawEx = (payload?.exceptions ?? []) as (ExceptionValue & { frames: Frame[] })[];
   const exceptions = view === "source" && d?.symbolicated ? d.symbolicated.exceptions : rawEx;
-  const hasBundleFrames = rawEx.some((e) => e.frames.some((f) => /\.(jsbundle|bundle)$/.test(f.abs_path ?? f.filename ?? "")));
+  const images = ((d?.event?.payload as { debug_images?: Record<string, unknown>[] } | undefined)?.debug_images ?? []) as Record<string, unknown>[];
+  const hasBundleFrames = rawEx.some((e) => e.frames.some((f) => isBundleFrame(f, images)));
   const ctx = payload?.contexts ?? {};
   const app = (ctx.app ?? {}) as Record<string, unknown>;
   const ota = (ctx.ota_updates ?? {}) as Record<string, unknown>;
