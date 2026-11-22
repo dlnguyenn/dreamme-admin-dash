@@ -49,8 +49,9 @@ export function TableBox({ children, minWidth = 720 }: { children: React.ReactNo
 }
 
 /** Rank move as words in colour: up is good (smaller number). */
-export function Move({ now, before, runDays }: { now: number | null; before: number | null; runDays: number | null }) {
-  if (now == null) return <span style={{ color: "var(--ink-3)" }}>—</span>;
+export function Move({ now, before, runDays, observed }: { now: number | null; before: number | null; runDays: number | null; observed: number }) {
+  // Fewer than 8 snapshot days: there was no ranking a week ago to compare with.
+  if (now == null || (before == null && observed < 8)) return <span style={{ color: "var(--ink-3)" }}>—</span>;
   if (before == null) {
     // Only a young ad is "new"; an older one simply wasn't in that day's list.
     return runDays != null && runDays <= 8 ? <span style={{ color: "var(--info-text)" }}>new</span> : <span style={{ color: "var(--ink-3)" }}>unranked</span>;

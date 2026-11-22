@@ -315,7 +315,7 @@ function AdTable({ ads, showBrand, onOpen, isMobile, limit }: { ads: AdView[]; s
                 <span style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginTop: 6, font: "400 12px var(--font-ui)", color: "var(--ink-2)", fontVariantNumeric: "tabular-nums" }}>
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{rankText(a.rank.now)}</span>
                   <span>
-                    7d {rankText(a.rank.ago7)} · <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} />
+                    7d {rankText(a.rank.ago7)} · <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} observed={a.rank.observed} />
                   </span>
                   <span>{num(a.runDays)} days live</span>
                   <span>
@@ -363,7 +363,7 @@ function AdTable({ ads, showBrand, onOpen, isMobile, limit }: { ads: AdView[]; s
               <td style={cell}>
                 {rankText(a.rank.ago7)}
                 <div style={{ font: "400 12px var(--font-ui)" }}>
-                  <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} />
+                  <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} observed={a.rank.observed} />
                 </div>
               </td>
               <td style={cell}>{rankText(a.rank.ago14)}</td>
