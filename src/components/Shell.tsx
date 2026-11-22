@@ -23,6 +23,7 @@ export type DashId =
   | "mmp"
   | "apple-ads"
   | "aso"
+  | "competitor-ads"
   | "plan"
   | "stepdown"
   | "trial-emails"
@@ -73,6 +74,7 @@ export const NAV_ITEMS: NavItem[] = [
   // adminOnly: ad spend. Read-only toward Apple Ads.
   { id: "apple-ads", label: "Apple Ads", icon: "Search", status: "live", desc: "Search ads: spend, trials, keywords, the drug-name test", adminOnly: true },
   { id: "aso", label: "App Store", icon: "Star", status: "live", desc: "Search downloads and conversion, ranks vs MeAgain and Shotsy, ratings, ASO plan", adminOnly: true },
+  { id: "competitor-ads", label: "Competitor ads", icon: "Search", status: "live", desc: "What MeAgain, Shotsy and other GLP-1 apps run on Meta: delivery ranks, breakouts, creators, store pages, hooks", adminOnly: true },
   { id: "plan", label: "April Plan", icon: "Chart", status: "live", desc: "Scorecard, value per trial, clippers, experiments, P&L", adminOnly: true },
   // id kept as "stepdown" so old ?tab=stepdown links still land here.
   { id: "stepdown", label: "Meta Switchback", icon: "Flask", status: "live", desc: "Meta holdout: spend vs plan, cost per extra trial", adminOnly: true },
