@@ -5,6 +5,10 @@
  * run on Meta, read from the tables Outlier's daily Ad Library scrape fills,
  * plus a Foreplay archive pull for run lengths and transcripts.
  * Reads /api/competitor-ads. Admin only.
+ *
+ * Layout follows Foreplay's Spyder: ads as cards with the creative first, a
+ * filter bar, brands side by side, and a detail view that steps through the
+ * list. Explanations sit behind "About these numbers" in each view.
  */
 
 import * as React from "react";
@@ -14,24 +18,29 @@ import { Icons } from "../Icons";
 import { ErrorBanner, Segmented } from "../porcelain";
 import { TrendChart } from "../plan/TrendChart";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { SIGNALS, type AdView } from "@/lib/competitor-ads-tab/logic";
+import type { AdView } from "@/lib/competitor-ads-tab/logic";
+import { DEFAULT_FILTER, collapseCopies, filterAds, sortAds, type AdFilter, type AdSet, type AdSort } from "@/lib/competitor-ads-tab/filters";
 import type { CompetitorAdsPayload, HookView } from "@/lib/competitor-ads-tab/read";
 import { AdDrawer } from "./AdDrawer";
-import { AdCell, Empty, H2, MixBar, MonthBars, Move, Note, TableBox, cell, head, left, monthLabel, num, pctText, rankText, shortDay } from "./parts";
+import { AdsView, type Layout } from "./AdsView";
+import { CompareView } from "./CompareView";
+import { About, AdCard, CardGrid, Empty, FocusStyle, H2, MonthBars, TableBox, Thumb, cell, head, left, monthLabel, num, pctText, rankText, shortDay } from "./parts";
 
-type ViewId = "brands" | "top" | "movers" | "creators" | "pages" | "hooks" | "launches" | "saved";
+type ViewId = "ads" | "brands" | "hooks" | "creators" | "pages" | "launches" | "saved";
 const VIEWS: { value: ViewId; label: string }[] = [
-  { value: "brands", label: "Brands" },
-  { value: "top", label: "Top ads" },
-  { value: "movers", label: "Breakouts" },
+  { value: "ads", label: "Ads" },
+  { value: "brands", label: "Compare brands" },
+  { value: "hooks", label: "Hooks" },
   { value: "creators", label: "Creators" },
   { value: "pages", label: "Store pages" },
-  { value: "hooks", label: "Hooks" },
   { value: "launches", label: "Launches" },
   { value: "saved", label: "Saved" },
 ];
 const VIEW_KEY = "dreamme.competitorAds.view";
 const BRAND_KEY = "dreamme.competitorAds.brand";
+const PREFS_KEY = "dreamme.competitorAds.adsPrefs";
+/** Views from the first version of the tab, mapped onto the merged Ads view. */
+const OLD_VIEWS: Record<string, { view: ViewId; set?: AdSet }> = { top: { view: "ads", set: "ranked" }, movers: { view: "ads", set: "rising" } };
 
 function readPref(key: string, param: string): string | null {
   try {
@@ -47,15 +56,28 @@ export function CompetitorAdsTab() {
   const [data, setData] = React.useState<CompetitorAdsPayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [view, setView] = React.useState<ViewId>("brands");
+  const [view, setView] = React.useState<ViewId>("ads");
   const [brand, setBrand] = React.useState<string>("all");
-  const [open, setOpen] = React.useState<AdView | null>(null);
+  const [filter, setFilter] = React.useState<Omit<AdFilter, "brand">>(DEFAULT_FILTER);
+  const [sort, setSort] = React.useState<AdSort>("rank");
+  const [layout, setLayout] = React.useState<Layout>("cards");
+  /** The open ad and the list it was opened from (for previous / next). */
+  const [open, setOpen] = React.useState<{ ad: AdView; list: AdView[] } | null>(null);
 
   React.useEffect(() => {
     const v = readPref(VIEW_KEY, "view");
-    if (v && VIEWS.some((x) => x.value === v)) setView(v as ViewId);
+    if (v && OLD_VIEWS[v]) {
+      setView(OLD_VIEWS[v].view);
+      if (OLD_VIEWS[v].set) setFilter((f) => ({ ...f, set: OLD_VIEWS[v].set! }));
+    } else if (v && VIEWS.some((x) => x.value === v)) setView(v as ViewId);
     const b = readPref(BRAND_KEY, "brand");
     if (b) setBrand(b);
+    try {
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as { sort?: AdSort; layout?: Layout; set?: AdSet };
+      if (p.sort) setSort(p.sort);
+      if (p.layout) setLayout(p.layout);
+      if (p.set && !(v && OLD_VIEWS[v])) setFilter((f) => ({ ...f, set: p.set! }));
+    } catch {}
   }, []);
 
   const load = React.useCallback(async () => {
@@ -84,6 +106,11 @@ export function CompetitorAdsTab() {
       window.history.replaceState(null, "", url.toString());
     } catch {}
   };
+  const rememberPrefs = (p: { sort: AdSort; layout: Layout; set: AdSet }) => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    } catch {}
+  };
   const pickView = (v: string) => {
     setView(v as ViewId);
     remember(VIEW_KEY, "view", v);
@@ -91,6 +118,30 @@ export function CompetitorAdsTab() {
   const pickBrand = (b: string) => {
     setBrand(b);
     remember(BRAND_KEY, "brand", b);
+  };
+  /** `persist` false for a click-through from another view, so it doesn't replace the remembered set. */
+  const updateFilter = (f: Partial<AdFilter>, persist = true) => {
+    const { brand: b, ...rest } = f;
+    if (b !== undefined) pickBrand(b);
+    setFilter((cur) => {
+      const next = { ...cur, ...rest };
+      if (rest.set && persist) rememberPrefs({ sort, layout, set: next.set });
+      return next;
+    });
+  };
+  const pickSort = (s: AdSort) => {
+    setSort(s);
+    rememberPrefs({ sort: s, layout, set: filter.set });
+  };
+  const pickLayout = (l: Layout) => {
+    setLayout(l);
+    rememberPrefs({ sort, layout: l, set: filter.set });
+  };
+  /** From another view: show the Ads view narrowed to one creator, store page or brand. */
+  const seeAds = (f: Partial<AdFilter>) => {
+    updateFilter({ set: "all", runsAs: "all", format: "all", identity: null, cpp: null, query: "", ...f }, false);
+    pickView("ads");
+    window.scrollTo({ top: 0 });
   };
 
   const brandOptions = React.useMemo(() => {
@@ -101,8 +152,10 @@ export function CompetitorAdsTab() {
     if (data && brand !== "all" && !data.brands.some((b) => b.name === brand)) setBrand("all");
   }, [data, brand]);
 
-  const inBrand = React.useCallback(<T extends { brand: string }>(rows: T[]) => (brand === "all" ? rows : rows.filter((r) => r.brand === brand)), [brand]);
   const savedMap = React.useMemo(() => new Map((data?.saves ?? []).map((s) => [s.ad_archive_id, s])), [data]);
+  const savedIds = React.useMemo(() => new Set(savedMap.keys()), [savedMap]);
+  const fullFilter: AdFilter = React.useMemo(() => ({ ...filter, brand }), [filter, brand]);
+  const shownAds = React.useMemo(() => (data ? sortAds(collapseCopies(filterAds(data.ads, fullFilter)), sort) : []), [data, fullFilter, sort]);
 
   const saveAd = async (ad: AdView, note: string) => {
     const res = await fetch("/api/competitor-ads/saves", {
@@ -130,6 +183,16 @@ export function CompetitorAdsTab() {
     setData((d) => (d ? { ...d, saves: d.saves.filter((s) => s.ad_archive_id !== ad.adArchiveId) } : d));
     toast("Removed from saved");
   };
+  const toggleSave = (ad: AdView) => {
+    const saved = savedMap.get(ad.adArchiveId);
+    // A saved ad with a note opens instead, so one click on the bookmark can't throw the note away.
+    if (saved?.note) {
+      setOpen({ ad, list: [ad] });
+      toast("This saved ad has a note. Remove it from here if you mean to.");
+      return;
+    }
+    void (saved ? unsaveAd(ad) : saveAd(ad, ""));
+  };
   const setPick = async (h: HookView, pick: HookView["pick"]) => {
     const prev = h.pick;
     setData((d) => (d ? { ...d, hooks: d.hooks.map((x) => (x.id === h.id ? { ...x, pick } : x)) } : d));
@@ -145,13 +208,23 @@ export function CompetitorAdsTab() {
     }
   };
 
+  const openIn = (list: AdView[]) => (ad: AdView) => setOpen({ ad, list: list.some((a) => a.id === ad.id) ? list : [ad] });
+  const openOne = (ad: AdView) => setOpen({ ad, list: [ad] });
+  const openIndex = open ? open.list.findIndex((a) => a.id === open.ad.id) : -1;
+  const step = (d: number) => (open && open.list[openIndex + d] ? () => setOpen({ ad: open.list[openIndex + d], list: open.list }) : null);
+
   const rankedOn = data?.brands.map((b) => b.rankDay).filter(Boolean).sort().at(-1) ?? null;
-  const subtitle = data
-    ? `What the GLP-1 tracker apps run on Meta, from Outlier's daily Ad Library scrape${rankedOn ? `, ranked ${shortDay(rankedOn)}` : ""}.`
-    : "What the GLP-1 tracker apps run on Meta, from Outlier's daily Ad Library scrape.";
+  const subtitle = `What the GLP-1 tracker apps run on Meta, from Outlier's daily Ad Library scrape${rankedOn ? `, ranked ${shortDay(rankedOn)}` : ""}.`;
+
+  const savedAds = React.useMemo(() => {
+    if (!data) return [];
+    const byId = new Map([...data.ads, ...data.savedEnded].map((a) => [a.adArchiveId, a]));
+    return data.saves.map((s) => ({ s, ad: byId.get(s.ad_archive_id) })).filter((r): r is { s: (typeof data.saves)[number]; ad: AdView } => !!r.ad && (brand === "all" || r.ad.brand === brand));
+  }, [data, brand]);
 
   return (
-    <div style={{ maxWidth: 1180 }}>
+    <div style={{ maxWidth: 1240 }}>
+      <FocusStyle />
       <PageHeader
         title="Competitor ads"
         subtitle={subtitle}
@@ -162,12 +235,12 @@ export function CompetitorAdsTab() {
         }
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 6 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
           <Segmented value={view} onChange={pickView} options={VIEWS} />
         </div>
         {data && data.brands.length > 1 && (
-          <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
+          <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto", marginLeft: isMobile ? 0 : "auto" }}>
             <Segmented size="sm" value={brand} onChange={pickBrand} options={brandOptions} />
           </div>
         )}
@@ -184,248 +257,89 @@ export function CompetitorAdsTab() {
         </ErrorBanner>
       )}
 
-      {!data && loading && <Skeleton />}
+      {!data && loading && <Skeleton isMobile={isMobile} />}
 
       {data && (
         <div style={{ opacity: loading ? 0.6 : 1, transition: "opacity 160ms ease" }}>
           {(data.sources.archive === "local" || data.sources.hooks === "local") && (
-            <Note style={{ marginTop: 14, color: "var(--warning-text)" }}>
-              Development: the archive and hooks are read from the vault files and picks or saves live in memory until migration 0122 runs.
-            </Note>
+            <p style={{ font: "400 13px var(--font-ui)", color: "var(--warning-text)", margin: "14px 0 0" }}>
+              Development: the archive and hooks come from the vault files, and picks or saves stay in memory.
+            </p>
           )}
-          {view === "brands" && <BrandsView data={data} brand={brand} isMobile={isMobile} />}
-          {view === "top" && <TopView ads={inBrand(data.ads)} showBrand={brand === "all"} onOpen={setOpen} isMobile={isMobile} />}
-          {view === "movers" && <MoversView ads={inBrand(data.ads)} showBrand={brand === "all"} onOpen={setOpen} isMobile={isMobile} />}
-          {view === "creators" && <CreatorsView data={data} brand={brand} />}
-          {view === "pages" && <PagesView data={data} brand={brand} />}
-          {view === "hooks" && <HooksView hooks={brand === "all" ? data.hooks : data.hooks.filter((h) => h.brand === brand.toLowerCase())} onPick={setPick} source={data.sources.hooks} />}
+          {view === "ads" && (
+            <AdsView
+              all={data.ads}
+              shown={shownAds}
+              filter={fullFilter}
+              onFilter={updateFilter}
+              sort={sort}
+              onSort={pickSort}
+              layout={layout}
+              onLayout={pickLayout}
+              savedIds={savedIds}
+              onOpen={openIn(shownAds)}
+              onToggleSave={toggleSave}
+              isMobile={isMobile}
+            />
+          )}
+          {view === "brands" && <CompareView data={data} brand={brand} isMobile={isMobile} onOpen={openOne} onSeeAds={(b) => seeAds({ brand: b, set: "ranked" })} />}
+          {view === "creators" && <CreatorsView data={data} brand={brand} onSeeAds={(identity, b) => seeAds({ identity, brand: b })} />}
+          {view === "pages" && <PagesView data={data} brand={brand} onSeeAds={(cpp, b) => seeAds({ cpp, brand: b })} />}
+          {view === "hooks" && (
+            <HooksView
+              hooks={brand === "all" ? data.hooks : data.hooks.filter((h) => h.brand === brand.toLowerCase())}
+              ads={data.ads}
+              onPick={setPick}
+              onOpen={openOne}
+              source={data.sources.hooks}
+            />
+          )}
           {view === "launches" && <LaunchesView data={data} brand={brand} isMobile={isMobile} />}
-          {view === "saved" && <SavedView data={data} brand={brand} onOpen={setOpen} />}
+          {view === "saved" && (
+            <SavedView rows={savedAds} liveIds={new Set(data.ads.map((a) => a.adArchiveId))} showBrand={brand === "all"} isMobile={isMobile} onOpen={openIn(savedAds.map((r) => r.ad))} onToggleSave={toggleSave} />
+          )}
         </div>
       )}
 
-      <AdDrawer ad={open} saved={open ? savedMap.get(open.adArchiveId) ?? null : null} onClose={() => setOpen(null)} onSave={saveAd} onUnsave={unsaveAd} />
+      <AdDrawer
+        ad={open?.ad ?? null}
+        saved={open ? savedMap.get(open.ad.adArchiveId) ?? null : null}
+        position={open && open.list.length > 1 && openIndex >= 0 ? { index: openIndex, total: open.list.length } : null}
+        onPrev={step(-1)}
+        onNext={step(1)}
+        onClose={() => setOpen(null)}
+        onSave={saveAd}
+        onUnsave={unsaveAd}
+      />
     </div>
   );
 }
 
-function Skeleton() {
+function Skeleton({ isMobile }: { isMobile: boolean }) {
   return (
-    <div aria-busy="true" style={{ display: "grid", gap: 10, marginTop: 24 }}>
-      {[80, 220, 220].map((h, i) => (
-        <div key={i} style={{ height: h, borderRadius: 14, background: "var(--bg-2)", opacity: 0.7 }} />
-      ))}
+    <div aria-busy="true" style={{ marginTop: 24 }}>
+      <div style={{ height: 34, width: 420, maxWidth: "100%", borderRadius: 10, background: "var(--bg-2)", marginBottom: 20 }} />
+      <CardGrid isMobile={isMobile}>
+        {Array.from({ length: isMobile ? 4 : 8 }, (_, i) => (
+          <div key={i}>
+            <div style={{ aspectRatio: "4 / 5", borderRadius: 10, background: "var(--bg-2)" }} />
+            <div style={{ height: 12, width: "40%", borderRadius: 4, background: "var(--bg-2)", marginTop: 10 }} />
+            <div style={{ height: 12, width: "85%", borderRadius: 4, background: "var(--bg-2)", marginTop: 8 }} />
+          </div>
+        ))}
+      </CardGrid>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------- brands
-
-function BrandsView({ data, brand, isMobile }: { data: CompetitorAdsPayload; brand: string; isMobile: boolean }) {
-  const brands = brand === "all" ? data.brands : data.brands.filter((b) => b.name === brand);
-  return (
-    <>
-      <H2>Live ads by brand</H2>
-      <TableBox minWidth={760}>
-        <thead>
-          <tr>
-            <th scope="col" style={{ ...head, ...left }}>Brand</th>
-            <th scope="col" style={head}>Live ads</th>
-            <th scope="col" style={head}>A week ago</th>
-            <th scope="col" style={head}>As creators</th>
-            <th scope="col" style={{ ...head, ...left, width: "34%" }}>Format</th>
-            <th scope="col" style={head}>Days ranked, last 14</th>
-          </tr>
-        </thead>
-        <tbody>
-          {brands.map((b) => {
-            const last = b.daily.at(-1);
-            const weekAgo = b.daily.find((d) => d.day === addDaysClient(last?.day ?? "", -7));
-            const scraped = b.pages.map((p) => p.lastScrapedAt).filter(Boolean).sort().at(-1) ?? null;
-            const firstRank = b.rankDays ? String(b.rankDays) : null;
-            return (
-              <tr key={b.key}>
-                <th scope="row" style={{ ...cell, ...left, fontWeight: 600 }}>
-                  {b.name}
-                  <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)", marginTop: 2 }}>
-                    {scraped ? `Scraped ${shortDay(scraped)}` : "Not scraped yet"}
-                    {b.pages.length > 1 ? ` · ${b.pages.length} pages` : ""}
-                  </div>
-                </th>
-                <td style={{ ...cell, font: "600 15px var(--font-ui)" }}>{num(b.live)}</td>
-                <td style={cell}>{weekAgo ? num(weekAgo.active) : "—"}</td>
-                <td style={cell}>{b.live ? pctText(data.ads.filter((a) => a.brand === b.name && a.isPartnership).length / b.live) : "—"}</td>
-                <td style={{ ...cell, ...left, paddingRight: 24 }}>
-                  <MixBar mix={b.mix} />
-                </td>
-                <td style={{ ...cell, color: b.rankFresh ? "var(--ink)" : "var(--ink-3)" }}>{firstRank ?? (scraped ? "No ranks yet" : "—")}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </TableBox>
-      <Note style={{ marginTop: 10 }}>
-        &ldquo;No creative yet&rdquo; is a live ad whose video or image wasn&apos;t in the scrape, usually because it started the day before. Dosely and Pep AI aren&apos;t tracked: each would be one more row in Outlier&apos;s brand list and a few ScrapeCreators credits a day.
-      </Note>
-
-      <H2>Live ads per day</H2>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 18 }}>
-        {brands.map((b) => {
-          const pts = b.daily.slice(-120).map((d) => ({ x: d.day, y: d.active, note: `${d.video} video, ${d.dco} DCO, ${d.image} image${d.other ? `, ${d.other} other` : ""}` }));
-          return (
-            <div key={b.key} style={{ minWidth: 0 }}>
-              <div style={{ font: "600 13px var(--font-ui)", color: "var(--ink)", marginBottom: 6 }}>{b.name}</div>
-              {pts.length >= 2 ? (
-                <TrendChart points={pts} color="var(--cat-1)" format={(v) => num(v)} ariaLabel={`${b.name} live ads per day`} height={160} />
-              ) : (
-                <div style={{ font: "400 13px var(--font-ui)", color: "var(--ink-3)", padding: "24px 0" }}>No daily counts yet. They start with the first daily scrape.</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <Note style={{ marginTop: 10 }}>Counts before Nov 5 were seeded from Foreplay; Outlier counts every identity, so its numbers run above Foreplay&apos;s.</Note>
-    </>
-  );
-}
-
-const addDaysClient = (day: string, n: number) => (day ? new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10) : "");
-
-// ---------------------------------------------------------------- top ads
-
-function AdTable({ ads, showBrand, onOpen, isMobile, limit }: { ads: AdView[]; showBrand: boolean; onOpen: (a: AdView) => void; isMobile: boolean; limit?: number }) {
-  const [all, setAll] = React.useState(false);
-  const shown = !limit || all ? ads : ads.slice(0, limit);
-  if (!ads.length) return null;
-  const more = limit && ads.length > limit && !all && (
-    <div style={{ marginTop: 10 }}>
-      <Button size="sm" variant="secondary" onClick={() => setAll(true)}>
-        Show all {ads.length}
-      </Button>
-    </div>
-  );
-  if (isMobile) {
-    return (
-      <>
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {shown.map((a) => (
-            <li key={a.id} style={{ borderTop: "1px solid var(--line)" }}>
-              <button onClick={() => onOpen(a)} style={{ all: "unset", cursor: "pointer", display: "block", width: "100%", padding: "10px 0", boxSizing: "border-box" }}>
-                <AdCell ad={a} showBrand={showBrand} />
-                <span style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginTop: 6, font: "400 12px var(--font-ui)", color: "var(--ink-2)", fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ fontWeight: 600, color: "var(--ink)" }}>{rankText(a.rank.now)}</span>
-                  <span>
-                    7d {rankText(a.rank.ago7)} · <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} observed={a.rank.observed} />
-                  </span>
-                  <span>{num(a.runDays)} days live</span>
-                  <span>
-                    {a.confidence.met} of {a.confidence.of} signals
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {more}
-      </>
-    );
-  }
-  return (
-    <>
-      <TableBox minWidth={980}>
-        <thead>
-          <tr>
-            <th scope="col" style={head}>Rank</th>
-            <th scope="col" style={{ ...head, ...left, paddingLeft: 6 }}>Ad</th>
-            <th scope="col" style={head}>7 days ago</th>
-            <th scope="col" style={head}>14 days ago</th>
-            <th scope="col" style={head}>Days in top 20</th>
-            <th scope="col" style={head}>Days live</th>
-            <th scope="col" style={head}>Copies</th>
-            <th scope="col" style={head}>Signals</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((a) => (
-            <tr
-              key={a.id}
-              tabIndex={0}
-              onClick={() => onOpen(a)}
-              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(a))}
-              style={{ cursor: "pointer" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              <td style={{ ...cell, font: "600 14px var(--font-ui)", width: 56 }}>{rankText(a.rank.now)}</td>
-              <td style={{ ...cell, ...left, paddingLeft: 6 }}>
-                <AdCell ad={a} showBrand={showBrand} />
-              </td>
-              <td style={cell}>
-                {rankText(a.rank.ago7)}
-                <div style={{ font: "400 12px var(--font-ui)" }}>
-                  <Move now={a.rank.now} before={a.rank.ago7} runDays={a.runDays} observed={a.rank.observed} />
-                </div>
-              </td>
-              <td style={cell}>{rankText(a.rank.ago14)}</td>
-              <td style={cell}>{a.rank.observed ? `${a.rank.top20} of ${a.rank.observed}` : "—"}</td>
-              <td style={cell}>{num(a.runDays)}</td>
-              <td style={cell}>{a.copies}</td>
-              <td style={cell} title={a.confidence.signals.map((s) => `${s.met ? "Yes" : "No"}: ${s.label}`).join("\n")}>
-                <span style={{ fontWeight: 600, color: a.confidence.of && a.confidence.met === a.confidence.of ? "var(--success-text)" : "var(--ink)" }}>{a.confidence.met}</span>
-                <span style={{ color: "var(--ink-3)" }}> of {a.confidence.of}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </TableBox>
-      {more}
-    </>
-  );
-}
-
-function TopView({ ads, showBrand, onOpen, isMobile }: { ads: AdView[]; showBrand: boolean; onOpen: (a: AdView) => void; isMobile: boolean }) {
-  const ranked = ads.filter((a) => a.rank.now != null);
-  const unranked = ads.length - ranked.length;
-  if (!ads.length) return <div style={{ marginTop: 24 }}><Empty title="No live ads for this brand">Ads show here once Outlier&apos;s daily scrape finds them.</Empty></div>;
-  return (
-    <>
-      <H2>Ranked by Meta&apos;s delivery</H2>
-      <Note>
-        The Ad Library&apos;s impressions order, snapshotted every morning. It counts lifetime impressions, so older ads drift up. Signals count how many of these agree, out of those the ad has: top {SIGNALS.topRank} today, top {SIGNALS.topRank} on {SIGNALS.persistDays}+ of the last 14 days, live {SIGNALS.longRunDays}+ days, {SIGNALS.copies}+ live copies, EU reach in the brand&apos;s top quarter.
-      </Note>
-      {ranked.length ? <AdTable ads={ranked} showBrand={showBrand} onOpen={onOpen} isMobile={isMobile} limit={50} /> : <Empty title="No ranks yet">This brand&apos;s ads are live but haven&apos;t been ranked; the first rank lands with the next daily scrape.</Empty>}
-      {unranked > 0 && <Note style={{ marginTop: 12 }}>{unranked} live {unranked === 1 ? "ad has" : "ads have"} no rank from the last 48 hours.</Note>}
-    </>
-  );
-}
-
-// ---------------------------------------------------------------- breakouts / evergreen
-
-function MoversView({ ads, showBrand, onOpen, isMobile }: { ads: AdView[]; showBrand: boolean; onOpen: (a: AdView) => void; isMobile: boolean }) {
-  const byRank = (a: AdView, b: AdView) => (a.rank.now ?? 1e9) - (b.rank.now ?? 1e9);
-  const fast = ads.filter((a) => a.buckets.includes("breakout") || a.buckets.includes("riser")).sort(byRank);
-  const slow = ads.filter((a) => a.buckets.includes("evergreen") || a.buckets.includes("steady")).sort(byRank);
-  return (
-    <>
-      <H2>Breakouts and fast risers</H2>
-      <Note>Breakout: top 50, live 14 days or less, and new or at least twice as high as a week ago. Fast riser: top 50 and 20+ places higher than a week ago.</Note>
-      {fast.length ? <AdTable ads={fast} showBrand={showBrand} onOpen={onOpen} isMobile={isMobile} /> : <Empty title="No breakouts right now">They need a week of daily ranks to compare against.</Empty>}
-      <H2>Evergreen and steady</H2>
-      <Note>Evergreen: top 5 now and a week ago, live 30+ days. Steady: live 30+ days and in the top 50 on 80% of the last 14 days.</Note>
-      {slow.length ? <AdTable ads={slow} showBrand={showBrand} onOpen={onOpen} isMobile={isMobile} /> : <Empty title="No long-running leaders yet">These need 10+ days of daily ranks.</Empty>}
-    </>
   );
 }
 
 // ---------------------------------------------------------------- creators
 
-function CreatorsView({ data, brand }: { data: CompetitorAdsPayload; brand: string }) {
+function CreatorsView({ data, brand, onSeeAds }: { data: CompetitorAdsPayload; brand: string; onSeeAds: (identity: string, brand: string) => void }) {
   const rows = brand === "all" ? data.identities : data.identities.filter((i) => i.brand === brand);
   if (!rows.length) return <div style={{ marginTop: 24 }}><Empty title="No live ads to group">Accounts show here once a brand has live ads.</Empty></div>;
   return (
     <>
       <H2>Who the ads run as</H2>
-      <Note>Each partnership ad runs under a creator&apos;s account &ldquo;with&rdquo; the brand. Earliest ad is a floor: ads that ended before Nov 5 carry no account name.</Note>
       <TableBox minWidth={720}>
         <thead>
           <tr>
@@ -442,8 +356,10 @@ function CreatorsView({ data, brand }: { data: CompetitorAdsPayload; brand: stri
           {rows.map((r) => (
             <tr key={`${r.brand}-${r.identity}`}>
               <th scope="row" style={{ ...cell, ...left, fontWeight: 500 }}>
-                {r.identity}
-                <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>{r.isPartnership ? "Partnership" : "Brand page"}</div>
+                <button onClick={() => onSeeAds(r.identity, r.brand)} className="cad-focus" style={{ all: "unset", cursor: "pointer", color: "var(--link)", font: "500 13px var(--font-ui)", borderRadius: 4 }} title={`See ${r.identity}'s live ads`}>
+                  {r.identity}
+                </button>
+                <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-2)" }}>{r.isPartnership ? "Creator account" : "Brand page"}</div>
               </th>
               {brand === "all" && <td style={{ ...cell, ...left }}>{r.brand}</td>}
               <td style={{ ...cell, fontWeight: 600 }}>{num(r.live)}</td>
@@ -455,13 +371,18 @@ function CreatorsView({ data, brand }: { data: CompetitorAdsPayload; brand: stri
           ))}
         </tbody>
       </TableBox>
+      <About>
+        <p style={{ margin: 0 }}>
+          A creator account runs the ad under its own name &ldquo;with&rdquo; the brand. Click an account to see its live ads. Earliest ad is a floor: ads that ended before Nov 5 carry no account name.
+        </p>
+      </About>
     </>
   );
 }
 
 // ---------------------------------------------------------------- store pages
 
-function PagesView({ data, brand }: { data: CompetitorAdsPayload; brand: string }) {
+function PagesView({ data, brand, onSeeAds }: { data: CompetitorAdsPayload; brand: string; onSeeAds: (cpp: string, brand: string) => void }) {
   const pages = brand === "all" ? data.cpps : data.cpps.filter((p) => p.brand === brand);
   const mix = brand === "all" ? data.landing : data.landing.filter((m) => m.brand === brand);
   return (
@@ -493,7 +414,6 @@ function PagesView({ data, brand }: { data: CompetitorAdsPayload; brand: string 
           ))}
         </tbody>
       </TableBox>
-      <Note style={{ marginTop: 10 }}>Outlier misses the link on many live ads, so the page counts are floors.</Note>
 
       <H2>Custom Product Pages</H2>
       {pages.length ? (
@@ -512,8 +432,10 @@ function PagesView({ data, brand }: { data: CompetitorAdsPayload; brand: string 
             {pages.map((p) => (
               <tr key={`${p.brand}-${p.cpp}`}>
                 <th scope="row" style={{ ...cell, ...left, fontWeight: 500, whiteSpace: "nowrap" }}>
-                  <code style={{ font: "500 12.5px var(--font-mono)" }}>{p.cpp.slice(0, 8)}</code>
-                  <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>
+                  <button onClick={() => onSeeAds(p.cpp, p.brand)} className="cad-focus" style={{ all: "unset", cursor: "pointer", color: "var(--link)", font: "500 13px var(--font-ui)", borderRadius: 4 }} title="See the live ads that link to this page">
+                    Page {p.cpp.slice(0, 8)}
+                  </button>
+                  <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-2)" }}>
                     {brand === "all" ? `${p.brand} · ` : ""}
                     {p.url ? (
                       <a href={p.url} target="_blank" rel="noreferrer" style={{ color: "var(--link)" }}>
@@ -542,6 +464,9 @@ function PagesView({ data, brand }: { data: CompetitorAdsPayload; brand: string 
       ) : (
         <Empty title="No Custom Product Pages in the live ads">A page shows here when a live ad&apos;s link carries a page id.</Empty>
       )}
+      <About>
+        <p style={{ margin: 0 }}>Outlier misses the link on many live ads, so the page counts are floors. Click a page to see the ads that send people to it.</p>
+      </About>
     </>
   );
 }
@@ -554,7 +479,8 @@ const PICKS: { value: NonNullable<HookView["pick"]>; label: string }[] = [
   { value: "skip", label: "Skip" },
 ];
 
-function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: HookView, p: HookView["pick"]) => void; source: string }) {
+function HooksView({ hooks, ads, onPick, onOpen, source }: { hooks: HookView[]; ads: AdView[]; onPick: (h: HookView, p: HookView["pick"]) => void; onOpen: (a: AdView) => void; source: string }) {
+  const adById = React.useMemo(() => new Map(ads.map((a) => [a.adArchiveId, a])), [ads]);
   const [tier, setTier] = React.useState("all");
   const [pickF, setPickF] = React.useState("all");
   const shown = hooks.filter((h) => (tier === "all" || h.tier === tier) && (pickF === "all" || (pickF === "none" ? !h.pick : h.pick === pickF)));
@@ -572,9 +498,6 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
   return (
     <>
       <H2 right={<span style={{ font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>{counts}</span>}>Hooks from long-running videos</H2>
-      <Note>
-        On-screen text of the first 3 seconds of competitor videos that ran 21+ days{hookDate ? ` (read ${shortDay(hookDate)})` : ""}, scored within each brand: half run length, 30% copies, 20% still live.
-      </Note>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
         <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
           <Segmented size="sm" value={tier} onChange={setTier} options={[{ value: "all", label: "All tiers" }, { value: "A", label: "Tier A" }, { value: "B", label: "Tier B" }, { value: "C", label: "Tier C" }]} />
@@ -596,12 +519,21 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
           </tr>
         </thead>
         <tbody>
-          {shown.map((h) => (
+          {shown.map((h) => {
+            const live = h.ad_archive_id ? adById.get(h.ad_archive_id) : undefined;
+            return (
             <tr key={h.id}>
-              <td style={{ ...cell, color: "var(--ink-3)", width: 36 }}>{h.position}</td>
-              <td style={{ ...cell, ...left, paddingLeft: 6, maxWidth: 460 }}>
+              <td style={{ ...cell, color: "var(--ink-2)", width: 36 }}>{h.position}</td>
+              <td style={{ ...cell, ...left, paddingLeft: 6, maxWidth: 520 }}>
+                <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                {live ? (
+                  <button onClick={() => onOpen(live)} aria-label={`Open the live ad for hook ${h.position}`} className="cad-focus" style={{ all: "unset", cursor: "pointer", borderRadius: 6, flex: "none" }}>
+                    <Thumb ad={live} size={40} />
+                  </button>
+                ) : null}
+                <span style={{ minWidth: 0 }}>
                 <div style={{ font: "500 13px/1.4 var(--font-ui)" }}>{h.hook}</div>
-                <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)", marginTop: 2 }}>
+                <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-2)", marginTop: 2 }}>
                   {h.brand === "meagain" ? "MeAgain" : h.brand === "shotsy" ? "Shotsy" : h.brand} · {h.identity ?? "—"} · {h.hook_type ?? "—"}
                   {h.ad_archive_id && (
                     <>
@@ -611,13 +543,16 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
                       </a>
                     </>
                   )}
+                  {live ? `, live now at ${rankText(live.rank.now)}` : ""}
                 </div>
+                </span>
+                </span>
               </td>
               <td style={cell}>{num(h.max_days)}</td>
               <td style={cell}>{num(h.ads)}</td>
               <td style={cell}>{num(h.live)}</td>
               <td style={cell}>
-                {num(h.score)} <span style={{ color: "var(--ink-3)" }}>{h.tier}</span>
+                {num(h.score)} <span style={{ color: "var(--ink-2)" }}>{h.tier}</span>
               </td>
               <td style={{ ...cell, ...left, paddingLeft: 12 }}>
                 <div role="radiogroup" aria-label={`Pick for hook ${h.position}`} style={{ display: "inline-flex", gap: 4 }}>
@@ -648,9 +583,15 @@ function HooksView({ hooks, onPick, source }: { hooks: HookView[]; onPick: (h: H
                 </div>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </TableBox>
+      <About>
+        <p style={{ margin: 0 }}>
+          The on-screen text of the first 3 seconds of competitor videos that ran 21+ days{hookDate ? `, read ${shortDay(hookDate)}` : ""}. Scored within each brand: half run length, 30% copies, 20% still live. A thumbnail means the ad is still live; click it to open the ad.
+        </p>
+      </About>
     </>
   );
 }
@@ -672,11 +613,6 @@ function LaunchesView({ data, brand, isMobile }: { data: CompetitorAdsPayload; b
     );
   return (
     <>
-      {rows.length > 0 && (
-        <Note style={{ marginTop: 18 }}>
-          From the Foreplay archive pulled {shortDay(data.archive.pulledOn)}: run lengths come from Foreplay, because Outlier end-dated ads late before Nov 5. A share counts only ads launched long enough before the pull; &ldquo;of N&rdquo; marks a month where that&apos;s not all of them. Topics are keyword matches on the headline, the first line of copy and the opening of the transcript, so treat small groups as leads.
-        </Note>
-      )}
       {!rows.length ? (
         <div style={{ marginTop: 24 }}>
           <Empty title="No archive pull for this brand">
@@ -755,39 +691,55 @@ function LaunchesView({ data, brand, isMobile }: { data: CompetitorAdsPayload; b
           );
         })}
       </div>
+      {rows.length > 0 && (
+        <About>
+          <p style={{ margin: 0 }}>
+            From the Foreplay archive pulled {shortDay(data.archive.pulledOn)}: run lengths come from Foreplay, because Outlier end-dated ads late before Nov 5. A share counts only ads launched long enough before the pull; &ldquo;of N&rdquo; marks a month where that&apos;s not all of them. Topics are keyword matches on the headline, the first line of copy and the opening of the transcript, so treat small groups as leads.
+          </p>
+        </About>
+      )}
     </>
   );
 }
 
 // ---------------------------------------------------------------- saved
 
-function SavedView({ data, brand, onOpen }: { data: CompetitorAdsPayload; brand: string; onOpen: (a: AdView) => void }) {
-  const byId = new Map([...data.ads, ...data.savedEnded].map((a) => [a.adArchiveId, a]));
-  const rows = data.saves.map((s) => ({ s, ad: byId.get(s.ad_archive_id) })).filter((r) => r.ad && (brand === "all" || r.ad.brand === brand));
+function SavedView({
+  rows,
+  liveIds,
+  showBrand,
+  isMobile,
+  onOpen,
+  onToggleSave,
+}: {
+  rows: { s: { ad_archive_id: string; note: string; saved_at: string }; ad: AdView }[];
+  liveIds: Set<string>;
+  showBrand: boolean;
+  isMobile: boolean;
+  onOpen: (a: AdView) => void;
+  onToggleSave: (a: AdView) => void;
+}) {
   if (!rows.length) {
     return (
       <div style={{ marginTop: 24 }}>
-        <Empty title="Nothing saved yet">Open any ad and choose Save ad to keep it here with a note. Saved ads stay after they stop running.</Empty>
+        <Empty title="Nothing saved yet">Save an ad from its card or its detail, with a note if you like. Saved ads stay here after they stop running.</Empty>
       </div>
     );
   }
   return (
     <>
       <H2>Saved ads</H2>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+      <CardGrid isMobile={isMobile}>
         {rows.map(({ s, ad }) => (
-          <li key={s.ad_archive_id} style={{ borderTop: "1px solid var(--line)" }}>
-            <button onClick={() => onOpen(ad!)} style={{ all: "unset", cursor: "pointer", display: "block", width: "100%", padding: "12px 0", boxSizing: "border-box" }}>
-              <AdCell ad={ad!} showBrand={brand === "all"} />
-              <span style={{ display: "block", marginTop: 6, font: "400 12.5px/1.45 var(--font-ui)", color: "var(--ink-2)" }}>
-                {data.ads.some((a) => a.adArchiveId === s.ad_archive_id) ? `Live, ${rankText(ad!.rank.now)} today` : "No longer running"} · saved {shortDay(s.saved_at)}
-                {s.note ? ` · ${s.note}` : ""}
-              </span>
-            </button>
-          </li>
+          <div key={s.ad_archive_id} style={{ minWidth: 0 }}>
+            <AdCard ad={ad} showBrand={showBrand} saved onOpen={onOpen} onToggleSave={onToggleSave} />
+            <div style={{ font: "400 12px/1.45 var(--font-ui)", color: "var(--ink-2)", padding: "4px 2px 0" }}>
+              {liveIds.has(s.ad_archive_id) ? "Still live" : "No longer running"}, saved {shortDay(s.saved_at)}
+            </div>
+            {s.note && <div style={{ font: "400 13px/1.45 var(--font-ui)", color: "var(--ink)", padding: "4px 2px 0", whiteSpace: "pre-wrap" }}>{s.note}</div>}
+          </div>
         ))}
-      </ul>
-      <Note style={{ marginTop: 12 }}>Copy a brief from any saved ad&apos;s drawer.</Note>
+      </CardGrid>
     </>
   );
 }
