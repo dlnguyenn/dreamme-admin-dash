@@ -288,6 +288,70 @@ function trimAd(a: AdView): AdView {
   return { ...a, body: a.body && a.body.length > 700 ? `${a.body.slice(0, 700)}…` : a.body };
 }
 
+// ---------------------------------------------------------------- launches (Creative tests view)
+
+/** The columns the Creative tests view needs: enough to draw a row and open the drawer. */
+const LAUNCH_COLS =
+  "id,ad_archive_id,page_id,page_name,is_active,started_at,ended_at,media_type,format,thumbnail_url,video_archive_url,title,body,hook,angle,messaging_theme,cta_text,link_url,ad_library_url,collation_id,collation_count,media_asset_id,video_duration_s,display_name,is_partnership";
+
+export interface LaunchesPayload {
+  ok: true;
+  generatedAt: string;
+  windowDays: number;
+  /** When the scrape first saw each brand's ads: launch days before it hold only the ads that were still around. */
+  brands: { name: string; trackedSince: string | null; ended: number }[];
+  /** Rows of competitor_ads launched in the window, live and stopped; the client builds the ad views. */
+  rows: (CompetitorAdRow & { brand: string })[];
+}
+
+/**
+ * Every ad each tracked brand launched in the last `windowDays` days, stopped
+ * ones included (the main payload carries live ads only). Lazy: the tab asks
+ * for it when the Creative tests view opens.
+ */
+export async function readLaunches(windowDays: number): Promise<LaunchesPayload> {
+  const now = new Date().toISOString();
+  const from = addDays(now.slice(0, 10), -(windowDays - 1));
+  const brandRows = await spGet<{ page_id: string; brand_name: string | null }[]>("competitor_brands?select=page_id,brand_name&active=eq.true&order=brand_name");
+  if (!brandRows.length) return { ok: true, generatedAt: now, windowDays, brands: [], rows: [] };
+  const inPages = `page_id=in.(${brandRows.map((b) => b.page_id).join(",")})`;
+  const nameOfPage = new Map(brandRows.map((b) => [b.page_id, brandName(b.brand_name)]));
+
+  const [rows, firstSeen] = await Promise.all([
+    sbAll<Omit<CompetitorAdRow, "first_seen_at" | "eu_total_reach" | "impressions_rank" | "rank_prev" | "rank_peak" | "rank_bucket" | "ranked_at">>(
+      "internal",
+      `competitor_ads?select=${LAUNCH_COLS}&started_at=gte.${from}&${inPages}&order=id`,
+    ),
+    Promise.all(
+      brandRows.map((b) =>
+        spGet<{ first_seen_at: string | null }[]>(`competitor_ads?select=first_seen_at&page_id=eq.${b.page_id}&first_seen_at=not.is.null&order=first_seen_at&limit=1`).then(
+          (r) => [b.page_id, r[0]?.first_seen_at ?? null] as const,
+        ),
+      ),
+    ),
+  ]);
+
+  const out = rows.map((r) => ({
+    ...r,
+    // Long copy is cut; the drawer links the Ad Library for the rest.
+    body: r.body && r.body.length > 400 ? `${r.body.slice(0, 400)}…` : r.body,
+    first_seen_at: null,
+    eu_total_reach: null,
+    impressions_rank: null,
+    rank_prev: null,
+    rank_peak: null,
+    rank_bucket: null,
+    ranked_at: null,
+    brand: nameOfPage.get(r.page_id) ?? "Unknown",
+  }));
+  const names = [...new Set(brandRows.map((b) => nameOfPage.get(b.page_id)!))];
+  const brands = names.map((name) => {
+    const seen = firstSeen.filter(([p]) => nameOfPage.get(p) === name).map(([, s]) => s).filter((s): s is string => !!s).sort();
+    return { name, trackedSince: seen[0] ?? null, ended: out.filter((r) => r.brand === name && !r.is_active).length };
+  });
+  return { ok: true, generatedAt: now, windowDays, brands, rows: out };
+}
+
 // ---------------------------------------------------------------- ad detail
 
 export interface AdDetail {

@@ -204,8 +204,10 @@ export function AdDrawer({
       {[
         ["Rank today", rankText(ad.rank.now), <MoveText key="m" ad={ad} />],
         ["A week ago", rankText(ad.rank.ago7), ad.rank.ago14 != null ? `${rankText(ad.rank.ago14)} two weeks ago` : null],
-        ["Days live", num(ad.runDays), ad.startedAt ? `since ${shortDay(ad.startedAt)}` : null],
-        ["Copies", num(ad.copies), ad.copies === 1 ? "this creative only" : "live copies of it"],
+        ad.endedAt
+          ? ["Days it ran", num(ad.runDays), ad.startedAt ? `${shortDay(ad.startedAt)} to ${shortDay(ad.endedAt)}` : `stopped ${shortDay(ad.endedAt)}`]
+          : ["Days live", num(ad.runDays), ad.startedAt ? `since ${shortDay(ad.startedAt)}` : null],
+        ["Copies", num(ad.copies), ad.copies === 1 ? "this creative only" : ad.endedAt ? "copies of it" : "live copies of it"],
       ].map(([k, v, sub]) => (
         <div key={String(k)} style={{ minWidth: 0 }}>
           <dt style={{ font: "400 12px var(--font-ui)", color: "var(--ink-2)" }}>{k}</dt>
