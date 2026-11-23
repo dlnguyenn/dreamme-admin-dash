@@ -8,7 +8,7 @@
 import * as React from "react";
 import type { AdView, FormatMix } from "@/lib/competitor-ads-tab/logic";
 import { movement } from "@/lib/competitor-ads-tab/filters";
-import { resizedUrl } from "@/lib/background-studio-shared";
+import { renderUrl, smallThumbUrl } from "@/lib/competitor-ads-tab/thumbs";
 import { Icons } from "../Icons";
 import { useIsMobile } from "@/lib/useIsMobile";
 
@@ -57,11 +57,59 @@ export function TableBox({ children, minWidth = 720 }: { children: React.ReactNo
 const MEDIA_LABEL: Record<AdView["mediaType"], string> = { video: "Video", dco: "DCO", image: "Image", none: "No creative yet" };
 export const mediaLabel = (m: AdView["mediaType"]) => MEDIA_LABEL[m];
 
-/** A smaller copy of an archived thumbnail (the originals are 1080x1920). */
-export const thumbSrc = (url: string, width: number) => resizedUrl(url, width);
+// ---------------------------------------------------------------- frames
+
+/** Ads whose stored small frame was missing, sent in batches to be made once. */
+const thumbAsked = new Set<string>();
+let thumbQueue: string[] = [];
+let thumbTimer: ReturnType<typeof setTimeout> | null = null;
+function requestThumb(adArchiveId: string) {
+  if (thumbAsked.has(adArchiveId) || !/^\d+$/.test(adArchiveId)) return;
+  thumbAsked.add(adArchiveId);
+  thumbQueue.push(adArchiveId);
+  if (thumbTimer) clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(() => {
+    const ids = thumbQueue;
+    thumbQueue = [];
+    for (let i = 0; i < ids.length; i += 60) {
+      void fetch("/api/competitor-ads/thumbs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: ids.slice(i, i + 60) }),
+      }).catch(() => {});
+    }
+  }, 800);
+}
+
+/**
+ * An ad's frame: the stored 480-wide copy (cached for a year), else
+ * Supabase's on-the-fly resize while the copy is made. `fallback` shows when
+ * there is no frame or it fails to load.
+ */
+export function AdFrame({ src, adArchiveId, style, fallback = null }: { src: string | null; adArchiveId: string | null; style: React.CSSProperties; fallback?: React.ReactNode }) {
+  const small = src ? smallThumbUrl(src) : null;
+  const [stage, setStage] = React.useState<0 | 1 | 2>(small ? 0 : src ? 1 : 2);
+  React.useEffect(() => setStage(small ? 0 : src ? 1 : 2), [src, small]);
+  if (!src || stage === 2) return <>{fallback}</>;
+  const url = stage === 0 && small ? small : renderUrl(src);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      style={style}
+      onError={() => {
+        if (stage === 0) {
+          if (adArchiveId) requestThumb(adArchiveId);
+          setStage(1);
+        } else setStage(2);
+      }}
+    />
+  );
+}
 
 export function Thumb({ ad, size = 44 }: { ad: AdView; size?: number }) {
-  const [broken, setBroken] = React.useState(false);
   const box: React.CSSProperties = {
     width: size,
     height: Math.round(size * 1.25),
@@ -69,11 +117,10 @@ export function Thumb({ ad, size = 44 }: { ad: AdView; size?: number }) {
     flex: "none",
     background: "var(--bg-2)",
     objectFit: "cover",
+    objectPosition: "top",
     display: "block",
   };
-  if (!ad.thumb || broken) return <span aria-hidden style={box} />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={thumbSrc(ad.thumb, Math.max(96, size * 2))} alt="" loading="lazy" style={box} onError={() => setBroken(true)} />;
+  return <AdFrame src={ad.thumb} adArchiveId={ad.adArchiveId} style={box} fallback={<span aria-hidden style={box} />} />;
 }
 
 export function adHeadline(ad: AdView): string {
@@ -243,9 +290,10 @@ export function MoveText({ ad }: { ad: Pick<AdView, "rank" | "runDays"> }) {
 export const daysText = (n: number | null) => (n == null ? null : n === 1 ? "1 day" : `${num(n)} days`);
 
 /**
- * One ad as a card: the creative first (4:5 crop of the 9:16 frame), then
- * rank and movement, the hook in two lines, and who it runs as. An ad with no
- * captured creative shows its hook set large instead of an empty frame.
+ * One ad as a card: the whole 9:16 frame first (the on-screen hook sits
+ * anywhere in it), then rank and movement, the hook in up to four lines, and
+ * who it runs as. An ad with no captured creative shows its hook set large
+ * instead of an empty frame.
  */
 export function AdCard({
   ad,
@@ -262,11 +310,12 @@ export function AdCard({
 }) {
   const isMobile = useIsMobile();
   const [hover, setHover] = React.useState(false);
-  const [broken, setBroken] = React.useState(false);
   const headline = adHeadline(ad);
+  // Outlier read no on-screen hook for some ads; say where the words come from.
+  const source = ad.hook?.trim() ? null : ad.title?.trim() ? "Headline" : ad.body?.trim() ? "Ad copy" : null;
   // On a phone the brand moves to the meta line so the rank row keeps the weekly move.
   const brandInRow = showBrand && !isMobile;
-  const hasImage = !!ad.thumb && !broken;
+  const hasImage = !!ad.thumb;
   const who = ad.isPartnership ? ad.identity : "Brand page";
   const meta = [showBrand && !brandInRow ? ad.brand : null, who, daysText(ad.runDays), ad.copies > 1 ? `${ad.copies} copies` : null].filter(Boolean);
   return (
@@ -281,28 +330,26 @@ export function AdCard({
           style={{
             display: "block",
             position: "relative",
-            aspectRatio: "4 / 5",
+            aspectRatio: "9 / 16",
             borderRadius: 10,
             overflow: "hidden",
             background: "var(--bg-2)",
           }}
         >
           {hasImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={thumbSrc(ad.thumb!, 480)}
-              alt=""
-              loading="lazy"
-              onError={() => setBroken(true)}
+            <AdFrame
+              src={ad.thumb}
+              adArchiveId={ad.adArchiveId}
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",
-                transform: hover ? "scale(1.025)" : "none",
+                objectFit: "contain",
+                transform: hover ? "scale(1.02)" : "none",
                 transition: "transform 220ms cubic-bezier(.2,.7,.2,1)",
               }}
+              fallback={<span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", font: "400 12px var(--font-ui)", color: "var(--ink-2)" }}>Frame didn&apos;t load</span>}
             />
           ) : (
             <span
@@ -359,16 +406,18 @@ export function AdCard({
         </div>
         {hasImage && (
           <div
+            title={headline}
             style={{
               display: "-webkit-box",
-              WebkitLineClamp: 2,
+              WebkitLineClamp: 4,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
-              font: "500 13px/1.4 var(--font-ui)",
+              font: "500 13.5px/1.4 var(--font-ui)",
               color: "var(--ink)",
               marginTop: 2,
             }}
           >
+            {source && <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>{source}: </span>}
             {headline}
           </div>
         )}

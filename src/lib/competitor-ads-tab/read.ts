@@ -76,6 +76,8 @@ export interface BrandView {
 export interface HookView extends HookRow {
   pick: "brief" | "maybe" | "skip" | null;
   pick_at: string | null;
+  /** The stored frame of the matched ad (live or ended), when Outlier has one. */
+  thumb?: string | null;
 }
 
 export interface SaveRow {
@@ -257,6 +259,18 @@ export async function buildCompetitorAdsPayload(): Promise<CompetitorAdsPayload>
     savedEnded = rows.flatMap((r) => buildAdViews([r], brandOfPage(r.page_id), indexRanks([]), now, false));
   }
 
+  // Frames for archive hooks whose ad has ended (live ones come with the ads).
+  const liveThumb = new Map(ads.map((a) => [a.adArchiveId, a.thumb]));
+  const endedHookIds = [...new Set(hooks.rows.map((h) => h.ad_archive_id).filter((id): id is string => !!id && !liveIds.has(id)))];
+  const endedThumbs = new Map<string, string | null>();
+  if (endedHookIds.length) {
+    const rows = await spGet<{ ad_archive_id: string; thumbnail_url: string | null }[]>(
+      `competitor_ads?select=ad_archive_id,thumbnail_url&ad_archive_id=in.(${endedHookIds.map(encodeURIComponent).join(",")})`,
+    ).catch(() => []);
+    for (const r of rows) endedThumbs.set(r.ad_archive_id, r.thumbnail_url);
+  }
+  const hookRows = hooks.rows.map((h) => ({ ...h, thumb: h.ad_archive_id ? liveThumb.get(h.ad_archive_id) ?? endedThumbs.get(h.ad_archive_id) ?? null : null }));
+
   const { pages: cpps, mix: landing } = buildCpps(ads);
   const archiveBrands = [...new Set(archive.rows.map((r) => r.page_id))].map((pageId) => {
     const list = archive.rows.filter((r) => r.page_id === pageId);
@@ -277,7 +291,7 @@ export async function buildCompetitorAdsPayload(): Promise<CompetitorAdsPayload>
     cpps,
     landing,
     archive: { pulledOn: archive.rows.map((r) => r.pulled_on).sort().at(-1) ?? null, brands: archiveBrands },
-    hooks: hooks.rows,
+    hooks: hookRows,
     saves: saves.rows,
     sources: { archive: archive.source, hooks: hooks.source, saves: saves.source },
   };
