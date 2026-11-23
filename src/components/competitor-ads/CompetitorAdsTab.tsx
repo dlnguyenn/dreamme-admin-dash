@@ -354,7 +354,7 @@ function CreatorsView({ data, brand, onSeeAds }: { data: CompetitorAdsPayload; b
       </TableBox>
       <About>
         <p style={{ margin: 0 }}>
-          A creator account runs the ad under its own name &ldquo;with&rdquo; the brand. Click an account to see its live ads. Earliest ad is a floor: ads that ended before Nov 5 carry no account name.
+          A creator account runs the ad under its own name &ldquo;with&rdquo; the brand. Click an account to see its live ads. Earliest ad and Ads seen include Foreplay&rsquo;s partnership history (MeAgain from Aug 14, saved Nov 23), so they reach back before Outlier started naming accounts on Nov 5. Ads outside both still carry no account name, so treat them as floors.
         </p>
       </About>
     </>

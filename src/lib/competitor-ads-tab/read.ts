@@ -139,7 +139,7 @@ async function readArchive(): Promise<{ rows: (ArchiveAd & { brand: string })[];
   try {
     const rows = await sbAll<ArchiveAd>(
       "internal",
-      "competitor_archive_ads?select=ad_archive_id,page_id,brand,source,pulled_on,started_at,running_days,live_at_pull,headline,description,transcript&order=ad_archive_id",
+      "competitor_archive_ads?select=ad_archive_id,page_id,brand,source,pulled_on,started_at,running_days,live_at_pull,headline,description,transcript,identity&order=ad_archive_id",
     );
     if (rows.length || !localArchive()) return { rows, source: "table" };
   } catch (e) {
@@ -198,7 +198,7 @@ export async function buildCompetitorAdsPayload(): Promise<CompetitorAdsPayload>
           `competitor_brand_daily?select=page_id,day,active,active_video,active_image,active_dco,active_other,active_partnership,new_ads,ended_ads&day=gte.${addDays(today, -150)}&${inPages}&order=day,page_id`,
         )
       : [],
-    pageIds.length ? sbAll<{ page_id: string; display_name: string | null; started_at: string | null }>("internal", `competitor_ads?select=page_id,display_name,started_at&${inPages}&order=id`) : [],
+    pageIds.length ? sbAll<{ page_id: string; display_name: string | null; started_at: string | null; ad_archive_id: string }>("internal", `competitor_ads?select=page_id,display_name,started_at,ad_archive_id&${inPages}&order=id`) : [],
     readArchive(),
     readHooks(),
     readSaves(),
@@ -287,10 +287,20 @@ export async function buildCompetitorAdsPayload(): Promise<CompetitorAdsPayload>
     brands,
     ads: ads.map(trimAd),
     savedEnded: savedEnded.map(trimAd),
-    identities: buildIdentities(ads, allLite, brandOfPage),
+    // Outlier only names the account from Nov 5; Foreplay's partnership pull names older ads.
+    identities: buildIdentities(
+      ads,
+      [
+        ...allLite,
+        ...archive.rows
+          .filter((r) => r.identity && keyOfPage.has(r.page_id))
+          .map((r) => ({ page_id: r.page_id, display_name: r.identity ?? null, started_at: r.started_at, ad_archive_id: r.ad_archive_id })),
+      ],
+      brandOfPage,
+    ),
     cpps,
     landing,
-    archive: { pulledOn: archive.rows.map((r) => r.pulled_on).sort().at(-1) ?? null, brands: archiveBrands },
+    archive: { pulledOn: archive.rows.filter((r) => r.source === "foreplay").map((r) => r.pulled_on).sort().at(-1) ?? null, brands: archiveBrands },
     hooks: hookRows,
     saves: saves.rows,
     sources: { archive: archive.source, hooks: hooks.source, saves: saves.source },
