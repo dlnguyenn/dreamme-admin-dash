@@ -363,15 +363,25 @@ export interface IdentityView {
   adsSeen: number;
 }
 
+/**
+ * Roll ads up by the account they run as. `all` is every ad seen (Outlier rows,
+ * then archive rows carrying an identity); an ad id counts once, and the first
+ * row with a name wins, so pass Outlier's rows first.
+ */
 export function buildIdentities(
   live: AdView[],
-  all: { page_id: string; display_name: string | null; started_at: string | null }[],
+  all: { page_id: string; display_name: string | null; started_at: string | null; ad_archive_id?: string | null }[],
   brandOfPage: (pageId: string) => string,
 ): IdentityView[] {
   const key = (b: string, i: string) => `${b}\u0000${i}`;
   const out = new Map<string, IdentityView>();
+  const counted = new Set<string>();
   for (const a of all) {
     if (!a.display_name) continue;
+    if (a.ad_archive_id) {
+      if (counted.has(a.ad_archive_id)) continue;
+      counted.add(a.ad_archive_id);
+    }
     const b = brandOfPage(a.page_id);
     const k = key(b, a.display_name);
     const v = out.get(k) ?? { brand: b, identity: a.display_name, isPartnership: false, live: 0, top20: 0, bestRank: null, firstSeen: null, adsSeen: 0 };
@@ -485,6 +495,8 @@ export interface ArchiveAd {
   headline: string | null;
   description: string | null;
   transcript?: string | null;
+  /** The account the ad ran as (Foreplay's partner name), when the pull had one. */
+  identity?: string | null;
 }
 
 export interface LaunchMonth {

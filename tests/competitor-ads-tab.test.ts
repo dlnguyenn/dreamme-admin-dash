@@ -168,6 +168,20 @@ describe("identities, store pages and format mix", () => {
     const c = ids.find((i) => i.identity === "creator_one")!;
     expect(c).toMatchObject({ live: 2, top20: 1, bestRank: 4, firstSeen: "2026-08-01T00:00:00Z", isPartnership: true });
   });
+  it("counts an ad once across Outlier and archive rows, and lets archive names reach back", () => {
+    const ids = buildIdentities(
+      live,
+      [
+        { page_id: "p1", display_name: "creator_one", started_at: "2026-11-10T00:00:00Z", ad_archive_id: "1" },
+        { page_id: "p1", display_name: null, started_at: "2026-08-20T00:00:00Z", ad_archive_id: "9" },
+        { page_id: "p1", display_name: "creator_one", started_at: "2026-11-10T00:00:00Z", ad_archive_id: "1" },
+        { page_id: "p1", display_name: "creator_one", started_at: "2026-08-14T00:00:00Z", ad_archive_id: "8" },
+      ],
+      () => "Brand",
+    );
+    const c = ids.find((i) => i.identity === "creator_one")!;
+    expect(c).toMatchObject({ adsSeen: 2, firstSeen: "2026-08-14T00:00:00Z", live: 2 });
+  });
   it("counts live ads per Custom Product Page and builds the public link", () => {
     const { pages, mix } = buildCpps(live);
     expect(pages).toHaveLength(1);
