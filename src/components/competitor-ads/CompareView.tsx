@@ -12,7 +12,7 @@ import { TrendChart } from "../plan/TrendChart";
 import type { AdView } from "@/lib/competitor-ads-tab/logic";
 import { NEW_DAYS, collapseCopies, inSet, sortAds } from "@/lib/competitor-ads-tab/filters";
 import type { BrandView, CompetitorAdsPayload } from "@/lib/competitor-ads-tab/read";
-import { About, H2, MixBar, adHeadline, num, pctText, shortDay, thumbSrc } from "./parts";
+import { About, H2, MixBar, AdFrame, adHeadline, num, pctText, shortDay } from "./parts";
 
 interface Row {
   label: string;
@@ -218,13 +218,13 @@ function TopThree({ ads, onOpen }: { ads: AdView[]; onOpen: (a: AdView) => void 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, maxWidth: 320 }}>
       {ads.map((a) => (
         <button key={a.id} onClick={() => onOpen(a)} aria-label={`Open #${a.rank.now}: ${adHeadline(a)}`} className="cad-focus" style={{ all: "unset", cursor: "pointer", display: "block", minWidth: 0, borderRadius: 8 }}>
-          <span style={{ display: "block", aspectRatio: "4 / 5", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)", position: "relative" }}>
-            {a.thumb ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={thumbSrc(a.thumb, 240)} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-            ) : (
-              <span style={{ position: "absolute", inset: 0, padding: 8, font: "500 11px/1.3 var(--font-ui)", color: "var(--ink)", overflow: "hidden" }}>{adHeadline(a)}</span>
-            )}
+          <span style={{ display: "block", aspectRatio: "9 / 16", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)", position: "relative" }}>
+            <AdFrame
+              src={a.thumb}
+              adArchiveId={a.adArchiveId}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+              fallback={<span style={{ position: "absolute", inset: 0, padding: 8, font: "500 11px/1.3 var(--font-ui)", color: "var(--ink)", overflow: "hidden" }}>{adHeadline(a)}</span>}
+            />
           </span>
           <span style={{ display: "block", font: "600 13px var(--font-ui)", color: "var(--ink)", marginTop: 5, fontVariantNumeric: "tabular-nums" }}>#{a.rank.now}</span>
         </button>

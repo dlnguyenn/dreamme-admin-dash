@@ -20,12 +20,13 @@ import { TrendChart } from "../plan/TrendChart";
 import { useIsMobile } from "@/lib/useIsMobile";
 import type { AdView } from "@/lib/competitor-ads-tab/logic";
 import { DEFAULT_FILTER, collapseCopies, filterAds, sortAds, type AdFilter, type AdSet, type AdSort } from "@/lib/competitor-ads-tab/filters";
-import type { CompetitorAdsPayload, HookView } from "@/lib/competitor-ads-tab/read";
+import type { CompetitorAdsPayload } from "@/lib/competitor-ads-tab/read";
 import { AdDrawer } from "./AdDrawer";
 import { AdsView, type Layout } from "./AdsView";
+import { HooksView } from "./HooksView";
 import { CompareView } from "./CompareView";
 import { TestsView } from "./TestsView";
-import { About, AdCard, CardGrid, Empty, FocusStyle, H2, MonthBars, TableBox, Thumb, cell, head, left, monthLabel, num, pctText, rankText, shortDay } from "./parts";
+import { About, AdCard, CardGrid, Empty, FocusStyle, H2, MonthBars, TableBox, cell, head, left, monthLabel, num, pctText, rankText, shortDay } from "./parts";
 
 type ViewId = "ads" | "brands" | "tests" | "hooks" | "creators" | "pages" | "launches" | "saved";
 const VIEWS: { value: ViewId; label: string }[] = [
@@ -195,21 +196,6 @@ export function CompetitorAdsTab() {
     }
     void (saved ? unsaveAd(ad) : saveAd(ad, ""));
   };
-  const setPick = async (h: HookView, pick: HookView["pick"]) => {
-    const prev = h.pick;
-    setData((d) => (d ? { ...d, hooks: d.hooks.map((x) => (x.id === h.id ? { ...x, pick } : x)) } : d));
-    const res = await fetch(`/api/competitor-ads/hooks/${encodeURIComponent(h.id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pick }),
-    });
-    const b = await res.json().catch(() => ({ ok: false }));
-    if (!b.ok) {
-      setData((d) => (d ? { ...d, hooks: d.hooks.map((x) => (x.id === h.id ? { ...x, pick: prev } : x)) } : d));
-      toast(`Couldn't save the pick: ${b.error ?? res.status}`);
-    }
-  };
-
   const openIn = (list: AdView[]) => (ad: AdView) => setOpen({ ad, list: list.some((a) => a.id === ad.id) ? list : [ad] });
   const openOne = (ad: AdView) => setOpen({ ad, list: [ad] });
   const openIndex = open ? open.list.findIndex((a) => a.id === open.ad.id) : -1;
@@ -288,15 +274,7 @@ export function CompetitorAdsTab() {
           {view === "tests" && <TestsView stamp={data.generatedAt} liveAds={data.ads} brand={brand} isMobile={isMobile} onOpen={(ad, list) => setOpen({ ad, list })} />}
           {view === "creators" && <CreatorsView data={data} brand={brand} onSeeAds={(identity, b) => seeAds({ identity, brand: b })} />}
           {view === "pages" && <PagesView data={data} brand={brand} onSeeAds={(cpp, b) => seeAds({ cpp, brand: b })} />}
-          {view === "hooks" && (
-            <HooksView
-              hooks={brand === "all" ? data.hooks : data.hooks.filter((h) => h.brand === brand.toLowerCase())}
-              ads={data.ads}
-              onPick={setPick}
-              onOpen={openOne}
-              source={data.sources.hooks}
-            />
-          )}
+          {view === "hooks" && <HooksView ads={data.ads} hooks={data.hooks} brand={brand} source={data.sources.hooks} isMobile={isMobile} onOpen={(ad, list) => setOpen({ ad, list })} />}
           {view === "launches" && <LaunchesView data={data} brand={brand} isMobile={isMobile} />}
           {view === "saved" && (
             <SavedView rows={savedAds} liveIds={new Set(data.ads.map((a) => a.adArchiveId))} showBrand={brand === "all"} isMobile={isMobile} onOpen={openIn(savedAds.map((r) => r.ad))} onToggleSave={toggleSave} />
@@ -325,7 +303,7 @@ function Skeleton({ isMobile }: { isMobile: boolean }) {
       <CardGrid isMobile={isMobile}>
         {Array.from({ length: isMobile ? 4 : 8 }, (_, i) => (
           <div key={i}>
-            <div style={{ aspectRatio: "4 / 5", borderRadius: 10, background: "var(--bg-2)" }} />
+            <div style={{ aspectRatio: "9 / 16", borderRadius: 10, background: "var(--bg-2)" }} />
             <div style={{ height: 12, width: "40%", borderRadius: 4, background: "var(--bg-2)", marginTop: 10 }} />
             <div style={{ height: 12, width: "85%", borderRadius: 4, background: "var(--bg-2)", marginTop: 8 }} />
           </div>
@@ -469,131 +447,6 @@ function PagesView({ data, brand, onSeeAds }: { data: CompetitorAdsPayload; bran
       )}
       <About>
         <p style={{ margin: 0 }}>Outlier misses the link on many live ads, so the page counts are floors. Click a page to see the ads that send people to it.</p>
-      </About>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------- hooks
-
-const PICKS: { value: NonNullable<HookView["pick"]>; label: string }[] = [
-  { value: "brief", label: "Brief it" },
-  { value: "maybe", label: "Maybe" },
-  { value: "skip", label: "Skip" },
-];
-
-function HooksView({ hooks, ads, onPick, onOpen, source }: { hooks: HookView[]; ads: AdView[]; onPick: (h: HookView, p: HookView["pick"]) => void; onOpen: (a: AdView) => void; source: string }) {
-  const adById = React.useMemo(() => new Map(ads.map((a) => [a.adArchiveId, a])), [ads]);
-  const [tier, setTier] = React.useState("all");
-  const [pickF, setPickF] = React.useState("all");
-  const shown = hooks.filter((h) => (tier === "all" || h.tier === tier) && (pickF === "all" || (pickF === "none" ? !h.pick : h.pick === pickF)));
-  const hookDate = /(\d{4}-\d{2}-\d{2})/.exec(hooks[0]?.source_file ?? "")?.[1] ?? null;
-  const counts = PICKS.map((p) => `${hooks.filter((h) => h.pick === p.value).length} ${p.label.toLowerCase()}`).join(", ");
-  if (!hooks.length) {
-    return (
-      <div style={{ marginTop: 24 }}>
-        <Empty title="The hook database isn't loaded">
-          {source === "missing" ? "Run scripts/import-competitor-archive.ts with --hooks once migration 0122 is live." : "No hooks for this brand."}
-        </Empty>
-      </div>
-    );
-  }
-  return (
-    <>
-      <H2 right={<span style={{ font: "400 12.5px var(--font-ui)", color: "var(--ink-3)" }}>{counts}</span>}>Hooks from long-running videos</H2>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-        <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
-          <Segmented size="sm" value={tier} onChange={setTier} options={[{ value: "all", label: "All tiers" }, { value: "A", label: "Tier A" }, { value: "B", label: "Tier B" }, { value: "C", label: "Tier C" }]} />
-        </div>
-        <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto" }}>
-          <Segmented size="sm" value={pickF} onChange={setPickF} options={[{ value: "all", label: "Any pick" }, { value: "none", label: "Not picked" }, ...PICKS]} />
-        </div>
-      </div>
-      <TableBox minWidth={900}>
-        <thead>
-          <tr>
-            <th scope="col" style={head}>#</th>
-            <th scope="col" style={{ ...head, ...left, paddingLeft: 6 }}>Hook</th>
-            <th scope="col" style={head}>Days</th>
-            <th scope="col" style={head}>Ads</th>
-            <th scope="col" style={head}>Live</th>
-            <th scope="col" style={head}>Score</th>
-            <th scope="col" style={{ ...head, ...left, paddingLeft: 12 }}>Pick</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((h) => {
-            const live = h.ad_archive_id ? adById.get(h.ad_archive_id) : undefined;
-            return (
-            <tr key={h.id}>
-              <td style={{ ...cell, color: "var(--ink-2)", width: 36 }}>{h.position}</td>
-              <td style={{ ...cell, ...left, paddingLeft: 6, maxWidth: 520 }}>
-                <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                {live ? (
-                  <button onClick={() => onOpen(live)} aria-label={`Open the live ad for hook ${h.position}`} className="cad-focus" style={{ all: "unset", cursor: "pointer", borderRadius: 6, flex: "none" }}>
-                    <Thumb ad={live} size={40} />
-                  </button>
-                ) : null}
-                <span style={{ minWidth: 0 }}>
-                <div style={{ font: "500 13px/1.4 var(--font-ui)" }}>{h.hook}</div>
-                <div style={{ font: "400 12px var(--font-ui)", color: "var(--ink-2)", marginTop: 2 }}>
-                  {h.brand === "meagain" ? "MeAgain" : h.brand === "shotsy" ? "Shotsy" : h.brand} · {h.identity ?? "—"} · {h.hook_type ?? "—"}
-                  {h.ad_archive_id && (
-                    <>
-                      {" · "}
-                      <a href={`https://www.facebook.com/ads/library/?id=${h.ad_archive_id}`} target="_blank" rel="noreferrer" style={{ color: "var(--link)" }}>
-                        Ad Library
-                      </a>
-                    </>
-                  )}
-                  {live ? `, live now at ${rankText(live.rank.now)}` : ""}
-                </div>
-                </span>
-                </span>
-              </td>
-              <td style={cell}>{num(h.max_days)}</td>
-              <td style={cell}>{num(h.ads)}</td>
-              <td style={cell}>{num(h.live)}</td>
-              <td style={cell}>
-                {num(h.score)} <span style={{ color: "var(--ink-2)" }}>{h.tier}</span>
-              </td>
-              <td style={{ ...cell, ...left, paddingLeft: 12 }}>
-                <div role="radiogroup" aria-label={`Pick for hook ${h.position}`} style={{ display: "inline-flex", gap: 4 }}>
-                  {PICKS.map((p) => {
-                    const on = h.pick === p.value;
-                    return (
-                      <button
-                        key={p.value}
-                        role="radio"
-                        aria-checked={on}
-                        onClick={() => onPick(h, on ? null : p.value)}
-                        style={{
-                          font: `${on ? 600 : 500} 12px var(--font-ui)`,
-                          padding: "5px 9px",
-                          minHeight: 0,
-                          borderRadius: 8,
-                          cursor: "pointer",
-                          border: `1px solid ${on ? "var(--accent)" : "var(--line-2)"}`,
-                          background: on ? "var(--accent-soft)" : "var(--surface)",
-                          color: on ? "var(--accent-text)" : "var(--ink-2)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-      </TableBox>
-      <About>
-        <p style={{ margin: 0 }}>
-          The on-screen text of the first 3 seconds of competitor videos that ran 21+ days{hookDate ? `, read ${shortDay(hookDate)}` : ""}. Scored within each brand: half run length, 30% copies, 20% still live. A thumbnail means the ad is still live; click it to open the ad.
-        </p>
       </About>
     </>
   );
