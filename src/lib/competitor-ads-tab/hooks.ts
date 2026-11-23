@@ -52,15 +52,26 @@ export interface CleanHook {
 export function cleanHook(raw: string): CleanHook {
   let text = raw
     .replace(/\((?:word-by-word )?speech captions\)/gi, "")
+    // "+ [captions]" always starts the later text; mark it before the markers go.
+    .replace(/ \+ \[(captions|kinetic|subtitle)\]/gi, " ⟩ ")
     .replace(/\[(captions|kinetic|subtitle)\]/gi, "")
     .replace(/\s+/g, " ")
     .trim();
   let later: string | null = null;
   // " + " joins two texts, except inside a hook like "just started GLP-1 + NO idea".
-  const cut = text.search(/ → | \+ (?![A-Z]{2,}\b)/);
+  const cut = text.search(/ → | ⟩ | \+ (?![A-Z]{2,}\b)/);
   if (cut > 0) {
-    later = text.slice(cut + 3).replace(/ → | \+ /g, " ").trim() || null;
+    later = text.slice(cut + 3).replace(/ → | ⟩ | \+ /g, " ").trim() || null;
+    const arrow = text[cut + 1] === "→";
     text = text.slice(0, cut).trim();
+    // Rows that record the speech captions put their first chunk as the last
+    // line before the first arrow ("... [down arrow] / I was constipated on my
+    // GLP-1, → so why did..."). Two plain lines ("Week 4 on X. / I cried.") stay.
+    const segs = text.split(" / ");
+    if (arrow && (segs.length >= 3 || (segs.length === 2 && /\]$/.test(segs[0])))) {
+      later = `${segs.pop()} ${later ?? ""}`.trim();
+      text = segs.join(" / ");
+    }
   }
   const withEmoji = (s: string) =>
     s
@@ -119,11 +130,23 @@ export function hookPattern(lines: string[]): PatternId {
 
 export type AppMention = "named" | "this" | null;
 
+const TEASE = new RegExp(
+  [
+    "\\b(found|finding|discovered|tried) (out )?(about )?this\\b",
+    "\\bfound out (you can|there)",
+    "turns out there",
+    "\\bthis (app|glp-?1 (app|tamagotchi)|tracks|checklist|is the first screen)",
+    "\\b(for|wanted|had|use|using|check|open|sent her) this\\b",
+    "\\bdisaster until this\\b",
+  ].join("|"),
+);
+
 /** Whether the first screen names the app, or teases it as "this". */
 export function appMention(lines: string[]): AppMention {
   const t = lines.join(" ").toLowerCase();
   if (/shotsy|meagain|me again|glowise/.test(t)) return "named";
-  if (/\bthis\b|\bfound out\b|turns out there/.test(t)) return "this";
+  // "this" as the thing she found or uses, not "watch this" or "is this normal".
+  if (TEASE.test(t)) return "this";
   return null;
 }
 
@@ -145,10 +168,17 @@ export interface HookItem {
   liveRank: number | null;
   /** Live ads using it today. */
   liveAds: number;
-  /** Longest run, live or archived. */
+  /** Longest run, live or archived (for sorting). */
   days: number | null;
-  /** Ads that used the creative (live copies today, or the archive's count, whichever is larger). */
+  /** The larger of live copies and the archive's ad count (for sorting). */
   copies: number;
+  /** Longest run among today's live ads. */
+  liveDays: number | null;
+  /** Live ads of the same creative today, at most. */
+  liveCopies: number;
+  /** The archive's longest run and how many ads used the hook. */
+  archiveDays: number | null;
+  archiveAds: number;
   inArchive: boolean;
   /** The best-ranked live ad, to open its detail. */
   ad: AdView | null;
@@ -180,7 +210,9 @@ export function mergeHooks(live: AdView[], archive: HookArchiveRow[]): HookItem[
       if (!cur.frame && a.thumb) cur.frame = a.thumb;
       cur.liveAds += 1;
       cur.days = Math.max(cur.days ?? 0, a.runDays ?? 0) || cur.days;
+      cur.liveDays = Math.max(cur.liveDays ?? 0, a.runDays ?? 0) || cur.liveDays;
       cur.copies = Math.max(cur.copies, a.copies);
+      cur.liveCopies = Math.max(cur.liveCopies, a.copies);
       continue;
     }
     byKey.set(key, {
@@ -194,6 +226,10 @@ export function mergeHooks(live: AdView[], archive: HookArchiveRow[]): HookItem[
       liveAds: 1,
       days: a.runDays,
       copies: a.copies,
+      liveDays: a.runDays,
+      liveCopies: a.copies,
+      archiveDays: null,
+      archiveAds: 0,
       inArchive: false,
       ad: a,
       frame: a.thumb,
@@ -213,6 +249,8 @@ export function mergeHooks(live: AdView[], archive: HookArchiveRow[]): HookItem[
       cur.inArchive = true;
       cur.days = Math.max(cur.days ?? 0, h.max_days ?? 0) || cur.days;
       cur.copies = Math.max(cur.copies, h.ads ?? 0);
+      cur.archiveDays = Math.max(cur.archiveDays ?? 0, h.max_days ?? 0) || cur.archiveDays;
+      cur.archiveAds = Math.max(cur.archiveAds, h.ads ?? 0);
       cur.shot ??= h.visual;
       cur.textStyle ??= h.style;
       cur.later ??= clean.later;
@@ -231,6 +269,10 @@ export function mergeHooks(live: AdView[], archive: HookArchiveRow[]): HookItem[
       liveAds: 0,
       days: h.max_days,
       copies: h.ads ?? 1,
+      liveDays: null,
+      liveCopies: 0,
+      archiveDays: h.max_days,
+      archiveAds: h.ads ?? 1,
       inArchive: true,
       ad: null,
       frame: h.thumb ?? null,
@@ -257,12 +299,19 @@ export function groupHooks(items: HookItem[]): { pattern: (typeof PATTERNS)[numb
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
-/** "#24 today · 53 days live · 35 copies" */
+/**
+ * Proof in words, live facts first, archive facts only where they add:
+ * "#10 today · 55 days live · 3 live copies · ran up to 59 days · used in 35 ads",
+ * or for an archive-only hook "Ran 94 days · used in 4 ads".
+ */
 export function evidence(h: HookItem): string {
+  const live = h.liveAds > 0;
   const parts = [
-    h.liveRank != null ? `#${h.liveRank} today` : h.liveAds ? "Live, not ranked" : null,
-    h.days != null ? `${plural(h.days, "day")} live` : null,
-    h.copies > 1 ? plural(h.copies, "copy", "copies") : null,
+    h.liveRank != null ? `#${h.liveRank} today` : live ? "Live, not ranked" : null,
+    live && h.liveDays != null ? `${plural(h.liveDays, "day")} live` : null,
+    live && h.liveCopies > 1 ? `${plural(h.liveCopies, "live copy", "live copies")}` : null,
+    h.archiveDays != null && (!live || h.archiveDays > (h.liveDays ?? 0)) ? `${live ? "ran up to" : "Ran"} ${plural(h.archiveDays, "day")}` : null,
+    h.archiveAds > Math.max(1, h.liveCopies) ? `used in ${plural(h.archiveAds, "ad")}` : null,
   ];
   return parts.filter(Boolean).join(" · ");
 }

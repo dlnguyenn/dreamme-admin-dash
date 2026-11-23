@@ -56,12 +56,14 @@ export function HooksView({
       if (s === "all" || s === "live" || s === "lasting") setScope(s);
     } catch {}
   }, []);
-  const savePicked = (next: string[]) => {
-    setPicked(next);
-    try {
-      localStorage.setItem(BRIEF_KEY, JSON.stringify(next));
-    } catch {}
-  };
+  const savePicked = (update: (cur: string[]) => string[]) =>
+    setPicked((cur) => {
+      const next = update(cur);
+      try {
+        localStorage.setItem(BRIEF_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   const pickScope = (s: string) => {
     setScope(s as Scope);
     try {
@@ -83,7 +85,7 @@ export function HooksView({
   const teased = top.filter((h) => h.app === "this").length;
   const archiveDay = /(\d{4}-\d{2}-\d{2})/.exec(hooks[0]?.source_file ?? "")?.[1] ?? null;
 
-  const toggle = (h: HookItem) => savePicked(picked.includes(h.key) ? picked.filter((k) => k !== h.key) : [...picked, h.key]);
+  const toggle = (h: HookItem) => savePicked((cur) => (cur.includes(h.key) ? cur.filter((k) => k !== h.key) : [...cur, h.key]));
   const copyBrief = async () => {
     try {
       await navigator.clipboard.writeText(hookBrief(pickedItems, new Date().toISOString().slice(0, 10)));
@@ -108,7 +110,7 @@ export function HooksView({
       <H2>Competitor hooks by how they open</H2>
       {top.length > 0 && (
         <p style={{ font: "400 14px/1.5 var(--font-ui)", color: "var(--ink)", margin: "0 0 14px", maxWidth: 720 }}>
-          Of today&apos;s top 20 {brand === "all" ? "in each brand" : `at ${brand}`}, {named} of {top.length} hooks name the app and {teased} call it &ldquo;this&rdquo;. The rest open on her GLP-1 moment.
+          Today&apos;s top 20 ads {brand === "all" ? "in each brand" : `at ${brand}`} carry {top.length} different hooks: {named === 0 ? "none" : named} {named === 1 ? "names" : "name"} the app and {teased === 0 ? "none" : teased} {teased === 1 ? "calls" : "call"} it &ldquo;this&rdquo;.
         </p>
       )}
       <div className="mobile-hscroll" style={{ maxWidth: "100%", overflowX: "auto", marginBottom: 6 }}>
@@ -168,7 +170,7 @@ export function HooksView({
           <span style={{ font: "500 13px var(--font-ui)", color: "var(--ink)", whiteSpace: "nowrap", marginRight: "auto" }}>
             {pickedItems.length} {pickedItems.length === 1 ? "hook" : "hooks"} in the brief
           </span>
-          <Button size="sm" variant="ghost" onClick={() => savePicked([])}>
+          <Button size="sm" variant="ghost" onClick={() => savePicked(() => [])}>
             Clear
           </Button>
           <Button size="sm" variant="primary" icon={<Icons.Copy />} onClick={() => void copyBrief()}>

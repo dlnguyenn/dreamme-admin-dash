@@ -77,6 +77,19 @@ describe("cleanHook", () => {
   it("does not cut at a plus sign that belongs to the hook", () => {
     expect(cleanHook("just started my shots + NO idea / what to cook??").lines).toEqual(["just started my shots + NO idea", "what to cook??"]);
   });
+  it("always cuts at a caption marker, even before capitals", () => {
+    expect(cleanHook("Your week has a shape + [kinetic] WHY DOES DAY → 3 FEEL HARDER")).toEqual({ lines: ["Your week has a shape"], later: "WHY DOES DAY 3 FEEL HARDER" });
+  });
+  it("moves the first speech-caption chunk out of the on-screen lines", () => {
+    // Three lines before the arrow: the last is the voice-over starting.
+    expect(cleanHook("stuck on fiber / on your shots? [down arrow] / I was stuck on fiber → so I tried")).toEqual({
+      lines: ["stuck on fiber", "on your shots? 👇"],
+      later: "I was stuck on fiber so I tried",
+    });
+    // Two lines after an emoji: same.
+    expect(cleanHook("on my shots with / NO plan [loudly crying] / if your doctor said nothing → let me help").lines).toEqual(["on my shots with", "NO plan 😭"]);
+    expect(cleanHook("no plan [loudly crying] / if your doctor said nothing → let me help").lines).toEqual(["no plan 😭"]);
+  });
 });
 
 describe("hookPattern", () => {
@@ -101,7 +114,14 @@ describe("appMention", () => {
   it("tells a named app from one teased as this", () => {
     expect(appMention(["Shotsy keeps it in one place"])).toBe("named");
     expect(appMention(["why am I only finding this now"])).toBe("this");
+    expect(appMention(["I deleted every tracker for this"])).toBe("this");
+    expect(appMention(["turns out there's a shot-day pet"])).toBe("this");
     expect(appMention(["Week 5 on Mounjaro."])).toBeNull();
+  });
+  it("does not count a 'this' that points at the video", () => {
+    for (const s of ["Upping your dose? Watch this.", "Read this 👇", "DO THIS if you skip breakfast", "until I learned this.", "is this NORMAL on my shots?", "I wish I knew this before starting"]) {
+      expect(appMention([s]), s).toBeNull();
+    }
   });
 });
 
@@ -115,8 +135,12 @@ describe("mergeHooks", () => {
     const archive = [archived({ hook: "Week 5 on Mounjaro. / I cried over cold soup. → Then the app", max_days: 61, ads: 12, visual: "woman at the stove" })];
     const items = mergeHooks(live, archive);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ liveRank: 4, liveAds: 2, days: 61, copies: 12, inArchive: true, frame, shot: "woman at the stove", later: "Then the app", pattern: "timeline" });
-    expect(evidence(items[0])).toBe("#4 today · 61 days live · 12 copies");
+    expect(items[0]).toMatchObject({ liveRank: 4, liveAds: 2, liveDays: 25, liveCopies: 3, archiveDays: 61, archiveAds: 12, inArchive: true, frame, shot: "woman at the stove", later: "Then the app", pattern: "timeline" });
+    expect(evidence(items[0])).toBe("#4 today · 25 days live · 3 live copies · ran up to 61 days · used in 12 ads");
+  });
+  it("words an archive-only hook in the past", () => {
+    const [h] = mergeHooks([], [archived({ hook: "Day 9 on my shots / soup again", max_days: 94, ads: 4 })]);
+    expect(evidence(h)).toBe("Ran 94 days · used in 4 ads");
   });
   it("keeps archive-only hooks and orders a group by rank, then run length", () => {
     const items = mergeHooks(
@@ -140,7 +164,7 @@ describe("hookBrief", () => {
     expect(brief).toContain("# Hook brief: 1 competitor hook to adapt (2026-11-23)");
     expect(brief).toContain("- On screen: Day 9 on my shots / soup again");
     expect(brief).toContain("- Opening shot: woman at the stove");
-    expect(brief).toContain("- Proof: Branda, 60 days live, 5 copies");
+    expect(brief).toContain("- Proof: Branda, ran 60 days, used in 5 ads");
     expect(brief).toContain("- Names the app in the hook: no");
     expect(brief).toContain("https://www.facebook.com/ads/library/?id=999");
   });
