@@ -168,6 +168,20 @@ describe("identities, store pages and format mix", () => {
     const c = ids.find((i) => i.identity === "creator_one")!;
     expect(c).toMatchObject({ live: 2, top20: 1, bestRank: 4, firstSeen: "2026-08-01T00:00:00Z", isPartnership: true });
   });
+  it("labels by the account's page id, not Outlier's is_partnership flag", () => {
+    const [brandPage, creator, nameOnly] = buildAdViews(
+      [
+        ad({ id: "x", ad_archive_id: "11", display_name: "Brand App", display_page_id: "p1", is_partnership: true }),
+        ad({ id: "y", ad_archive_id: "12", display_name: "creator_two", display_page_id: "p9", is_partnership: false }),
+        ad({ id: "z", ad_archive_id: "13", display_name: "creator_three", is_partnership: false }),
+      ],
+      "Brand",
+      idx,
+      now,
+      true,
+    );
+    expect([brandPage.isPartnership, creator.isPartnership, nameOnly.isPartnership]).toEqual([false, true, true]);
+  });
   it("counts an ad once across Outlier and archive rows, and lets archive names reach back", () => {
     const ids = buildIdentities(
       live,

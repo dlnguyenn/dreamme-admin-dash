@@ -45,7 +45,7 @@ const LOCAL_HOOKS = DEV ? process.env.COMPETITOR_HOOKS_LOCAL_CSV || "" : "";
 const LOCAL_PAGES: Record<string, string> = { meagain: "539227915950887", shotsy: "395893520263618" };
 
 const AD_COLS =
-  "id,ad_archive_id,page_id,page_name,is_active,started_at,ended_at,first_seen_at,media_type,format,thumbnail_url,video_archive_url,title,body,hook,angle,messaging_theme,cta_text,link_url,ad_library_url,collation_id,collation_count,media_asset_id,video_duration_s,eu_total_reach,display_name,is_partnership,impressions_rank,rank_prev,rank_peak,rank_bucket,ranked_at";
+  "id,ad_archive_id,page_id,page_name,is_active,started_at,ended_at,first_seen_at,media_type,format,thumbnail_url,video_archive_url,title,body,hook,angle,messaging_theme,cta_text,link_url,ad_library_url,collation_id,collation_count,media_asset_id,video_duration_s,eu_total_reach,display_name,display_page_id,is_partnership,impressions_rank,rank_prev,rank_peak,rank_bucket,ranked_at";
 
 export type Source = "table" | "local" | "missing";
 
@@ -316,7 +316,7 @@ function trimAd(a: AdView): AdView {
 
 /** The columns the Creative tests view needs: enough to draw a row and open the drawer. */
 const LAUNCH_COLS =
-  "id,ad_archive_id,page_id,page_name,is_active,started_at,ended_at,media_type,format,thumbnail_url,video_archive_url,title,body,hook,angle,messaging_theme,cta_text,link_url,ad_library_url,collation_id,collation_count,media_asset_id,video_duration_s,display_name,is_partnership";
+  "id,ad_archive_id,page_id,page_name,is_active,started_at,ended_at,media_type,format,thumbnail_url,video_archive_url,title,body,hook,angle,messaging_theme,cta_text,link_url,ad_library_url,collation_id,collation_count,media_asset_id,video_duration_s,display_name,display_page_id,is_partnership";
 
 export interface LaunchesPayload {
   ok: true;

@@ -45,6 +45,8 @@ export interface CompetitorAdRow {
   video_duration_s: number | null;
   eu_total_reach: number | null;
   display_name: string | null;
+  /** Meta page id of the account the ad runs as (filled from Nov 5). */
+  display_page_id?: string | null;
   is_partnership: boolean | null;
   impressions_rank: number | null;
   rank_prev: number | null;
@@ -306,9 +308,14 @@ export function buildAdViews(
       pageId: r.page_id,
       brand,
       identity: r.display_name || r.page_name || brand,
-      // Outlier's is_partnership flag misses most creator ads, so an ad that
-      // runs under any account other than the brand's own page counts too.
-      isPartnership: !!r.is_partnership || (!!r.display_name && !!r.page_name && r.display_name !== r.page_name),
+      // Outlier's is_partnership flag is wrong both ways (misses most creator
+      // ads, set on some brand-page ads), so the account's page id decides;
+      // the name is the fallback, and the flag only when neither is known.
+      isPartnership: r.display_page_id
+        ? r.display_page_id !== r.page_id
+        : r.display_name && r.page_name
+          ? r.display_name !== r.page_name
+          : !!r.is_partnership,
       startedAt: r.started_at,
       endedAt,
       runDays,
