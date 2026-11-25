@@ -496,7 +496,9 @@ function singularCostLine(
   // A day is usable once a sync has run after that Eastern day ended.
   const syncedDay = etParts(new Date(syncedAt)).date;
   const trialsOn = (d: string) => mine.filter((r) => r.date === d).reduce((a, r) => a + (Number(r.trial_starts) || 0), 0);
-  const baseDays = prior.filter((d) => d < syncedDay);
+  // The week before uses settled days only (3+ days old), like the Paid table.
+  const settledBy = addDays(y, -2);
+  const baseDays = prior.filter((d) => d < syncedDay && d <= settledBy);
   const baseTrials = baseDays.reduce((a, d) => a + trialsOn(d), 0);
   const baseSpend = baseDays.reduce((a, d) => a + metaSum(d, "spend"), 0);
   if (baseDays.length < 4 || baseTrials <= 0) return "";

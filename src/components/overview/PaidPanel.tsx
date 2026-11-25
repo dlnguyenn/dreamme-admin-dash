@@ -159,7 +159,7 @@ function SummaryTable({ paid, compact }: { paid: NonNullable<PaidSection["daily"
                     fontWeight: r.strong ? 650 : 400,
                   }}
                 >
-                  {r.singular ? <SingularCell day={c.day} today={c.key === "today"} text={r.fmt(r.get(c.day))} /> : r.fmt(r.get(c.day))}
+                  {r.singular ? <SingularCell day={c.day} today={c.key === "today"} text={r.fmt(r.get(c.day))} compact={compact} /> : r.fmt(r.get(c.day))}
                   {c.yday && <Delta now={r.get(paid.yesterday)} then={r.get(paid.weekAgo)} better={r.better} />}
                 </td>
               ))}
@@ -172,7 +172,7 @@ function SummaryTable({ paid, compact }: { paid: NonNullable<PaidSection["daily"
 }
 
 /** A Singular value, with why it is blank or how much of the window it covers. */
-function SingularCell({ day, today, text }: { day: PaidDay; today: boolean; text: string }) {
+function SingularCell({ day, today, text, compact }: { day: PaidDay; today: boolean; text: string; compact: boolean }) {
   const s = day.singular;
   if (!s) {
     return (
@@ -188,12 +188,30 @@ function SingularCell({ day, today, text }: { day: PaidDay; today: boolean; text
     );
   }
   const partial = s.days < s.of;
+  const note = s.early ? "early" : partial ? `${s.days} of ${s.of} days` : null;
   return (
-    <span title={`Meta spend ${money0(s.spend)} ÷ ${fmtNum(s.trials)} Singular trials, over ${s.days} of ${s.of} day${s.of === 1 ? "" : "s"}`}>
+    <span
+      title={
+        `Meta spend ${money0(s.spend)} ÷ ${fmtNum(s.trials)} Singular trials, over ${s.days} of ${s.of} day${s.of === 1 ? "" : "s"}` +
+        (s.early ? ". Less than 3 days old, so trials are still arriving and the cost reads high" : "") +
+        (partial ? ". Days less than 3 days old are left out" : "")
+      }
+      // An early day is not the figure to quote: same weight as a plain cell.
+      style={s.early ? { fontWeight: 400, color: "var(--ink-2)" } : undefined}
+    >
       {text}
-      {partial && (
-        <span style={{ marginLeft: 5, font: "400 11px var(--font-ui)", color: "var(--ink-3)" }}>
-          {s.days} of {s.of} days
+      {note && (
+        // On a phone the note sits under the number, so the column stays narrow.
+        <span
+          style={{
+            display: compact ? "block" : "inline",
+            marginLeft: compact ? 0 : 5,
+            font: "400 11px var(--font-ui)",
+            color: "var(--ink-3)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {note}
         </span>
       )}
     </span>
@@ -252,7 +270,7 @@ function CampaignTable({ paid }: { paid: NonNullable<PaidSection["daily"]> }) {
                 style={{ ...td(), color: "var(--ink)", fontWeight: 650 }}
                 title={
                   c.singular7
-                    ? `Meta spend ${money0(c.singular7.spend)} ÷ ${fmtNum(c.singular7.trials)} Singular trials, over ${c.singular7.days} of ${c.singular7.of} days`
+                    ? `Meta spend ${money0(c.singular7.spend)} ÷ ${fmtNum(c.singular7.trials)} Singular trials, over ${c.singular7.days} of ${c.singular7.of} days (days less than 3 days old are left out)`
                     : "No finished Singular days in this window"
                 }
               >
@@ -318,7 +336,9 @@ export function PaidPanel({ paid, onOpen }: { paid: PaidSection | null; onOpen: 
               trials, so it can be higher than the real total. Today&rsquo;s numbers are partial and Meta adds
               late conversions for a day or two. Singular counts only the trials it can tie to a Meta ad, so
               its cost per trial is the one to quote for Meta, and reads above the true cost. Each day arrives
-              around noon Eastern the next day, and its newest days keep filling in for a week.
+              around noon Eastern the next day and keeps filling in, so a day marked &ldquo;early&rdquo; reads
+              high and the 7-day figure leaves out days less than 3 days old. The top table is all of Meta;
+              iOS alone is in its campaign row.
               {notes.map((n) => (
                 <div key={n} style={{ color: fam("danger").text, marginTop: 6 }}>
                   {n}

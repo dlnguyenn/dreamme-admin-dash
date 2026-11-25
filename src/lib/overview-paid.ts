@@ -41,8 +41,14 @@ export interface PaidCounts {
  *
  * Only days Singular has finished syncing are in it. The sync runs once a day
  * around noon Eastern, so a day's row is partial until the run after that day
- * ends, and "today" is never covered. Trials are counted by install day and
- * keep arriving for a week, so the newest days read high.
+ * ends, and "today" is never covered.
+ *
+ * Trials are counted by install day and keep arriving for a week, so a fresh
+ * day reads high. A multi-day window therefore uses only days at least
+ * SINGULAR_MATURE_DAYS old ("matured windows only", vault meta-ads rule): on
+ * 2026-11-25 one day-old day at a new, higher budget moved the 7-day figure
+ * from $18.60 to $25.93. A single-day cell still shows a fresh day, marked
+ * `early`, because yesterday is the day Dan acts on.
  */
 export interface SingularRead {
   trials: number;
@@ -52,7 +58,12 @@ export interface SingularRead {
   /** Covered days, out of the days in the window. */
   days: number;
   of: number;
+  /** A single day younger than SINGULAR_MATURE_DAYS: still filling in, reads high. */
+  early: boolean;
 }
+
+/** A day's Singular trials are treated as settled once it is this many days old. */
+export const SINGULAR_MATURE_DAYS = 3;
 
 /** One singular_campaign_daily row (source = facebook). */
 export interface SingularDayRow {
@@ -174,14 +185,23 @@ export function buildPaidDaily(input: {
   const syncedDay = singularSyncedAt ? easternDate(new Date(singularSyncedAt)) : null;
   const singularFor = (ds: string[], campaignId?: string): SingularRead | null => {
     if (!sngRows || !syncedDay) return null;
-    const days = ds.filter((d) => d < syncedDay && covered(d));
+    const matureBy = dayAt(SINGULAR_MATURE_DAYS);
+    const single = ds.length === 1;
+    const days = ds.filter((d) => d < syncedDay && covered(d) && (single || d <= matureBy));
     if (days.length === 0) return null;
     const set = new Set(days);
     const mine = <T extends { date: string }>(rows: T[], id: (r: T) => string) =>
       rows.filter((r) => set.has(r.date) && (campaignId == null || id(r) === campaignId));
     const trials = mine(sngRows, (r) => r.campaignId).reduce((s, r) => s + r.trials, 0);
     const spend = mine(input.meta ?? [], (r) => r.campaignId).reduce((s, r) => s + r.spend, 0);
-    return { trials, spend, costPerTrial: trials > 0 ? spend / trials : null, days: days.length, of: ds.length };
+    return {
+      trials,
+      spend,
+      costPerTrial: trials > 0 ? spend / trials : null,
+      days: days.length,
+      of: ds.length,
+      early: single && days[0] > matureBy,
+    };
   };
 
   const makeDay = (label: string, ds: string[]): PaidDay => {

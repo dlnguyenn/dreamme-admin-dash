@@ -120,11 +120,15 @@ describe("buildPaidDaily: Singular cost per trial", () => {
       sng("2026-10-31", "ios", 25, NOON_NOV7),
     ]);
     expect(out.today.singular).toBeNull();
-    // Yesterday: all Meta spend (ios 600 + android 190) over Singular's 20.
-    expect(out.yesterday.singular).toMatchObject({ trials: 20, spend: 790, days: 1, of: 1 });
+    // Yesterday: all Meta spend (ios 600 + android 190) over Singular's 20,
+    // shown but marked early (one day old).
+    expect(out.yesterday.singular).toMatchObject({ trials: 20, spend: 790, days: 1, of: 1, early: true });
     expect(out.yesterday.singular!.costPerTrial).toBeCloseTo(790 / 20);
+    expect(out.weekAgo.singular).toMatchObject({ early: false });
     expect(out.weekAgo.singular!.costPerTrial).toBeCloseTo(500 / 25);
-    expect(out.last7.singular).toMatchObject({ trials: 55, spend: 790 + 400 + 500, days: 7, of: 7 });
+    // The 7-day window keeps settled days only (Nov 4 and older): Nov 5 and 6
+    // drop out on both sides of the division.
+    expect(out.last7.singular).toMatchObject({ trials: 25, spend: 500, days: 5, of: 7, early: false });
   });
 
   it("leaves out a day Singular has not finished, on both sides", () => {
@@ -135,8 +139,11 @@ describe("buildPaidDaily: Singular cost per trial", () => {
       sng("2026-10-31", "ios", 25, NOON_NOV6),
     ]);
     expect(out.yesterday.singular).toBeNull();
-    expect(out.last7.singular).toMatchObject({ trials: 35, spend: 400 + 500, days: 6, of: 7 });
     expect(out.singularSyncedAt).toBe(NOON_NOV6);
+    // A stale sync (noon Nov 3) narrows the window further: only Oct 31 to Nov 2.
+    const stale = make([sng("2026-11-02", "ios", 9, "2026-11-03T17:00:00Z"), sng("2026-10-31", "ios", 25, "2026-11-03T17:00:00Z")]);
+    expect(stale.last7.singular).toMatchObject({ trials: 34, spend: 500, days: 3, of: 7 });
+    expect(stale.weekAgo.singular).toMatchObject({ trials: 25 });
   });
 
   it("joins campaigns on the Meta campaign id, and shows no price at zero trials", () => {
@@ -147,9 +154,10 @@ describe("buildPaidDaily: Singular cost per trial", () => {
     ]);
     const ios = out.campaigns.find((c) => c.id === "ios")!;
     const android = out.campaigns.find((c) => c.id === "android")!;
-    expect(ios.singular7).toMatchObject({ trials: 55, spend: 1500 });
-    expect(ios.singular7!.costPerTrial).toBeCloseTo(1500 / 55);
-    expect(android.singular7).toMatchObject({ trials: 0, spend: 190, costPerTrial: null });
+    expect(ios.singular7).toMatchObject({ trials: 25, spend: 500, days: 5, of: 7 });
+    expect(ios.singular7!.costPerTrial).toBeCloseTo(500 / 25);
+    // Android only spent on Nov 6, which is too fresh to count.
+    expect(android.singular7).toMatchObject({ trials: 0, spend: 0, costPerTrial: null });
   });
 
   it("blanks its cells when the Singular read failed or was not asked for", () => {
