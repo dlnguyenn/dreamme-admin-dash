@@ -247,8 +247,18 @@ export function buildPace(events: TrialEvent[], now = new Date()): TrialPace | n
 // ---------------------------------------------------------------------------
 // Why
 
+/** One singular_campaign_daily row (source = facebook). */
+export interface SingularInsightRow {
+  date: string;
+  os: string | null;
+  trial_starts: number | null;
+  synced_at: string | null;
+}
+
 export interface WhyInputs {
   events: TrialEvent[];
+  /** Singular's Meta trials by day; optional, and null when the read failed. */
+  singular?: SingularInsightRow[] | null;
   /** Mixpanel onboarding_started uniques by Eastern date; null when unavailable. */
   onboarding: Map<string, number> | null;
   meta: MetaInsightRow[] | null;
@@ -374,10 +384,11 @@ export function buildWhy(input: WhyInputs, now = new Date()): TrialWhy | null {
       if (spendBase <= 0 && spendY <= 0) continue;
       const spendPct = pct(spendY, spendBase);
       if (Math.abs(spendPct) < 10 && Math.abs(trialsY - trialsBase) < 3) continue;
-      const cpt = trialsY > 0 ? spendY / trialsY : null;
-      const cptBase = trialsBase > 0 ? spendBase / trialsBase : null;
-      const perTrial =
-        cpt != null && cptBase != null ? ` That is ${money(cpt)} per Meta trial against ${money(cptBase)}.` : "";
+      // Cost per trial is quoted from Singular, never from Meta's own count
+      // (Dan, 2026-11-24). Context only: the size and rank of this reason
+      // still come from Meta's count, because yesterday is a one-day-old
+      // Singular cohort and would always read as worse than the week before.
+      const perTrial = singularCostLine(input.singular ?? null, platform, y, prior, sum);
       const fewer = trialsY < trialsBase;
       let clause: string;
       if (spendPct <= -10) clause = `Meta ${platform} spend was cut ${Math.abs(Math.round(spendPct))}%`;
@@ -469,6 +480,34 @@ export function buildWhy(input: WhyInputs, now = new Date()): TrialWhy | null {
     headline,
     reasons,
   };
+}
+
+function singularCostLine(
+  rows: SingularInsightRow[] | null,
+  platform: "iOS" | "Android",
+  y: string,
+  prior: string[],
+  metaSum: (d: string, k: "spend" | "trial_starts") => number,
+): string {
+  if (!rows || rows.length === 0) return "";
+  const mine = rows.filter((r) => (r.os ?? "").toLowerCase() === platform.toLowerCase());
+  const syncedAt = rows.reduce<string | null>((m, r) => (r.synced_at && (!m || r.synced_at > m) ? r.synced_at : m), null);
+  if (!syncedAt) return "";
+  // A day is usable once a sync has run after that Eastern day ended.
+  const syncedDay = etParts(new Date(syncedAt)).date;
+  const trialsOn = (d: string) => mine.filter((r) => r.date === d).reduce((a, r) => a + (Number(r.trial_starts) || 0), 0);
+  // The week before uses settled days only (3+ days old), like the Paid table.
+  const settledBy = addDays(y, -2);
+  const baseDays = prior.filter((d) => d < syncedDay && d <= settledBy);
+  const baseTrials = baseDays.reduce((a, d) => a + trialsOn(d), 0);
+  const baseSpend = baseDays.reduce((a, d) => a + metaSum(d, "spend"), 0);
+  if (baseDays.length < 4 || baseTrials <= 0) return "";
+  const base = baseSpend / baseTrials;
+  const yTrials = trialsOn(y);
+  if (y < syncedDay && yTrials > 0) {
+    return ` Singular's cost per trial: ${money(metaSum(y, "spend") / yTrials)} on ${fmt(yTrials)} trial${yTrials === 1 ? "" : "s"} so far, against ${money(base)} the week before. Yesterday is still filling in.`;
+  }
+  return ` Singular's cost per trial was ${money(base)} the week before; yesterday's arrives around noon Eastern.`;
 }
 
 function funnelLead(r: Reason, direction: "down" | "up"): string {

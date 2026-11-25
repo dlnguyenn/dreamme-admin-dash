@@ -13,6 +13,7 @@ import {
   buildTrialInsights,
   type LoggedChange,
   type MetaInsightRow,
+  type SingularInsightRow,
   type SourceDay,
   type TrialEvent,
   type TrialInsights,
@@ -44,6 +45,14 @@ async function fetchMeta(now: Date): Promise<MetaInsightRow[]> {
   );
 }
 
+async function fetchSingular(now: Date): Promise<SingularInsightRow[]> {
+  return sbGet<SingularInsightRow[]>(
+    "internal",
+    `singular_campaign_daily?select=date,os,trial_starts,synced_at&source=eq.facebook` +
+      `&date=gte.${easternDateOffset(9, now)}&order=date.asc&limit=2000`,
+  );
+}
+
 async function fetchSources(
   now: Date,
   attribution: () => Promise<AttributionSeries>,
@@ -67,14 +76,15 @@ export async function loadTrialInsights(
   attribution: () => Promise<AttributionSeries>,
   now = new Date(),
 ): Promise<TrialInsights> {
-  const [events, onboarding, meta, sources, changes] = await Promise.all([
+  const [events, onboarding, meta, sources, changes, singular] = await Promise.all([
     fetchTrialEvents(now),
     soft(fetchOnboarding(now)),
     soft(fetchMeta(now)),
     soft(fetchSources(now, attribution)),
     soft(fetchChanges(now)),
+    soft(fetchSingular(now)),
   ]);
-  return buildTrialInsights({ events, onboarding, meta, sources, changes }, now);
+  return buildTrialInsights({ events, onboarding, meta, sources, changes, singular }, now);
 }
 
 /** The attribution series through its own cache entry, so this doesn't recompute it. */
