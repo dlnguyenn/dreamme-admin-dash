@@ -7,6 +7,10 @@
  * Trials lead with RevenueCat (every source, the real count) and show Meta's
  * own count under it. Meta claims view-through and organic trials, so its
  * count can be higher than the real total; neither is "paid trials".
+ *
+ * Wherever Meta's trials show, Singular's show beside them, with Meta spend ÷
+ * Singular trials as the cost per trial (Dan, 2026-11-24/25). Singular cells
+ * only cover days it has finished syncing (lib/overview-paid.ts).
  */
 
 import * as React from "react";
@@ -39,14 +43,22 @@ interface MetricRow {
   strong?: boolean;
   /** Which way is good, for the yesterday-vs-last-week chip. */
   better?: "up" | "down";
+  /**
+   * A Singular row: cells say how many of the window's days are covered, and
+   * carry no chip (yesterday is a one-day-old cohort; a week ago is matured,
+   * so the comparison would always read as "worse").
+   */
+  singular?: boolean;
 }
 
 const ROWS: MetricRow[] = [
   { label: "Ad spend", hint: "Meta", get: (d) => d.spend, fmt: money0, strong: true },
   { label: "Trials", hint: "RevenueCat, all sources", get: (d) => d.trials, fmt: fmtNum, strong: true, better: "up" },
   { label: "Trials", hint: "Meta-reported", get: (d) => d.metaTrials, fmt: fmtNum, better: "up" },
+  { label: "Trials", hint: "Singular", get: (d) => d.singular?.trials ?? null, fmt: fmtNum, singular: true },
   { label: "Cost per trial", hint: "spend ÷ all trials", get: (d) => d.costPerTrial, fmt: money2, strong: true, better: "down" },
   { label: "Cost per trial", hint: "Meta-reported", get: (d) => d.metaCostPerTrial, fmt: money2, better: "down" },
+  { label: "Cost per trial", hint: "Meta spend ÷ Singular trials", get: (d) => d.singular?.costPerTrial ?? null, fmt: money2, strong: true, singular: true },
   { label: "Revenue", hint: "gross, before store fees", get: (d) => d.revenue, fmt: money0, strong: true, better: "up" },
   { label: "Revenue ÷ spend", get: (d) => (d.revenue != null && d.spend ? d.revenue / d.spend : null), fmt: times, better: "up" },
   { label: "Installs", hint: "Meta", get: (d) => d.installs, fmt: fmtNum },
@@ -147,7 +159,7 @@ function SummaryTable({ paid, compact }: { paid: NonNullable<PaidSection["daily"
                     fontWeight: r.strong ? 650 : 400,
                   }}
                 >
-                  {r.fmt(r.get(c.day))}
+                  {r.singular ? <SingularCell day={c.day} today={c.key === "today"} text={r.fmt(r.get(c.day))} /> : r.fmt(r.get(c.day))}
                   {c.yday && <Delta now={r.get(paid.yesterday)} then={r.get(paid.weekAgo)} better={r.better} />}
                 </td>
               ))}
@@ -156,6 +168,35 @@ function SummaryTable({ paid, compact }: { paid: NonNullable<PaidSection["daily"
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A Singular value, with why it is blank or how much of the window it covers. */
+function SingularCell({ day, today, text }: { day: PaidDay; today: boolean; text: string }) {
+  const s = day.singular;
+  if (!s) {
+    return (
+      <span
+        title={
+          today
+            ? "Singular has no numbers for today yet"
+            : "Singular's numbers for a day arrive around noon Eastern the next day"
+        }
+      >
+        —
+      </span>
+    );
+  }
+  const partial = s.days < s.of;
+  return (
+    <span title={`Meta spend ${money0(s.spend)} ÷ ${fmtNum(s.trials)} Singular trials, over ${s.days} of ${s.of} day${s.of === 1 ? "" : "s"}`}>
+      {text}
+      {partial && (
+        <span style={{ marginLeft: 5, font: "400 11px var(--font-ui)", color: "var(--ink-3)" }}>
+          {s.days} of {s.of} days
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -174,7 +215,7 @@ function CampaignTable({ paid }: { paid: NonNullable<PaidSection["daily"]> }) {
           margin: "0 0 4px 14px",
         }}
       >
-        By campaign · Meta-reported
+        By campaign
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
         <thead>
@@ -182,10 +223,11 @@ function CampaignTable({ paid }: { paid: NonNullable<PaidSection["daily"]> }) {
             <th style={{ ...thStyle("left"), padding: "10px 14px" }}>Campaign</th>
             <th style={{ ...thStyle(), padding: "10px 14px" }}>Spend today</th>
             <th style={{ ...thStyle(), padding: "10px 14px", background: YDAY_BG }}>Spend yday</th>
-            <th style={{ ...thStyle(), padding: "10px 14px", background: YDAY_BG }}>Trials yday</th>
-            <th style={{ ...thStyle(), padding: "10px 14px", background: YDAY_BG }}>CPT yday</th>
+            <th style={{ ...thStyle(), padding: "10px 14px", background: YDAY_BG }}>Meta trials yday</th>
+            <th style={{ ...thStyle(), padding: "10px 14px", background: YDAY_BG }}>Meta CPT yday</th>
             <th style={{ ...thStyle(), padding: "10px 14px" }}>Spend 7d</th>
-            <th style={{ ...thStyle(), padding: "10px 14px" }}>CPT 7d</th>
+            <th style={{ ...thStyle(), padding: "10px 14px" }}>Meta CPT 7d</th>
+            <th style={{ ...thStyle(), padding: "10px 14px" }}>Singular CPT 7d</th>
             <th style={{ ...thStyle(), padding: "10px 14px" }}>CPI 7d</th>
           </tr>
         </thead>
@@ -205,7 +247,22 @@ function CampaignTable({ paid }: { paid: NonNullable<PaidSection["daily"]> }) {
                 {money2(cpt(c.yesterday))}
               </td>
               <td style={td()}>{money0(c.last7.spend)}</td>
-              <td style={{ ...td(), color: "var(--ink)", fontWeight: 650 }}>{money2(cpt(c.last7))}</td>
+              <td style={td()}>{money2(cpt(c.last7))}</td>
+              <td
+                style={{ ...td(), color: "var(--ink)", fontWeight: 650 }}
+                title={
+                  c.singular7
+                    ? `Meta spend ${money0(c.singular7.spend)} ÷ ${fmtNum(c.singular7.trials)} Singular trials, over ${c.singular7.days} of ${c.singular7.of} days`
+                    : "No finished Singular days in this window"
+                }
+              >
+                {money2(c.singular7?.costPerTrial ?? null)}
+                {c.singular7 && (
+                  <span style={{ marginLeft: 6, font: "400 11px var(--font-ui)", color: "var(--ink-3)" }}>
+                    {fmtNum(c.singular7.trials)} trial{c.singular7.trials === 1 ? "" : "s"}
+                  </span>
+                )}
+              </td>
               <td style={td()}>{money2(cpi(c.last7))}</td>
             </tr>
           ))}
@@ -227,6 +284,7 @@ export function PaidPanel({ paid, onOpen }: { paid: PaidSection | null; onOpen: 
     notes.push(`Couldn't read Meta spend: ${daily.metaError ?? "unknown error"}.`);
   }
   if (daily?.revenueError) notes.push(`Revenue failed to load: ${daily.revenueError}.`);
+  if (daily?.singularError) notes.push(`Singular failed to load: ${daily.singularError}.`);
 
   return (
     <>
@@ -258,7 +316,9 @@ export function PaidPanel({ paid, onOpen }: { paid: PaidSection | null; onOpen: 
               RevenueCat trials are the real count, from every source, so &ldquo;spend ÷ all trials&rdquo; is
               lower than the true paid cost. Meta&rsquo;s count includes view-through and some organic
               trials, so it can be higher than the real total. Today&rsquo;s numbers are partial and Meta adds
-              late conversions for a day or two.
+              late conversions for a day or two. Singular counts only the trials it can tie to a Meta ad, so
+              its cost per trial is the one to quote for Meta, and reads above the true cost. Each day arrives
+              around noon Eastern the next day, and its newest days keep filling in for a week.
               {notes.map((n) => (
                 <div key={n} style={{ color: fam("danger").text, marginTop: 6 }}>
                   {n}

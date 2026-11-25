@@ -96,3 +96,64 @@ describe("revenueByEasternDay", () => {
     expect(m.get("2026-11-07")).toBe(20);
   });
 });
+
+describe("buildPaidDaily: Singular cost per trial", () => {
+  // TODAY is 2026-11-07. A sync at noon Eastern on Nov 7 has finished Nov 6 and earlier.
+  const meta = [
+    row("2026-11-07", "ios", 100, 10, 40),
+    row("2026-11-06", "ios", 600, 50, 200),
+    row("2026-11-06", "android", 190, 20, 100),
+    row("2026-11-05", "ios", 400, 30, 150),
+    row("2026-10-31", "ios", 500, 25, 150),
+  ];
+  const sng = (date: string, campaignId: string, trials: number, syncedAt: string) => ({ date, campaignId, trials, syncedAt });
+  const NOON_NOV7 = "2026-11-07T17:00:00Z";
+  const NOON_NOV6 = "2026-11-06T17:00:00Z";
+  const make = (singular: ReturnType<typeof sng>[] | null) =>
+    buildPaidDaily({ ...base, meta, metaDates: new Set(days), trialsByDay: null, revenueByDay: null, singular });
+
+  it("divides Meta spend by Singular trials on the same days", () => {
+    const out = make([
+      sng("2026-11-07", "ios", 1, NOON_NOV7), // partial today: never used
+      sng("2026-11-06", "ios", 20, NOON_NOV7),
+      sng("2026-11-05", "ios", 10, NOON_NOV7),
+      sng("2026-10-31", "ios", 25, NOON_NOV7),
+    ]);
+    expect(out.today.singular).toBeNull();
+    // Yesterday: all Meta spend (ios 600 + android 190) over Singular's 20.
+    expect(out.yesterday.singular).toMatchObject({ trials: 20, spend: 790, days: 1, of: 1 });
+    expect(out.yesterday.singular!.costPerTrial).toBeCloseTo(790 / 20);
+    expect(out.weekAgo.singular!.costPerTrial).toBeCloseTo(500 / 25);
+    expect(out.last7.singular).toMatchObject({ trials: 55, spend: 790 + 400 + 500, days: 7, of: 7 });
+  });
+
+  it("leaves out a day Singular has not finished, on both sides", () => {
+    // Synced at noon on Nov 6: Nov 6's row is a half day, so it must not count.
+    const out = make([
+      sng("2026-11-06", "ios", 2, NOON_NOV6),
+      sng("2026-11-05", "ios", 10, NOON_NOV6),
+      sng("2026-10-31", "ios", 25, NOON_NOV6),
+    ]);
+    expect(out.yesterday.singular).toBeNull();
+    expect(out.last7.singular).toMatchObject({ trials: 35, spend: 400 + 500, days: 6, of: 7 });
+    expect(out.singularSyncedAt).toBe(NOON_NOV6);
+  });
+
+  it("joins campaigns on the Meta campaign id, and shows no price at zero trials", () => {
+    const out = make([
+      sng("2026-11-06", "ios", 20, NOON_NOV7),
+      sng("2026-11-05", "ios", 10, NOON_NOV7),
+      sng("2026-10-31", "ios", 25, NOON_NOV7),
+    ]);
+    const ios = out.campaigns.find((c) => c.id === "ios")!;
+    const android = out.campaigns.find((c) => c.id === "android")!;
+    expect(ios.singular7).toMatchObject({ trials: 55, spend: 1500 });
+    expect(ios.singular7!.costPerTrial).toBeCloseTo(1500 / 55);
+    expect(android.singular7).toMatchObject({ trials: 0, spend: 190, costPerTrial: null });
+  });
+
+  it("blanks its cells when the Singular read failed or was not asked for", () => {
+    expect(make(null).last7.singular).toBeNull();
+    expect(make([]).last7.singular).toBeNull();
+  });
+});

@@ -122,10 +122,39 @@ describe("buildWhy", () => {
     const w = buildWhy({ events: history, onboarding, meta, sources, changes: null }, NOW)!;
     const meta_ = w.reasons.find((r) => r.id === "meta-iOS")!;
     expect(meta_.text).toMatch(/\$300 spent against \$600 a day/);
-    expect(meta_.text).toMatch(/\$15 per Meta trial against \$15/);
+    expect(meta_.text).not.toMatch(/per Meta trial/);
     expect(meta_.clause).toBe("Meta iOS spend was cut 50%");
     expect(w.reasons.find((r) => r.id === "source-tiktok")!.impact).toBeCloseTo(-20 * (48 / 600), 5);
     // Funnel leads the headline; the strongest same-direction evidence explains it.
     expect(w.headline).toBe("A smaller share of new users started a trial, likely because Meta iOS spend was cut 50%");
+  });
+});
+
+describe("buildWhy: Singular cost per trial beside Meta's count", () => {
+  const history = dates(28).flatMap((d, i) => (i === 0 ? day(d, Array(24).fill(1)) : day(d, FLAT)));
+  const meta = dates(9).flatMap((d) => [
+    { date: d, campaign_name: "SCALING iOS", spend: d === "2026-11-09" ? 300 : 600, installs: 100, trial_starts: d === "2026-11-09" ? 20 : 40 },
+  ]);
+  const singular = (syncedAt: string) =>
+    dates(9).map((d) => ({ date: d, os: "iOS", trial_starts: d === "2026-11-09" ? 6 : 20, synced_at: syncedAt }));
+
+  it("quotes yesterday and the week before once yesterday has synced", () => {
+    // Synced at noon Eastern on Nov 10: Nov 9 (yesterday) is finished.
+    const w = buildWhy({ events: history, onboarding: null, meta, sources: null, changes: null, singular: singular("2026-11-10T17:00:00Z") }, NOW)!;
+    const text = w.reasons.find((r) => r.id === "meta-iOS")!.text;
+    expect(text).toMatch(/20 Meta-reported trials against 40/);
+    expect(text).toMatch(/Singular's cost per trial: \$50 on 6 trials so far, against \$30 the week before/);
+  });
+
+  it("says yesterday is not in yet before the noon sync", () => {
+    const w = buildWhy({ events: history, onboarding: null, meta, sources: null, changes: null, singular: singular("2026-11-09T17:00:00Z") }, NOW)!;
+    const text = w.reasons.find((r) => r.id === "meta-iOS")!.text;
+    expect(text).toMatch(/Singular's cost per trial was \$30 the week before; yesterday's arrives around noon Eastern/);
+  });
+
+  it("sizes the reason from Meta's count either way", () => {
+    const withS = buildWhy({ events: history, onboarding: null, meta, sources: null, changes: null, singular: singular("2026-11-10T17:00:00Z") }, NOW)!;
+    const without = buildWhy({ events: history, onboarding: null, meta, sources: null, changes: null }, NOW)!;
+    expect(withS.reasons.find((r) => r.id === "meta-iOS")!.impact).toBe(without.reasons.find((r) => r.id === "meta-iOS")!.impact);
   });
 });

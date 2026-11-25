@@ -1372,6 +1372,11 @@ async function fetchPaid(
               `ad_insights_daily?select=date,campaign_id,campaign_name,spend,installs,trial_starts` +
                 `&date=gte.${from}&order=date.desc&limit=5000`,
             ),
+          singularRows: (from) =>
+            sbGet(
+              `singular_campaign_daily?select=date,campaign_id,trial_starts,synced_at` +
+                `&source=eq.facebook&date=gte.${from}&order=date.desc&limit=2000`,
+            ),
         }),
       )
       .catch(() => null),
