@@ -10,6 +10,8 @@
  *
  * Rules and labels: src/lib/experiment-log.ts. Storage: /api/experiments.
  * Arm-level readouts for the April-plan tests stay on April Plan > Experiments.
+ * Tests with their own readout (the Paywall X test, src/lib/paywall-x) open it
+ * from their entry, or straight from ?tab=experiments&readout=<key>.
  */
 import * as React from "react";
 import { PageHeader } from "./Shell";
@@ -17,6 +19,8 @@ import { Button, useToast } from "./ui";
 import { Icons } from "./Icons";
 import { Card, ErrorBanner, FilterPill, Segmented, StatStrip, StatusPill } from "./porcelain";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { PaywallXReadout } from "./experiments/PaywallXReadout";
+import { PAYWALL_X_KEY, mentionsPaywallX } from "@/lib/paywall-x/shared";
 import {
   AREA_LABELS,
   EXPERIMENT_AREAS,
@@ -93,7 +97,40 @@ export function KindTag({ kind }: { kind: ExperimentKind }) {
   );
 }
 
+/** Show or hide a readout, keeping the other query params (tab, demo). */
+function setReadoutParam(key: string | null) {
+  const url = new URL(window.location.href);
+  if (key) url.searchParams.set("readout", key);
+  else url.searchParams.delete("readout");
+  url.searchParams.delete("entry");
+  window.history.replaceState(null, "", url.toString());
+}
+
 export function ExperimentLog() {
+  const [readout, setReadout] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const key = new URLSearchParams(window.location.search).get("readout");
+    if (key === PAYWALL_X_KEY) setReadout(key);
+  }, []);
+  const openReadout = React.useCallback((key: string) => {
+    setReadoutParam(key);
+    setReadout(key);
+    window.scrollTo({ top: 0 });
+  }, []);
+  if (readout === PAYWALL_X_KEY) {
+    return (
+      <PaywallXReadout
+        onBack={() => {
+          setReadoutParam(null);
+          setReadout(null);
+        }}
+      />
+    );
+  }
+  return <ExperimentList onOpenReadout={openReadout} />;
+}
+
+function ExperimentList({ onOpenReadout }: { onOpenReadout: (key: string) => void }) {
   const isMobile = useIsMobile();
   const toast = useToast();
   const [entries, setEntries] = React.useState<ExperimentEntry[] | null>(null);
@@ -264,6 +301,17 @@ export function ExperimentLog() {
         <a href="/?tab=plan" style={{ color: "var(--ink-2)" }}>
           April Plan › Experiments
         </a>
+        . Readouts built here:{" "}
+        <a
+          href={`?tab=experiments&readout=${PAYWALL_X_KEY}`}
+          onClick={(ev) => {
+            ev.preventDefault();
+            onOpenReadout(PAYWALL_X_KEY);
+          }}
+          style={{ color: "var(--ink-2)" }}
+        >
+          Paywall X test
+        </a>
         . Claude sessions can add entries with <code>POST /api/experiments</code>.
       </div>
 
@@ -272,6 +320,7 @@ export function ExperimentLog() {
           entry={open}
           rc={open?.rc_experiment_id ? rc[open.rc_experiment_id] : undefined}
           rcError={rcError}
+          onOpenReadout={onOpenReadout}
           onClose={() => setOpen(undefined)}
           onSaved={(saved) => {
             setEntries((prev) => sortEntries([...(prev ?? []).filter((x) => x.id !== saved.id), saved]));
@@ -355,6 +404,11 @@ function Row({
           <KindTag kind={entry.kind} />
           <span style={{ font: "500 11.5px var(--font-ui)", color: "var(--ink-3)" }}>{AREA_LABELS[entry.area]}</span>
           <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            {mentionsPaywallX(entry) && (
+              <span title="This entry has a readout" style={{ font: "500 11px var(--font-ui)", color: "var(--ink-3)" }}>
+                Readout
+              </span>
+            )}
             {rc && rc.status !== entry.status && (
               <span title="Status in RevenueCat" style={{ font: "500 11px var(--font-ui)", color: "var(--ink-4)" }}>
                 RC: {rc.status}
@@ -426,6 +480,7 @@ function EntryDrawer({
   entry,
   rc,
   rcError,
+  onOpenReadout,
   onClose,
   onSaved,
   onDeleted,
@@ -433,6 +488,7 @@ function EntryDrawer({
   entry: ExperimentEntry | null;
   rc?: RcExperimentState;
   rcError: string | null;
+  onOpenReadout: (key: string) => void;
   onClose: () => void;
   onSaved: (e: ExperimentEntry) => void;
   onDeleted: (id: string) => void;
@@ -552,7 +608,7 @@ function EntryDrawer({
           {editing ? (
             <EditForm draft={draft} set={set} />
           ) : (
-            entry && <ReadView entry={entry} rc={rc} rcError={rcError} />
+            entry && <ReadView entry={entry} rc={rc} rcError={rcError} onOpenReadout={onOpenReadout} />
           )}
           {error && <ErrorBox>{error}</ErrorBox>}
         </div>
@@ -608,10 +664,12 @@ function ReadView({
   entry,
   rc,
   rcError,
+  onOpenReadout,
 }: {
   entry: ExperimentEntry;
   rc?: RcExperimentState;
   rcError: string | null;
+  onOpenReadout: (key: string) => void;
 }) {
   const days = daysRunning(entry.start_date, entry.end_date, todayIso());
   const links = entry.links
@@ -647,6 +705,17 @@ function ReadView({
           </div>
         )}
       </div>
+
+      {mentionsPaywallX(entry) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Button variant="secondary" icon={<Icons.Flask />} onClick={() => onOpenReadout(PAYWALL_X_KEY)}>
+            Open the readout
+          </Button>
+          <span style={{ font: "400 12px var(--font-ui)", color: "var(--ink-3)" }}>
+            Exposed users, trial starts, conversion and revenue by arm.
+          </span>
+        </div>
+      )}
 
       <Section label="Hypothesis" text={entry.hypothesis} />
       <Section label="What changed, for whom" text={entry.what_changed} />
