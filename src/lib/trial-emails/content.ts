@@ -71,6 +71,16 @@ export interface RenderedEmail {
  * the review, with the reviewer's public nickname.
  */
 const RATING_LINE = "4.7 out of 5 from 3,400+ App Store ratings";
+
+/**
+ * Meal-logging proof for the food ask. Measured 2026-11-17 on the consumer DB:
+ * joiners May 1 - Sep 14 2026 with a weigh-in at start and ~8 weeks later
+ * (n=1,657). Logged meals on 75%+ of days: 76.9% lost 5%+; under 25% of days
+ * (incl. none): 57.7%. Correlational, so it stays past tense and descriptive.
+ * Re-measure before changing the numbers (vault: trial-email-test).
+ */
+const MEAL_LOG_PROOF =
+  "77% of people who logged their meals most days lost 5% of their body weight in their first two months. Among people who rarely logged, it was 58%.";
 const QUOTE: Record<EmailKind, { text: string; who: string }> = {
   // 2026-08-10, five stars, "Amazing"
   day0: {
@@ -137,11 +147,11 @@ function ask(cta: Cta, fish: string, kind: EmailKind): { action: string; why: st
       return kind === "day1"
         ? {
             action: "log what you eat today.",
-            why: " Snap a photo or scan a barcode and watch your protein add up through the day. Most people who stick with DreamMe log their food and their shots, side by side.",
+            why: ` Snap a photo or scan a barcode and watch your protein add up through the day. ${MEAL_LOG_PROOF}`,
           }
         : {
             action: "snap a photo of your next meal.",
-            why: ` ${fish} works out the protein for you, and protein is the easiest thing to miss when your appetite drops.`,
+            why: ` ${fish} works out the protein for you, and protein is the easiest thing to miss when your appetite drops. ${MEAL_LOG_PROOF}`,
           };
     case "shot":
       return {

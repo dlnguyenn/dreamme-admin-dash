@@ -3,7 +3,13 @@
 import * as React from "react";
 import { Icons } from "./Icons";
 import { Sheet } from "./Sheet";
-import { visibleNavItems, type DashId, type NavItem } from "./Shell";
+import { NAV_ITEMS, visibleNavItems, type DashId, type NavItem } from "./Shell";
+import {
+  groupNavItems,
+  itemsToShow,
+  UNGROUPED,
+  useNavCollapsed,
+} from "@/lib/nav-groups";
 
 /**
  * iOS-style bottom tab bar. Replaces the hamburger drawer on mobile.
@@ -253,6 +259,9 @@ export function MoreSheet({
   const secondary = visibleNavItems(viewAs).filter(
     (n) => !PRIMARY_IDS.includes(n.id),
   );
+  // Same groups and the same saved fold state as the desktop sidebar.
+  const groups = groupNavItems(secondary, NAV_ITEMS);
+  const { isCollapsed, toggle } = useNavCollapsed();
 
   return (
     <Sheet open={open} onClose={onClose} ariaLabel="More">
@@ -289,17 +298,63 @@ export function MoreSheet({
           marginBottom: 16,
         }}
       >
-        {secondary.map((item) => (
-          <MoreNavRow
-            key={item.id}
-            item={item}
-            active={current === item.id}
-            onClick={() => {
-              onNavigate(item.id);
-              onClose();
-            }}
-          />
-        ))}
+        {groups.map(({ group, items }) => {
+          const folded = group !== UNGROUPED && isCollapsed(group);
+          const listId = `more-group-${group.toLowerCase() || "other"}`;
+          return (
+            <React.Fragment key={group || "_"}>
+              {group !== UNGROUPED && (
+                <button
+                  type="button"
+                  onClick={() => toggle(group)}
+                  aria-expanded={!folded}
+                  aria-controls={listId}
+                  className="mono"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    width: "100%",
+                    padding: "10px 4px 6px",
+                    background: "transparent",
+                    border: "none",
+                    fontSize: 10,
+                    color: "var(--ink-4)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ flex: 1 }}>{group}</span>
+                  <Icons.ChevronDown
+                    size={14}
+                    stroke="var(--ink-4)"
+                    style={{
+                      transform: folded ? "rotate(-90deg)" : "none",
+                      transition: "transform 160ms ease",
+                    }}
+                  />
+                </button>
+              )}
+              <div
+                id={listId}
+                style={{ display: "flex", flexDirection: "column", gap: 4 }}
+              >
+                {itemsToShow(items, folded, current).map((item) => (
+                  <MoreNavRow
+                    key={item.id}
+                    item={item}
+                    active={current === item.id}
+                    onClick={() => {
+                      onNavigate(item.id);
+                      onClose();
+                    }}
+                  />
+                ))}
+              </div>
+            </React.Fragment>
+          );
+        })}
       </nav>
 
       {role === "admin" && (

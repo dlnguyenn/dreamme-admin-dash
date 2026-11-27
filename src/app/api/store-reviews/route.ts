@@ -8,6 +8,7 @@
  */
 import { NextResponse } from "next/server";
 import { checkIngestAuth } from "@/lib/auth-ingest";
+import { snapshotRatings } from "@/lib/rating-snapshots";
 import {
   STORE_LINKS,
   appStoreConfigured,
@@ -56,7 +57,10 @@ export async function POST(req: Request) {
   const bad = guard(req);
   if (bad) return bad;
   try {
-    return NextResponse.json({ ok: true, results: await syncStoreReviews() });
+    const results = await syncStoreReviews();
+    // The Sync button also takes today's rating-count snapshot (src/lib/rating-snapshots.ts).
+    const ratings = await snapshotRatings();
+    return NextResponse.json({ ok: true, results, ratings });
   } catch (e) {
     return fail(e);
   }

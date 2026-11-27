@@ -34,6 +34,7 @@ export async function uploadBytesToStorage(
   path: string,
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
+  opts: { cacheControl?: string } = {},
 ): Promise<string> {
   if (!storageConfigured()) {
     throw new Error("Supabase storage not configured");
@@ -47,6 +48,7 @@ export async function uploadBytesToStorage(
         Authorization: `Bearer ${SERVICE_ROLE}`,
         "Content-Type": contentType,
         "x-upsert": "true",
+        ...(opts.cacheControl ? { "cache-control": opts.cacheControl } : {}),
       },
       body: bytes as BodyInit,
     },

@@ -18,6 +18,8 @@ import { sbCount, sbGet } from "@/lib/revenue-plan/db";
 import type { OpsCheck } from "@/lib/overview";
 import type { PaidDaily } from "@/lib/overview-paid";
 import { experimentUrgents, type ExperimentsSection } from "@/lib/overview-experiments";
+import { listIssues } from "@/lib/errors/store";
+import { buildIssueViews, connectionState, errorUrgents } from "@/lib/errors/view";
 
 const API_VERSION = process.env.META_API_VERSION ?? "v22.0";
 
@@ -405,7 +407,7 @@ export async function collectUrgentAlerts(base: {
   const since48h = new Date(now.getTime() - 48 * 3_600_000).toISOString();
   const since3d = new Date(now.getTime() - 3 * 86_400_000).toISOString();
 
-  const [meta, conn, marketing, support, reviews] = await Promise.all([
+  const [meta, conn, marketing, support, reviews, errors] = await Promise.all([
     metaChecks(),
     settle(getActiveConnection()),
     settle(
@@ -426,14 +428,22 @@ export async function collectUrgentAlerts(base: {
         `store_reviews?select=*&reviewed_at=gte.${since3d}&order=reviewed_at.desc&limit=200`,
       ),
     ),
+    // Errors tab: new, regressed, spiking issues and "gone quiet".
+    settle(
+      listIssues(now).then(({ issues, daily }) =>
+        errorUrgents(buildIssueViews(issues, daily, now), connectionState(issues, now), now),
+      ),
+    ),
   ]);
 
   const extraErrors: string[] = [];
   if (marketing.error) extraErrors.push(`marketing alerts: ${marketing.error}`);
   if (support.error) extraErrors.push(`support urgency: ${support.error}`);
   if (reviews.error) extraErrors.push(`store reviews: ${reviews.error}`);
+  // Before migration 0123 is applied the tables don't exist; say nothing then.
+  if (errors.error && !/does not exist/.test(errors.error)) extraErrors.push(`errors: ${errors.error}`);
 
-  return buildUrgentAlerts({
+  const built = buildUrgentAlerts({
     now,
     easternHour: easternHour(now),
     ops: base.ops,
@@ -454,4 +464,6 @@ export async function collectUrgentAlerts(base: {
       .filter(({ a }) => a.urgent)
       .map(({ r, a }) => ({ store: r.store, rating: r.rating, reasons: a.reasons, reviewedAt: r.reviewed_at })),
   });
+  const all = [...built, ...(errors.value ?? [])];
+  return all.sort((a, b) => (a.level === b.level ? 0 : a.level === "critical" ? -1 : 1));
 }

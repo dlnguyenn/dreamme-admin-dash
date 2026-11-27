@@ -34,8 +34,49 @@ export interface PaidCounts {
   metaTrials: number | null;
 }
 
+/**
+ * Singular's read for a set of days: the trials it tied to a Meta ad, and
+ * Meta's spend on those same days. This is the cost per trial to quote for
+ * Meta (Dan, 2026-11-24): Meta's own count runs high.
+ *
+ * Only days Singular has finished syncing are in it. The sync runs once a day
+ * around noon Eastern, so a day's row is partial until the run after that day
+ * ends, and "today" is never covered.
+ *
+ * Trials are counted by install day and keep arriving for a week, so a fresh
+ * day reads high. A multi-day window therefore uses only days at least
+ * SINGULAR_MATURE_DAYS old ("matured windows only", vault meta-ads rule): on
+ * 2026-11-25 one day-old day at a new, higher budget moved the 7-day figure
+ * from $18.60 to $25.93. A single-day cell still shows a fresh day, marked
+ * `early`, because yesterday is the day Dan acts on.
+ */
+export interface SingularRead {
+  trials: number;
+  /** Meta spend on the covered days only, so both sides share the same days. */
+  spend: number;
+  costPerTrial: number | null;
+  /** Covered days, out of the days in the window. */
+  days: number;
+  of: number;
+  /** A single day younger than SINGULAR_MATURE_DAYS: still filling in, reads high. */
+  early: boolean;
+}
+
+/** A day's Singular trials are treated as settled once it is this many days old. */
+export const SINGULAR_MATURE_DAYS = 3;
+
+/** One singular_campaign_daily row (source = facebook). */
+export interface SingularDayRow {
+  date: string;
+  campaignId: string;
+  trials: number;
+  syncedAt: string | null;
+}
+
 export interface PaidDay extends PaidCounts {
   date: string;
+  /** null = Singular has no finished day in this window (or its read failed). */
+  singular?: SingularRead | null;
   /** RevenueCat trial starts, every source. */
   trials: number | null;
   /** Gross revenue, net of refunds, before store fees. */
@@ -53,6 +94,8 @@ export interface PaidCampaign {
   today: PaidCounts;
   yesterday: PaidCounts;
   last7: PaidCounts;
+  /** Singular over the last 7 complete days, this campaign only. */
+  singular7?: SingularRead | null;
 }
 
 export interface PaidDaily {
@@ -67,6 +110,10 @@ export interface PaidDaily {
   metaError: string | null;
   /** Revenue query failed; revenue cells read "—", not $0. */
   revenueError: string | null;
+  /** When Singular last synced; null when it has no rows in the window. */
+  singularSyncedAt?: string | null;
+  /** Singular read failed; its cells read "—". */
+  singularError?: string | null;
   fetchedAt: string;
 }
 
@@ -108,6 +155,9 @@ export function buildPaidDaily(input: {
   metaSource: PaidDaily["metaSource"];
   metaError: string | null;
   revenueError: string | null;
+  /** Singular's Meta rows; null = the read failed. */
+  singular?: SingularDayRow[] | null;
+  singularError?: string | null;
   now?: Date;
 }): PaidDaily {
   const dayAt = (n: number) => {
@@ -126,6 +176,34 @@ export function buildPaidDaily(input: {
   const sumMap = (m: Map<string, number> | null, ds: string[]) =>
     m == null ? null : ds.reduce((s, d) => s + (m.get(d) ?? 0), 0);
 
+  // Singular: a day counts only once a sync has run after that Eastern day
+  // ended. Every run re-upserts the whole window, so the newest synced_at is
+  // the run's time.
+  const sngRows = input.singular ?? null;
+  const singularSyncedAt =
+    sngRows?.reduce<string | null>((m, r) => (r.syncedAt && (!m || r.syncedAt > m) ? r.syncedAt : m), null) ?? null;
+  const syncedDay = singularSyncedAt ? easternDate(new Date(singularSyncedAt)) : null;
+  const singularFor = (ds: string[], campaignId?: string): SingularRead | null => {
+    if (!sngRows || !syncedDay) return null;
+    const matureBy = dayAt(SINGULAR_MATURE_DAYS);
+    const single = ds.length === 1;
+    const days = ds.filter((d) => d < syncedDay && covered(d) && (single || d <= matureBy));
+    if (days.length === 0) return null;
+    const set = new Set(days);
+    const mine = <T extends { date: string }>(rows: T[], id: (r: T) => string) =>
+      rows.filter((r) => set.has(r.date) && (campaignId == null || id(r) === campaignId));
+    const trials = mine(sngRows, (r) => r.campaignId).reduce((s, r) => s + r.trials, 0);
+    const spend = mine(input.meta ?? [], (r) => r.campaignId).reduce((s, r) => s + r.spend, 0);
+    return {
+      trials,
+      spend,
+      costPerTrial: trials > 0 ? spend / trials : null,
+      days: days.length,
+      of: ds.length,
+      early: single && days[0] > matureBy,
+    };
+  };
+
   const makeDay = (label: string, ds: string[]): PaidDay => {
     const c = metaFor(ds);
     const trials = sumMap(input.trialsByDay, ds);
@@ -137,6 +215,7 @@ export function buildPaidDaily(input: {
       costPerTrial: ratio(c.spend, trials),
       metaCostPerTrial: ratio(c.spend, c.metaTrials),
       cpi: ratio(c.spend, c.installs),
+      singular: singularFor(ds),
     };
   };
 
@@ -162,6 +241,7 @@ export function buildPaidDaily(input: {
         today: pick([dates[0]]),
         yesterday: pick([dates[1]]),
         last7: pick(complete),
+        singular7: singularFor(complete, id),
       };
     })
     .filter((c) => (c.last7.spend ?? 0) > 0 || (c.today.spend ?? 0) > 0)
@@ -176,6 +256,8 @@ export function buildPaidDaily(input: {
     metaSource: input.metaSource,
     metaError: input.metaError,
     revenueError: input.revenueError,
+    singularSyncedAt,
+    singularError: input.singularError ?? null,
     fetchedAt: (input.now ?? new Date()).toISOString(),
   };
 }
@@ -274,6 +356,10 @@ export interface PaidDailyDeps {
   syncedInsights: (since: string) => Promise<
     { date: string; campaign_id: string | null; campaign_name: string | null; spend: number | null; installs: number | null; trial_starts: number | null }[]
   >;
+  /** singular_campaign_daily reader (source = facebook). Optional: without it the Singular cells read "—". */
+  singularRows?: (since: string) => Promise<
+    { date: string; campaign_id: string | null; trial_starts: number | null; synced_at: string | null }[]
+  >;
 }
 
 export async function fetchPaidDaily(deps: PaidDailyDeps, now = new Date()): Promise<PaidDaily> {
@@ -328,6 +414,22 @@ export async function fetchPaidDaily(deps: PaidDailyDeps, now = new Date()): Pro
     ? new Map(deps.trialStarts.map((r) => [r.date, Number(r.trial_starts) || 0]))
     : null;
 
+  // A Singular failure blanks its own cells, never the panel.
+  let singular: SingularDayRow[] | null = null;
+  let singularError: string | null = null;
+  if (deps.singularRows) {
+    try {
+      singular = (await deps.singularRows(since)).map((r) => ({
+        date: r.date,
+        campaignId: r.campaign_id ?? "unknown",
+        trials: Number(r.trial_starts) || 0,
+        syncedAt: r.synced_at,
+      }));
+    } catch (e) {
+      singularError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   return buildPaidDaily({
     todayDate,
     meta,
@@ -337,6 +439,8 @@ export async function fetchPaidDaily(deps: PaidDailyDeps, now = new Date()): Pro
     metaSource,
     metaError,
     revenueError,
+    singular,
+    singularError,
     now,
   });
 }
