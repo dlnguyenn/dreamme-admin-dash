@@ -31,6 +31,8 @@
     { "path": "/api/cron/sync-asa", "schedule": "0 11 * * *" },
     { "path": "/api/cron/sync-aso", "schedule": "15 12 * * *" },
     { "path": "/api/cron/aso-ranks", "schedule": "0 13 * * *" },
-    { "path": "/api/cron/aso-ranks-2", "schedule": "0 15 * * *" }
+    { "path": "/api/cron/aso-ranks-2", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/attr-match", "schedule": "35 7 * * *" },
+    { "path": "/api/cron/attr-capi", "schedule": "50 7 * * *" }
   ]
 }
